@@ -16,8 +16,8 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-سرور روی آدرس زیر باال می‌آید:
-- مستندات Swagger: http://127.0.0.1:8000/docs
+سرور روی آدرس زیر بالا می‌آید:
+- Swagger: http://127.0.0.1:8000/docs
 - بررسی سلامت: http://127.0.0.1:8000/api/v1/health
 
 ## اجرای تست‌ها
