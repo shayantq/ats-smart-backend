@@ -44,22 +44,3 @@ tests/
 └── test_health.py       # تست اندپوینت health
 ```
 
-## دستورات گیت برای ثبت و ارسال تغییرات
-
-```bash
-# مشاهده‌ی فایل‌های تغییر یافته/اضافه/حذف‌شده قبل از commit
-git status
-
-# اطمینان از اینکه روی برنچ develop هستید
-git checkout develop
-git pull origin develop
-
-# افزودن همه‌ی تغییرات به staging
-git add .
-
-# ثبت تغییرات با یک پیام توضیحی
-git commit -m "feat: راه‌اندازی زیرساخت بک‌اند و health endpoint"
-
-# ارسال تغییرات به گیت‌هاب روی برنچ develop
-git push origin develop
-```
