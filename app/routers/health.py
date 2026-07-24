@@ -14,8 +14,5 @@ router = APIRouter()
     tags=["Health"],
 )
 async def health_check() -> HealthResponse:
-    """
-    یک اندپوینت ساده و سبک برای اطمینان از باال بودن سرویس بک‌اند.
-    توسط سایر تیم‌ها، ابزارهای مانیتورینگ (Prometheus) و CI/CD Pipeline استفاده می‌شود.
-    """
+    """اندپوینت سبک برای اطمینان از باال بودن سرویس بک‌اند."""
     return HealthResponse(status="ok", project=settings.PROJECT_NAME, version="0.1.0")
