@@ -6,19 +6,22 @@
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # ویندوز: .venv\Scripts\activate
+source .venv/bin/activate      # ویندوز: .venv\Scripts\activate
 
 pip install -r requirements.txt
 
 cp .env.example .env
 # سپس مقادیر واقعی DATABASE_URL، REDIS_URL و SECRET_KEY را در .env تنظیم کنید
+```
 
+## اجرای سرور
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-سرور روی آدرس زیر بالا می‌آید:
 - Swagger: http://127.0.0.1:8000/docs
-- بررسی سلامت: http://127.0.0.1:8000/api/v1/health
+- بررسی سلامت سرور: http://127.0.0.1:8000/api/v1/health
 
 ## اجرای تست‌ها
 
@@ -30,14 +33,33 @@ pytest
 
 ```
 app/
-├── api/v1/
-│   ├── endpoints/     # اندپوینت‌های هر دامنه (health, auth, jobs, ...)
-│   └── api.py         # روتر مرکزی نسخه v1
+├── routers/            # اندپوینت‌های هر دامنه (health, و در آینده auth, jobs, ...)
+│   └── health.py
 ├── core/
-│   └── config.py      # تنظیمات و متغیرهای محیطی
-├── db/                 # اتصال دیتابیس (اسپرینت بعدی)
-├── models/              # مدل‌های SQLAlchemy (اسپرینت بعدی)
+│   └── config.py       # تنظیمات و متغیرهای محیطی (خوانده‌شده از .env)
+├── models/              # مدل‌های SQLAlchemy 
 ├── schemas/             # اسکیمای Pydantic
-├── services/            # منطق تجاری
 └── main.py              # نقطه ورود برنامه
+tests/
+└── test_health.py       # تست اندپوینت health
+```
+
+## دستورات گیت برای ثبت و ارسال تغییرات
+
+```bash
+# مشاهده‌ی فایل‌های تغییر یافته/اضافه/حذف‌شده قبل از commit
+git status
+
+# اطمینان از اینکه روی برنچ develop هستید
+git checkout develop
+git pull origin develop
+
+# افزودن همه‌ی تغییرات به staging
+git add .
+
+# ثبت تغییرات با یک پیام توضیحی
+git commit -m "feat: راه‌اندازی زیرساخت بک‌اند و health endpoint"
+
+# ارسال تغییرات به گیت‌هاب روی برنچ develop
+git push origin develop
 ```
