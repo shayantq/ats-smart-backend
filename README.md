@@ -36,11 +36,14 @@ app/
 ├── routers/            # اندپوینت‌های هر دامنه (health, و در آینده auth, jobs, ...)
 │   └── health.py
 ├── core/
-│   └── config.py       # تنظیمات و متغیرهای محیطی (خوانده‌شده از .env)
-├── models/              # مدل‌های SQLAlchemy 
-├── schemas/             # اسکیمای Pydantic
-└── main.py              # نقطه ورود برنامه
+│   └── config.py        # تنظیمات و متغیرهای محیطی (خوانده‌شده از .env)
+├── models/               # مدل‌های ORM (SQLAlchemy) — معادل ۱۴ جدول طراحی دیتابیس
+│   ├── base.py           # کلاس پایه‌ی مشترک همه‌ی مدل‌ها
+│   ├── core.py           # User, Company, Candidate, Job
+│   ├── process.py        # Application, Interview, Resume, Skill
+│   └── security.py       # Role, Permission, Notification, Log, Audit, StatusHistory
+├── schemas/              # اسکیمای Pydantic
+└── main.py               # نقطه ورود برنامه
 tests/
-└── test_health.py       # تست اندپوینت health
+└── test_health.py        # تست اندپوینت health
 ```
-
