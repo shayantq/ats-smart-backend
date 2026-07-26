@@ -29,6 +29,18 @@ uvicorn app.main:app --reload
 pytest
 ```
 
+## مدیریت پایگاه داده با Alembic
+
+اعمال آخرین ساختار جداول روی دیتابیس محلی:
+```bash
+alembic upgrade head
+```
+
+ساخت یک فایل migration جدید بعد از تغییر مدل‌ها:
+```bash
+alembic revision --autogenerate -m "توضیح کوتاه تغییر"
+```
+
 ## ساختار پروژه
 
 ```
@@ -44,6 +56,10 @@ app/
 │   └── security.py       # Role, Permission, Notification, Log, Audit, StatusHistory
 ├── schemas/              # اسکیمای Pydantic
 └── main.py               # نقطه ورود برنامه
+alembic/
+├── env.py                # پیکربندی اتصال Alembic به مدل‌ها و دیتابیس
+├── script.py.mako        # قالب فایل‌های migration
+└── versions/              # فایل‌های migration تولیدشده
 tests/
 └── test_health.py        # تست اندپوینت health
 ```
