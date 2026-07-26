@@ -10,6 +10,7 @@ pydantic-settings==2.5.2
 sqlalchemy==2.0.35
 asyncpg==0.30.0
 alembic==1.13.2
+greenlet==3.1.1
 
 # ---- Security (Auth stack - JWT & Password Hashing) ----
 python-jose[cryptography]==3.3.0
