@@ -49,20 +49,43 @@ alembic upgrade head
 alembic revision --autogenerate -m "توضیح کوتاه تغییر"
 ```
 
+## احراز هویت (Auth)
+
+### ثبت‌نام کاربر جدید
+```
+POST /api/v1/auth/register
+```
+عمومی (بدون نیاز به ورود قبلی). بدنه‌ی درخواست:
+```json
+{
+  "email": "user@example.com",
+  "password": "حداقل 8 کاراکتر",
+  "role": "Candidate"
+}
+```
+مقادیر مجاز `role`: `Admin`, `HR_Manager`, `Interviewer`, `Candidate`
+
+- در صورت موفقیت: کد `201` و اطلاعات کاربر ساخته‌شده (بدون پسورد)
+- در صورت تکراری بودن ایمیل: کد `400`
+- گذرواژه هرگز خام ذخیره نمی‌شود؛ همیشه با Bcrypt هش می‌شود (ستون `password_hash` در جدول `users`)
+
 ## ساختار کلی ریپو
 
 ```
 ats-smart-backend/            # ریشه‌ی ریپو
 ├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, و در آینده auth, jobs, ...)
+│   ├── routers/                # اندپوینت‌ها (health, auth, و در آینده jobs, ...)
 │   ├── core/
-│   │   └── config.py            # تنظیمات و متغیرهای محیطی
+│   │   ├── config.py             # تنظیمات و متغیرهای محیطی
+│   │   └── security.py            # هش کردن و بررسی گذرواژه (Bcrypt)
+│   ├── db/
+│   │   └── session.py             # اتصال async به دیتابیس
 │   ├── models/                  # مدل‌های ORM (SQLAlchemy) — 14 جدول طراحی دیتابیس
 │   │   ├── base.py
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application, Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, health.py, ...)
 │   └── main.py                    # نقطه ورود برنامه
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
 ├── tests/                       # تست‌های بک‌اند

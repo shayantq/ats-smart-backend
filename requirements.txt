@@ -5,6 +5,7 @@ uvicorn[standard]==0.30.6
 # ---- Data Validation & Settings ----
 pydantic==2.9.2
 pydantic-settings==2.5.2
+email-validator==2.2.0
 
 # ---- Database / ORM / Migrations ----
 sqlalchemy==2.0.35
@@ -15,6 +16,7 @@ greenlet==3.1.1
 # ---- Security (Auth stack - JWT & Password Hashing) ----
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-multipart==0.0.9
 
 # ---- Environment Management ----
