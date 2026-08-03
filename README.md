@@ -28,7 +28,7 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-- Swagger: http://127.0.0.1:8000/docs
+- مستندات Swagger: http://127.0.0.1:8000/docs
 - بررسی سلامت سرور: http://127.0.0.1:8000/api/v1/health
 
 ## اجرای تست‌ها
@@ -69,6 +69,25 @@ POST /api/v1/auth/register
 - در صورت تکراری بودن ایمیل: کد `400`
 - گذرواژه هرگز خام ذخیره نمی‌شود؛ همیشه با Bcrypt هش می‌شود (ستون `password_hash` در جدول `users`)
 
+### ورود کاربر
+```
+POST /api/v1/auth/login
+```
+عمومی. بدنه‌ی درخواست:
+```json
+{
+  "email": "user@example.com",
+  "password": "همان پسورد ثبت‌نام"
+}
+```
+
+- در صورت موفقیت: کد `200` و بدنه‌ی پاسخ شامل `access_token`, `refresh_token`, `token_type`, `expires_in`
+- در صورت ایمیل یا پسورد اشتباه: کد `401`
+- `access_token`: طول عمر کوتاه (پیش‌فرض ۱۵ دقیقه)، برای امضای درخواست‌های بعدی فرانت‌اند
+- `refresh_token`: طول عمر بلند (پیش‌فرض ۷ روز)، هم در بدنه‌ی پاسخ و هم در یک کوکی `HttpOnly` + `Secure` قرار می‌گیرد
+
+⚠️ نکته: چون کوکی با پرچم `Secure` تنظیم شده، مرورگر فقط آن را روی یک "Secure Context" ذخیره می‌کند. آدرس `http://localhost:8000/docs` این شرط را دارد، ولی `http://127.0.0.1:8000/docs` **ندارد** — برای دیدن کوکی در مرورگر حتماً از `localhost` استفاده کنید، نه `127.0.0.1`.
+
 ## ساختار کلی ریپو
 
 ```
@@ -77,7 +96,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   ├── routers/                # اندپوینت‌ها (health, auth, و در آینده jobs, ...)
 │   ├── core/
 │   │   ├── config.py             # تنظیمات و متغیرهای محیطی
-│   │   └── security.py            # هش کردن و بررسی گذرواژه (Bcrypt)
+│   │   └── security.py            # هش کردن گذرواژه (Bcrypt) و صدور توکن‌های JWT
 │   ├── db/
 │   │   └── session.py             # اتصال async به دیتابیس
 │   ├── models/                  # مدل‌های ORM (SQLAlchemy) — 14 جدول طراحی دیتابیس

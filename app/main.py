@@ -12,6 +12,9 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     description="سیستم هوشمند جذب و استخدام و تحلیل رزومه",
     version="0.1.0",
+    # بدون این تنظیم، Swagger UI کوکی‌های HttpOnly (مثل refresh_token) را
+    # هنگام تست از طریق دکمه‌ی Execute در مرورگر ذخیره نمی‌کند.
+    swagger_ui_parameters={"withCredentials": True},
 )
 
 app.include_router(health.router, prefix=settings.API_V1_PREFIX)

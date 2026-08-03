@@ -39,3 +39,23 @@ class RegisterResponse(BaseModel):
     status: str
     message: str
     data: RegisterResponseData
+
+
+class LoginRequest(BaseModel):
+    """بدنه‌ی درخواست ورود."""
+
+    email: EmailStr
+    password: str
+
+
+class LoginResponse(BaseModel):
+    """
+    ساختار پاسخ موفق ورود.
+    توجه: refresh_token علاوه بر این‌که در بدنه‌ی پاسخ برگردانده می‌شود
+    (طبق قرارداد مستندشده‌ی API)، در یک کوکی HttpOnly و Secure نیز ست می‌شود.
+    """
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int

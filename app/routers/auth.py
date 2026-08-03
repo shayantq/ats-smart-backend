@@ -1,15 +1,22 @@
 """
-مسیر ارتباطی ثبت‌نام کاربران جدید (Public).
+مسیرهای ارتباطی احراز هویت: ثبت‌نام (Public) و ورود (Public).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password
+from app.core.config import settings
+from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models import User
-from app.schemas.auth import RegisterRequest, RegisterResponse, RegisterResponseData
+from app.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    RegisterRequest,
+    RegisterResponse,
+    RegisterResponseData,
+)
 
 router = APIRouter()
 
@@ -59,4 +66,55 @@ async def register_user(
             role=new_user.role,
             created_at=new_user.created_at,
         ),
+    )
+
+
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Auth"],
+    summary="ورود کاربر و صدور توکن‌های دسترسی",
+)
+async def login_user(
+    payload: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    """
+    ورود کاربر با ایمیل و گذرواژه:
+    - اگر ایمیل وجود نداشت یا گذرواژه اشتباه بود، خطای 401 برمی‌گرداند
+      (پیام خطا عمداً یکسان است تا مهاجم نفهمد کدام‌یک اشتباه بوده).
+    - در صورت موفقیت، یک access_token کوتاه‌مدت و یک refresh_token بلندمدت صادر می‌شود.
+    - refresh_token علاوه بر بدنه‌ی پاسخ، در یک کوکی HttpOnly + Secure هم ست می‌شود
+      تا در برابر دسترسی جاوااسکریپت مخرب (XSS) محافظت شود.
+    """
+    result = await db.execute(select(User).where(User.email == payload.email))
+    user = result.scalar_one_or_none()
+
+    if user is None or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="ایمیل یا گذرواژه نادرست است.",
+        )
+
+    access_token, expires_in = create_access_token(subject=str(user.id))
+    refresh_token, refresh_max_age = create_refresh_token(subject=str(user.id))
+
+    # تنظیم Refresh Token در قالب کوکی امن (نه در دسترس جاوااسکریپت فرانت‌اند)
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=refresh_max_age,
+        path=f"{settings.API_V1_PREFIX}/auth",
+    )
+
+    return LoginResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=expires_in,
     )
