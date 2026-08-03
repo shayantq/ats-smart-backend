@@ -49,3 +49,12 @@ def create_refresh_token(subject: str) -> tuple[str, int]:
     """توکن نوسازی با طول عمر بلند (پیش‌فرض ۷ روز، طبق تنظیمات .env)."""
     expires_delta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     return _create_token(subject, expires_delta, token_type="refresh")
+
+
+def decode_token(token: str) -> dict:
+    """
+    رمزگشایی و اعتبارسنجی یک توکن JWT (امضا و تاریخ انقضا).
+    اگر توکن نامعتبر یا منقضی باشد، jose.JWTError پرتاب می‌شود؛
+    مسئولیت گرفتنِ این خطا و برگرداندن پاسخ مناسب (401) با لایه‌ی بالاتر است.
+    """
+    return jwt.decode(token, settings.SECRET_KEY, algorithms=[JWT_ALGORITHM])

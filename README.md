@@ -28,7 +28,7 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-- مستندات Swagger: http://127.0.0.1:8000/docs
+- Swagger: http://127.0.0.1:8000/docs
 - بررسی سلامت سرور: http://127.0.0.1:8000/api/v1/health
 
 ## اجرای تست‌ها
@@ -88,15 +88,28 @@ POST /api/v1/auth/login
 
 ⚠️ نکته: چون کوکی با پرچم `Secure` تنظیم شده، مرورگر فقط آن را روی یک "Secure Context" ذخیره می‌کند. آدرس `http://localhost:8000/docs` این شرط را دارد، ولی `http://127.0.0.1:8000/docs` **ندارد** — برای دیدن کوکی در مرورگر حتماً از `localhost` استفاده کنید، نه `127.0.0.1`.
 
+## کنترل دسترسی بر اساس نقش (RBAC)
+
+مسیرهای حساس با `Depends(require_roles("Admin"))` (یا هر نقش دیگری) محافظت می‌شوند:
+- بدون توکن یا با توکن نامعتبر/منقضی → کد `401`
+- با توکن معتبر ولی نقش غیرمجاز → کد `403`
+
+### نمونه‌ی محافظت‌شده برای تست
+```
+GET /api/v1/admin/stats
+```
+فقط برای نقش `Admin`. برای فراخوانی، در Swagger روی دکمه‌ی 🔒 **Authorize** بالای صفحه بزنید و `access_token` گرفته‌شده از مسیر `/login` را وارد کنید (بدون کلمه‌ی `Bearer`، خودِ Swagger اضافه‌اش می‌کند).
+
 ## ساختار کلی ریپو
 
 ```
 ats-smart-backend/            # ریشه‌ی ریپو
 ├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, auth, و در آینده jobs, ...)
+│   ├── routers/                # اندپوینت‌ها (health, auth, admin, و در آینده jobs, ...)
 │   ├── core/
 │   │   ├── config.py             # تنظیمات و متغیرهای محیطی
-│   │   └── security.py            # هش کردن گذرواژه (Bcrypt) و صدور توکن‌های JWT
+│   │   ├── security.py            # هش کردن گذرواژه (Bcrypt) و صدور/رمزگشایی توکن‌های JWT
+│   │   └── deps.py                # لایه‌ی RBAC: get_current_user و require_roles
 │   ├── db/
 │   │   └── session.py             # اتصال async به دیتابیس
 │   ├── models/                  # مدل‌های ORM (SQLAlchemy) — 14 جدول طراحی دیتابیس
