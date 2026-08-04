@@ -1,12 +1,15 @@
 """
 مسیرهای ارتباطی احراز هویت: ثبت‌نام (Public) و ورود (Public).
+هر دو مسیر تحت محدودیت نرخ درخواست (Rate Limit) هستند تا در برابر
+حملات حدس رمز عبور (Brute-Force) و DDOS محافظت شوند.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models import User
@@ -28,7 +31,9 @@ router = APIRouter()
     tags=["Auth"],
     summary="ثبت‌نام کاربر جدید در پلتفرم",
 )
+@limiter.limit("5/minute")
 async def register_user(
+    request: Request,
     payload: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> RegisterResponse:
@@ -76,7 +81,9 @@ async def register_user(
     tags=["Auth"],
     summary="ورود کاربر و صدور توکن‌های دسترسی",
 )
+@limiter.limit("5/minute")
 async def login_user(
+    request: Request,
     payload: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),

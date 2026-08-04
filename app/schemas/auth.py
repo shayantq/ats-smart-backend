@@ -6,7 +6,9 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.core.sanitize import strip_html_tags
 
 
 class UserRole(str, Enum):
@@ -24,6 +26,12 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128, description="حداقل ۸ کاراکتر")
     role: UserRole
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def sanitize_email(cls, value: str) -> str:
+        """پیش از اعتبارسنجی فرمت ایمیل، هر تگ HTML/جاوااسکریپت احتمالی را حذف می‌کند (دفاع XSS)."""
+        return strip_html_tags(value)
 
 
 class RegisterResponseData(BaseModel):
@@ -46,6 +54,11 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def sanitize_email(cls, value: str) -> str:
+        return strip_html_tags(value)
 
 
 class LoginResponse(BaseModel):
