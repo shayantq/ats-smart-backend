@@ -5,9 +5,10 @@ Users, Companies, Candidates, Jobs
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -25,7 +26,6 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    # روابط معکوس (Reverse Relations)
     owned_companies: Mapped[list["Company"]] = relationship(back_populates="owner")
     candidate_profile: Mapped["Candidate"] = relationship(back_populates="user", uselist=False)
 
@@ -62,14 +62,30 @@ class Candidate(Base):
 
 
 class Job(Base):
-    """جدول مشاغل: آگهی‌های شغلی ثبت‌شده توسط شرکت‌ها."""
+    """
+    جدول مشاغل: آگهی‌های شغلی.
+
+    نکته‌ی مهم: چون هنوز اندپوینتی برای «ساخت شرکت» در پروژه پیاده‌سازی نشده،
+    company_id فعلاً اختیاری (nullable) است. در عوض created_by اضافه شده که
+    شناسه‌ی کاربری (HR/ادمین) که آگهی را ساخته نگه می‌دارد و طبق معیار پذیرش
+    تسک Job Service، در پاسخ ساخت آگهی برگردانده می‌شود.
+    """
 
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="Draft", nullable=False)  # Draft, Active, Closed
+    company_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
-    company: Mapped["Company"] = relationship(back_populates="jobs")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    skills_required: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(100)), nullable=True)
+    salary_range: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="Active", nullable=False)  # Active, Closed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    company: Mapped[Optional["Company"]] = relationship(back_populates="jobs")
+    creator: Mapped["User"] = relationship()
