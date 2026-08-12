@@ -84,42 +84,65 @@ POST /api/v1/auth/login
 - در صورت موفقیت: کد `200` و بدنه‌ی پاسخ شامل `access_token`, `refresh_token`, `token_type`, `expires_in`
 - در صورت ایمیل یا پسورد اشتباه: کد `401`
 - `access_token`: طول عمر کوتاه (پیش‌فرض ۱۵ دقیقه)، برای امضای درخواست‌های بعدی فرانت‌اند
-- `refresh_token`: طول عمر بلند (پیش‌فرض ۷ روز)، هم در بدنه‌ی پاسخ و هم در یک کوکی `HttpOnly` + `Secure` قرار می‌گیرد
+- `refresh_token`: طول عمر بلند (پیش‌فرض ۷ روز)، هم در بدنه‌ی پاسخ و هم در یک کوکی `HttpOnly` + `Secure` + `SameSite=Strict` قرار می‌گیرد
 
-⚠️ نکته: چون کوکی با پرچم `Secure` تنظیم شده، مرورگر فقط آن را روی یک "Secure Context" ذخیره می‌کند. آدرس `http://localhost:8000/docs` این شرط را دارد، ولی `http://127.0.0.1:8000/docs` **ندارد** — برای دیدن کوکی در مرورگر حتماً از `localhost` استفاده کنید، نه `127.0.0.1`.
+⚠️ نکته: چون کوکی با پرچم `Secure` تنظیم شده، مرورگر فقط آن را روی یک "Secure Context" ذخیره می‌کند. آدرس `http://localhost:8000/docs` این شرط را دارد، ولی `http://127.0.0.1:8000/docs` **ندارد**.
 
 ## کنترل دسترسی بر اساس نقش (RBAC)
 
-مسیرهای حساس با `Depends(require_roles("Admin"))` (یا هر نقش دیگری) محافظت می‌شوند:
+مسیرهای حساس با `Depends(require_roles(...))` محافظت می‌شوند:
 - بدون توکن یا با توکن نامعتبر/منقضی → کد `401`
 - با توکن معتبر ولی نقش غیرمجاز → کد `403`
 
-### نمونه‌ی محافظت‌شده برای تست
-```
-GET /api/v1/admin/stats
-```
-فقط برای نقش `Admin`. برای فراخوانی، در Swagger روی دکمه‌ی 🔒 **Authorize** بالای صفحه بزنید و `access_token` گرفته‌شده از مسیر `/login` را وارد کنید (بدون کلمه‌ی `Bearer`، خودِ Swagger اضافه‌اش می‌کند).
+نمونه‌ی محافظت‌شده: `GET /api/v1/admin/stats` (فقط `Admin`). برای فراخوانی هر مسیر محافظت‌شده در Swagger، روی دکمه‌ی 🔒 **Authorize** بالای صفحه بزنید و `access_token` را وارد کنید (بدون کلمه‌ی `Bearer`).
 
 ## پروتکل‌های امنیتی شبکه
 
-### CORS
-فقط دامنه‌ای که در `FRONTEND_ORIGIN` (پیش‌فرض `http://localhost:5173`) تنظیم شده اجازه دارد از مرورگر با این API صحبت کند. درخواست از هر دامنه‌ی دیگر توسط مرورگر مسدود می‌شود.
+- **CORS**: فقط دامنه‌ی `FRONTEND_ORIGIN` (پیش‌فرض `http://localhost:5173`) اجازه‌ی دسترسی دارد.
+- **Rate Limiting**: مسیرهای `register` و `login` هرکدام حداکثر ۵ درخواست در دقیقه به ازای هر آی‌پی؛ بیشتر از آن → `429`.
+- **SameSite=Strict**: روی کوکی `refresh_token` تنظیم شده (دفاع CSRF).
+- **Sanitize (XSS)**: ورودی‌های متنی پیش از پردازش از تگ HTML پاک می‌شوند (`app/core/sanitize.py`).
 
-### محدودیت نرخ درخواست (Rate Limiting)
-مسیرهای `POST /api/v1/auth/register` و `POST /api/v1/auth/login` هرکدام حداکثر **۵ درخواست در دقیقه به ازای هر آی‌پی** را می‌پذیرند. درخواست ششم به بعد در همان دقیقه، کد `429 Too Many Requests` می‌گیرد.
+## مدیریت آگهی‌های شغلی (Job Service)
 
-### SameSite=Strict
-کوکی `refresh_token` (که در مسیر `/login` ست می‌شود) با `SameSite=Strict` تنظیم شده — یعنی مرورگر این کوکی را حتی برای درخواست‌هایی که از یک سایت دیگر به این سایت لینک می‌شوند هم ارسال نمی‌کند (دفاع در برابر CSRF).
+### ساخت آگهی جدید
+```
+POST /api/v1/jobs/
+```
+فقط نقش‌های `Admin` و `HR_Manager` (نیاز به `Authorize` با یک access_token معتبر). بدنه‌ی درخواست:
+```json
+{
+  "title": "Backend Python Developer",
+  "department": "Engineering",
+  "description": "توضیحات آگهی...",
+  "skills_required": ["Python", "FastAPI", "Docker"],
+  "salary_range": "40M-60M"
+}
+```
+- موفقیت: کد `201` و خروجی شامل `job_id`, `status: "Active"`, `created_by`
+- بدون توکن: کد `401`
+- با نقش غیرمجاز (مثلاً `Candidate`): کد `403`
 
-### پاکسازی ورودی‌ها (XSS)
-فیلدهای ورودی متنی (مثل `email`) پیش از اعتبارسنجی توسط Pydantic، از هر تگ HTML/جاوااسکریپت پاکسازی می‌شوند (`app/core/sanitize.py`). این الگو برای فیلدهای متنی آزادی که در آینده اضافه می‌شوند (عنوان شغل، نام شرکت و ...) هم قابل استفاده است.
+### دریافت لیست آگهی‌ها
+```
+GET /api/v1/jobs/
+```
+عمومی (بدون نیاز به توکن) — کد `200`. فیلترهای اختیاری: `?status=Active`، `?department=Engineering`
+
+### بستن یک آگهی (Soft Delete)
+```
+DELETE /api/v1/jobs/{job_id}
+```
+فقط `Admin` و `HR_Manager`. رکورد پاک نمی‌شود؛ فقط `status` به `Closed` تغییر می‌کند.
+
+⚠️ نکته‌ی فنی: چون هنوز مسیری برای «ساخت شرکت» در پروژه پیاده‌سازی نشده، آگهی‌ها فعلاً مستقیم به شرکت (`company_id`) وصل نیستند و به‌جایش به کاربر سازنده‌شان (`created_by`) وصل‌اند؛ این فیلد در پاسخ ساخت آگهی برگردانده می‌شود.
 
 ## ساختار کلی ریپو
 
 ```
 ats-smart-backend/            # ریشه‌ی ریپو
 ├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, auth, admin, و در آینده jobs, ...)
+│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs)
 │   ├── core/
 │   │   ├── config.py             # تنظیمات و متغیرهای محیطی
 │   │   ├── security.py            # هش کردن گذرواژه (Bcrypt) و صدور/رمزگشایی توکن‌های JWT
@@ -133,7 +156,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application, Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, health.py, ...)
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, health.py)
 │   └── main.py                    # نقطه ورود برنامه
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
 ├── tests/                       # تست‌های بک‌اند
