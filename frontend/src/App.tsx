@@ -1,7 +1,12 @@
-import TailwindTestCard from "./components/TailwindTestCard";
+import { ToastProvider } from "./context/ToastContext";
+import HRDashboard from "./pages/HRDashboard";
 
 function App() {
-  return <TailwindTestCard />;
+  return (
+    <ToastProvider>
+      <HRDashboard />
+    </ToastProvider>
+  );
 }
 
 export default App;

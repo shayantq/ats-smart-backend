@@ -1,10 +1,12 @@
 """
-اسکیمای ورودی و خروجی مسیر جابه‌جایی وضعیت درخواست روی بورد کانبان
-(PUT /api/v1/applications/{id}/status).
+اسکیمای ورودی و خروجی مسیرهای مربوط به بورد کانبان درخواست‌های استخدام:
+- GET /api/v1/applications/           لیست درخواست‌های یک آگهی خاص (برای رندر ستون‌ها/کارت‌ها)
+- PUT /api/v1/applications/{id}/status   جابه‌جایی وضعیت یک درخواست
 """
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -37,3 +39,22 @@ class ApplicationStatusUpdateResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ApplicationListItem(BaseModel):
+    """
+    ساختار هر آیتم در لیست درخواست‌ها — دقیقاً همان داده‌ای که کارت کانبان
+    در فرانت‌اند لازم دارد: نام کارجو و بالاترین امتیاز محاسبه‌شده‌ی هوش مصنوعی.
+    """
+
+    application_id: uuid.UUID
+    candidate_id: uuid.UUID
+    candidate_name: str
+    current_status: str
+    score_ai: Optional[int] = None
+    updated_at: datetime
+
+
+class ApplicationListResponse(BaseModel):
+    total: int
+    items: list[ApplicationListItem]

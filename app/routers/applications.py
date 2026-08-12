@@ -1,28 +1,84 @@
 """
 میکروسرویس بورد کانبان فرآیند استخدام (Application Status Service):
+- GET /api/v1/applications/               لیست درخواست‌های یک آگهی خاص (برای رندر کارت‌ها روی بورد)
 - PUT /api/v1/applications/{id}/status/   جابه‌جایی وضعیت یک درخواست، طبق
   ماشین وضعیت صلب (Strict State Machine) تعریف‌شده در app/core/state_machine.py.
 
-فقط نقش‌های Admin و HR_Manager اجازه‌ی جابه‌جایی وضعیت را دارند.
+فقط نقش‌های Admin و HR_Manager اجازه‌ی مشاهده و جابه‌جایی وضعیت را دارند.
 """
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
 from app.core.state_machine import is_transition_allowed
 from app.db.session import get_db
-from app.models import Application, StatusHistory, User
-from app.schemas.applications import ApplicationStatusUpdateRequest, ApplicationStatusUpdateResponse
+from app.models import Application, Candidate, StatusHistory, User
+from app.schemas.applications import (
+    ApplicationListItem,
+    ApplicationListResponse,
+    ApplicationStatusUpdateRequest,
+    ApplicationStatusUpdateResponse,
+)
 
 router = APIRouter()
 
 # طبق معیار پذیرش تسک، فقط مدیر سازمان (Admin) و کارشناس HR اجازه‌ی
 # جابه‌جایی وضعیت درخواست‌ها روی بورد کانبان را دارند.
 APPLICATION_MANAGER_ROLES = ("Admin", "HR_Manager")
+
+
+@router.get(
+    "/",
+    response_model=ApplicationListResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Applications"],
+    summary="دریافت لیست درخواست‌های یک آگهی شغلی خاص (برای بورد کانبان)",
+    dependencies=[Depends(require_roles(*APPLICATION_MANAGER_ROLES))],
+)
+async def list_applications(
+    job_id: uuid.UUID = Query(..., description="شناسه‌ی آگهی شغلی موردنظر"),
+    db: AsyncSession = Depends(get_db),
+) -> ApplicationListResponse:
+    """
+    لیست تمام درخواست‌های یک آگهی شغلی خاص را برمی‌گرداند — دقیقاً همان
+    داده‌ای که بورد کانبان فرانت‌اند (HR Dashboard) برای رندر کردن ستون‌ها
+    و کارت‌های کارجو مصرف می‌کند (نام کارجو + امتیاز هوش مصنوعی + وضعیت فعلی).
+    فقط Admin و HR_Manager دسترسی دارند.
+    """
+    query = (
+        select(
+            Application.id,
+            Application.candidate_id,
+            Application.current_status,
+            Application.score_ai,
+            Application.updated_at,
+            Candidate.first_name,
+            Candidate.last_name,
+        )
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .where(Application.job_id == job_id)
+        .order_by(Application.updated_at.desc())
+    )
+    result = await db.execute(query)
+    rows = result.all()
+
+    items = [
+        ApplicationListItem(
+            application_id=row.id,
+            candidate_id=row.candidate_id,
+            candidate_name=f"{row.first_name} {row.last_name}",
+            current_status=row.current_status,
+            score_ai=row.score_ai,
+            updated_at=row.updated_at,
+        )
+        for row in rows
+    ]
+
+    return ApplicationListResponse(total=len(items), items=items)
 
 
 @router.put(

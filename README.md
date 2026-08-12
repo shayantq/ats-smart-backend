@@ -152,6 +152,14 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 
 منطق کامل قوانین در `app/core/state_machine.py` تعریف شده است.
 
+### دریافت لیست درخواست‌های یک آگهی (برای بورد کانبان فرانت‌اند)
+```
+GET /api/v1/applications/?job_id={job_id}
+```
+فقط نقش‌های `Admin` و `HR_Manager`. هر آیتم شامل `application_id`, `candidate_id`,
+`candidate_name`, `current_status`, `score_ai`, `updated_at` است — دقیقاً همان اطلاعاتی
+که برای رندر یک «کارت» روی بورد کانبان لازم است.
+
 ### جابه‌جایی وضعیت
 ```
 PUT /api/v1/applications/{application_id}/status
@@ -176,26 +184,6 @@ PUT /api/v1/applications/{application_id}/status
 ⚠️ نکته‌ی فنی: چون هنوز اندپوینتی برای «ساخت درخواست» (`Application`) در پروژه
 پیاده‌سازی نشده، برای تست این قابلیت فعلاً باید یک ردیف در جدول `applications`
 به‌صورت دستی (مثلاً از طریق psql یا یک اسکریپت seed) ساخته شود.
-
-### چک‌لیست اسکرین‌شات برای مستندسازی اسپرینت
-برای مستند کردن این تسک، این موارد را از Swagger (`/docs`) و دیتابیس بگیر:
-
-1. **پرش مجاز موفق:** درخواست `PUT /applications/{id}/status` با یک انتقال معتبر
-   (مثلاً `Draft` → `Applied`) و اسکرین‌شات پاسخ `200` که `previous_status`, `new_status`
-   و `updated_at` را نشان می‌دهد.
-2. **پرش غیرمجاز (Anti-Skipping):** همان درخواست ولی این‌بار با یک پرش غیرقانونی
-   (مثلاً `Screening` → `Hired`) و اسکرین‌شات پاسخ `400` با پیام `"Business Logic Violation"`.
-3. **`current_status` ناهماهنگ:** یک درخواست با `current_status` اشتباه (که با وضعیت
-   واقعی رکورد در دیتابیس یکی نیست) و اسکرین‌شات همان خطای `400`.
-4. **دسترسی غیرمجاز (RBAC):** همان اندپوینت را با توکن یک کاربر `Candidate` صدا بزن و
-   اسکرین‌شات پاسخ `403` را بگیر.
-5. **بدون توکن:** همان اندپوینت را بدون هدر Authorization صدا بزن و اسکرین‌شات پاسخ `401`.
-6. **جدول `status_history`:** بعد از مرحله‌ی ۱ (پرش موفق)، از دیتابیس (مثلاً با
-   `SELECT * FROM status_history ORDER BY changed_at DESC LIMIT 5;`) اسکرین‌شات بگیر تا
-   ثبت خودکار لاگ تغییر وضعیت مشخص باشد.
-7. **رکورد نهایی `applications`:** اسکرین‌شات ردیف بعد از تغییر، تا `current_status` و
-   `updated_at` جدید هر دو دیده شوند (مثلاً با
-   `SELECT id, current_status, updated_at FROM applications WHERE id = '...';`).
 
 ## ساختار کلی ریپو
 
