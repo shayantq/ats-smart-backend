@@ -6,7 +6,7 @@ Applications, Interviews, Resumes, Skills
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,7 +14,13 @@ from app.models.base import Base
 
 
 class Application(Base):
-    """جدول درخواست‌ها: حلقه‌ی وصل کارجو به پوزیشن شغلی و بورد کانبان."""
+    """
+    جدول درخواست‌ها: حلقه‌ی وصل کارجو به پوزیشن شغلی و بورد کانبان.
+
+    current_status همیشه باید یکی از مقادیر ماشین وضعیت باشد (app/core/state_machine.py)
+    و تغییرش فقط باید از طریق اندپوینت PUT /api/v1/applications/{id}/status انجام شود
+    تا گاردریل‌های ضدپرش (Anti-Skipping) رعایت شوند.
+    """
 
     __tablename__ = "applications"
 
@@ -23,6 +29,10 @@ class Application(Base):
     candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False)
     current_status: Mapped[str] = mapped_column(String(50), default="Draft", nullable=False)
     score_ai: Mapped[int] = mapped_column(Integer, nullable=True)
+    # آخرین زمان تغییر وضعیت (سرور آن را در هر UPDATE موفق خودکار به‌روز می‌کند)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
     job: Mapped["Job"] = relationship()
     candidate: Mapped["Candidate"] = relationship()

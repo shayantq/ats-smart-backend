@@ -11,7 +11,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.routers import admin, auth, health, jobs
+from app.routers import admin, applications, auth, health, jobs
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -36,6 +36,7 @@ app.include_router(health.router, prefix=settings.API_V1_PREFIX)
 app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth")
 app.include_router(admin.router, prefix=f"{settings.API_V1_PREFIX}/admin")
 app.include_router(jobs.router, prefix=f"{settings.API_V1_PREFIX}/jobs")
+app.include_router(applications.router, prefix=f"{settings.API_V1_PREFIX}/applications")
 
 
 @app.get("/", tags=["Root"])

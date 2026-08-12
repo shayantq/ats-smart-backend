@@ -137,26 +137,87 @@ DELETE /api/v1/jobs/{job_id}
 
 ⚠️ نکته‌ی فنی: چون هنوز مسیری برای «ساخت شرکت» در پروژه پیاده‌سازی نشده، آگهی‌ها فعلاً مستقیم به شرکت (`company_id`) وصل نیستند و به‌جایش به کاربر سازنده‌شان (`created_by`) وصل‌اند؛ این فیلد در پاسخ ساخت آگهی برگردانده می‌شود.
 
+## ماشین وضعیت صلب فرآیند استخدام (Application Status Service)
+
+بورد کانبان کارجویان با یک ماشین وضعیت صلب (Strict State Machine) کنترل می‌شود
+تا هیچ درخواستی نتواند از روی مراحل استاندارد «پرش» کند.
+
+### مسیر خطی مجاز
+```
+Draft → Applied → Screening → Technical Interview → HR Interview → Offer → Accepted → Hired
+```
+از هر مرحله (به‌جز حالت‌های نهایی)، همیشه یک مسیر دوم هم مجاز است: انتقال به **Rejected**
+(رد شدن کارجو در هر نقطه از فرآیند). `Hired` و `Rejected` وضعیت‌های نهایی‌اند و از آن‌ها
+هیچ انتقال دیگری مجاز نیست.
+
+منطق کامل قوانین در `app/core/state_machine.py` تعریف شده است.
+
+### جابه‌جایی وضعیت
+```
+PUT /api/v1/applications/{application_id}/status
+```
+فقط نقش‌های `Admin` و `HR_Manager` (نیاز به `Authorize` با یک access_token معتبر). بدنه‌ی درخواست:
+```json
+{
+  "current_status": "Screening",
+  "new_status": "Technical Interview"
+}
+```
+
+- **موفقیت (پرش مجاز):** کد `200` و بدنه‌ی پاسخ شامل `application_id`, `previous_status`,
+  `new_status`, `updated_at`. یک ردیف جدید هم در جدول `status_history` ثبت می‌شود
+  (شامل `old_status`, `new_status`, `changed_by`, `changed_at`).
+- **پرش غیرمجاز** (مثلاً درخواست مستقیم از `Screening` به `Hired`، یا `current_status`
+  ارسالی با وضعیت واقعی رکورد در دیتابیس یکی نباشد): تراکنش کامل Rollback می‌شود و
+  کد `400` با پیام دقیق `"Business Logic Violation"` برگردانده می‌شود.
+- بدون توکن: کد `401`. با نقش غیرمجاز (مثلاً `Candidate` یا `Interviewer`): کد `403`.
+- درخواست با `application_id` ناموجود: کد `404`.
+
+⚠️ نکته‌ی فنی: چون هنوز اندپوینتی برای «ساخت درخواست» (`Application`) در پروژه
+پیاده‌سازی نشده، برای تست این قابلیت فعلاً باید یک ردیف در جدول `applications`
+به‌صورت دستی (مثلاً از طریق psql یا یک اسکریپت seed) ساخته شود.
+
+### چک‌لیست اسکرین‌شات برای مستندسازی اسپرینت
+برای مستند کردن این تسک، این موارد را از Swagger (`/docs`) و دیتابیس بگیر:
+
+1. **پرش مجاز موفق:** درخواست `PUT /applications/{id}/status` با یک انتقال معتبر
+   (مثلاً `Draft` → `Applied`) و اسکرین‌شات پاسخ `200` که `previous_status`, `new_status`
+   و `updated_at` را نشان می‌دهد.
+2. **پرش غیرمجاز (Anti-Skipping):** همان درخواست ولی این‌بار با یک پرش غیرقانونی
+   (مثلاً `Screening` → `Hired`) و اسکرین‌شات پاسخ `400` با پیام `"Business Logic Violation"`.
+3. **`current_status` ناهماهنگ:** یک درخواست با `current_status` اشتباه (که با وضعیت
+   واقعی رکورد در دیتابیس یکی نیست) و اسکرین‌شات همان خطای `400`.
+4. **دسترسی غیرمجاز (RBAC):** همان اندپوینت را با توکن یک کاربر `Candidate` صدا بزن و
+   اسکرین‌شات پاسخ `403` را بگیر.
+5. **بدون توکن:** همان اندپوینت را بدون هدر Authorization صدا بزن و اسکرین‌شات پاسخ `401`.
+6. **جدول `status_history`:** بعد از مرحله‌ی ۱ (پرش موفق)، از دیتابیس (مثلاً با
+   `SELECT * FROM status_history ORDER BY changed_at DESC LIMIT 5;`) اسکرین‌شات بگیر تا
+   ثبت خودکار لاگ تغییر وضعیت مشخص باشد.
+7. **رکورد نهایی `applications`:** اسکرین‌شات ردیف بعد از تغییر، تا `current_status` و
+   `updated_at` جدید هر دو دیده شوند (مثلاً با
+   `SELECT id, current_status, updated_at FROM applications WHERE id = '...';`).
+
 ## ساختار کلی ریپو
 
 ```
 ats-smart-backend/            # ریشه‌ی ریپو
 ├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs)
+│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications)
 │   ├── core/
 │   │   ├── config.py             # تنظیمات و متغیرهای محیطی
 │   │   ├── security.py            # هش کردن گذرواژه (Bcrypt) و صدور/رمزگشایی توکن‌های JWT
 │   │   ├── deps.py                # لایه‌ی RBAC: get_current_user و require_roles
 │   │   ├── limiter.py              # پیکربندی Rate Limiting
-│   │   └── sanitize.py             # پاکسازی ورودی متنی در برابر XSS
+│   │   ├── sanitize.py             # پاکسازی ورودی متنی در برابر XSS
+│   │   └── state_machine.py        # ماشین وضعیت صلب بورد کانبان + قانون ضدپرش
 │   ├── db/
 │   │   └── session.py             # اتصال async به دیتابیس
 │   ├── models/                  # مدل‌های ORM (SQLAlchemy) — 14 جدول طراحی دیتابیس
 │   │   ├── base.py
 │   │   ├── core.py               # User, Company, Candidate, Job
-│   │   ├── process.py            # Application, Interview, Resume, Skill
+│   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, health.py)
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, health.py)
 │   └── main.py                    # نقطه ورود برنامه
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
 ├── tests/                       # تست‌های بک‌اند
