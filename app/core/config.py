@@ -21,6 +21,20 @@ class Settings(BaseSettings):
     # دامنه‌ی رسمی فرانت‌اند که اجازه‌ی صحبت با این API را دارد (برای CORS)
     FRONTEND_ORIGIN: str = "http://localhost:5173"
 
+    # ---- ذخیره‌سازی فایل رزومه (Resume Storage) ----
+    # "local": ذخیره روی دیسک سرور (پیش‌فرض توسعه) — "s3": هر Object Storage سازگار با S3
+    # (AWS S3، Liara Object Storage، ArvanCloud Object Storage، MinIO و ...)
+    STORAGE_BACKEND: str = "local"
+    MEDIA_ROOT: str = "media"
+    MEDIA_BASE_URL: str = "http://localhost:8000/media"
+
+    S3_ENDPOINT_URL: str = ""  # برای AWS خالی بگذارید؛ برای S3-Compatible آدرس endpoint را وارد کنید
+    S3_BUCKET_NAME: str = ""
+    S3_ACCESS_KEY: str = ""
+    S3_SECRET_KEY: str = ""
+    S3_REGION: str = "us-east-1"
+    S3_PUBLIC_BASE_URL: str = ""  # اگر bucket دامنه‌ی عمومی یا CDN اختصاصی دارد
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
