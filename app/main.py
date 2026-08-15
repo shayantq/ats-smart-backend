@@ -3,6 +3,8 @@
 معماری: FastAPI (Async)
 """
 
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -14,13 +16,28 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.core.redis_client import check_redis_connection, close_redis_connection
 from app.routers import admin, applications, auth, health, jobs, resumes
+
+logging.basicConfig(level=logging.INFO)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # اتصال به Redis پیش از آماده شدن کامل سرور بررسی می‌شود تا وضعیتش در
+    # لاگ‌های سرور واضح باشد؛ در دسترس نبودن Redis باعث توقف بالا آمدن سرور
+    # نمی‌شود (فقط کش/صف موقتاً غیرفعال می‌مانند)، چون وابستگی حیاتی API نیست.
+    await check_redis_connection()
+    yield
+    await close_redis_connection()
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="سیستم هوشمند جذب و استخدام و تحلیل رزومه",
     version="0.1.0",
     swagger_ui_parameters={"withCredentials": True},
+    lifespan=lifespan,
 )
 
 app.add_middleware(

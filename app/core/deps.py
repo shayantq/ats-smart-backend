@@ -1,6 +1,8 @@
 """
 لایه‌ی کنترل دسترسی (RBAC):
 - get_current_user: توکن را از هدر Authorization می‌خواند، اعتبارسنجی می‌کند و کاربر را برمی‌گرداند.
+  برای کاهش بار دیتابیس، اطلاعات کاربر با استفاده از یک Cache روی Redis (که در هر
+  درخواست محافظت‌شده تکرار می‌شود) موقتاً نگه داشته می‌شود.
 - require_roles: یک Dependency Factory که مسیر را فقط به نقش‌های مشخص‌شده باز می‌گذارد.
 """
 
@@ -12,6 +14,7 @@ from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import get_cached_json, set_cached_json
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models import User
@@ -20,6 +23,15 @@ from app.models import User
 # (رفتار پیش‌فرض HTTPBearer برای عدم ارسال توکن، کد 403 است که با معیار پذیرش تسک همخوانی ندارد)
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# مدت اعتبار کش نشست کاربر: عمداً کوتاه‌تر از عمر access_token است تا اگر نقش یا
+# وضعیت فعال بودن یک کاربر تغییر کرد (مثلاً توسط ادمین)، این تغییر خیلی زود
+# (حداکثر بعد از این بازه) روی درخواست‌های بعدی همان کاربر اعمال شود.
+USER_SESSION_CACHE_TTL_SECONDS = 300
+
+
+def _session_cache_key(user_id: uuid.UUID) -> str:
+    return f"session:user:{user_id}"
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
@@ -27,8 +39,12 @@ async def get_current_user(
 ) -> User:
     """
     این Dependency روی هر مسیر محافظت‌شده قرار می‌گیرد و پیش از اجرای خودِ endpoint,
-    توکن کاربر را رمزگشایی کرده و کاربر متناظرش را از دیتابیس برمی‌گرداند.
+    توکن کاربر را رمزگشایی کرده و کاربر متناظرش را برمی‌گرداند.
     اگر توکن نبود، نامعتبر بود، یا کاربرش پیدا نشد -> خطای 401.
+
+    برای کاهش تعداد کوئری‌های تکراری به دیتابیس (چون این Dependency در تقریباً
+    هر درخواست محافظت‌شده اجرا می‌شود)، ابتدا کش Redis چک می‌شود؛ فقط در نبود
+    کش (یا در دسترس نبودن Redis) از دیتابیس خوانده و دوباره کش می‌شود.
     """
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -57,11 +73,32 @@ async def get_current_user(
     except ValueError:
         raise unauthorized
 
+    cache_key = _session_cache_key(user_uuid)
+    cached_user = await get_cached_json(cache_key)
+    if cached_user is not None:
+        return User(
+            id=uuid.UUID(cached_user["id"]),
+            email=cached_user["email"],
+            role=cached_user["role"],
+            is_active=cached_user["is_active"],
+        )
+
     result = await db.execute(select(User).where(User.id == user_uuid))
     user = result.scalar_one_or_none()
 
     if user is None:
         raise unauthorized
+
+    await set_cached_json(
+        cache_key,
+        {
+            "id": str(user.id),
+            "email": user.email,
+            "role": user.role,
+            "is_active": user.is_active,
+        },
+        ttl_seconds=USER_SESSION_CACHE_TTL_SECONDS,
+    )
 
     return user
 

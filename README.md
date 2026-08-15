@@ -181,23 +181,66 @@ PUT /api/v1/applications/{application_id}/status
 - بدون توکن: کد `401`. با نقش غیرمجاز (مثلاً `Candidate` یا `Interviewer`): کد `403`.
 - درخواست با `application_id` ناموجود: کد `404`.
 
-⚠️ نکته‌ی فنی: چون هنوز اندپوینتی برای «ساخت درخواست» (`Application`) در پروژه
-پیاده‌سازی نشده، برای تست این قابلیت فعلاً باید یک ردیف در جدول `applications`
-به‌صورت دستی (مثلاً از طریق psql یا یک اسکریپت seed) ساخته شود.
+## آپلود رزومه (Resume Upload Service)
+
+```
+POST /api/v1/resumes/upload
+```
+فقط نقش `Candidate`. بدنه به‌صورت `multipart/form-data`: `job_id` (شناسه‌ی آگهی) و
+`file` (فایل فیزیکی رزومه — فقط PDF یا DOCX، حداکثر ۱۰ مگابایت).
+
+فایل در فضای ذخیره‌سازی (`app/core/storage.py` — دیسک محلی برای توسعه یا هر
+Object Storage سازگار با S3 برای پروداکشن، بسته به `STORAGE_BACKEND` در `.env`)
+ذخیره می‌شود و آدرسش (`file_url`) در جدول `resumes` ثبت می‌گردد. هم‌زمان، در یک
+تراکنش واحد، یک ردیف جدید با وضعیت پیش‌فرض `Draft` در جدول `applications` ساخته
+می‌شود — این همان راهی است که یک درخواست واقعی (نه فقط دستی/seed) ساخته می‌شود.
+
+- موفقیت: کد `202 Accepted` با `application_id`, `status: "Draft"`, `message`.
+- فرمت غیرمجاز (نه PDF نه DOCX): کد `400`.
+- بدون توکن: `401` — نقش غیر از `Candidate`: `403` — `job_id` ناموجود: `404`.
+
+## کش و صف کارهای پس‌زمینه با Redis
+
+- **کش (Cache):** لایه‌ی سبک `app/core/cache.py` روی Redis، برای داده‌هایی که در
+  هر درخواست تکرار می‌شوند به کار رفته — مشخصاً نشست کاربر لاگین‌شده در
+  `get_current_user` (`app/core/deps.py`) با TTL پنج دقیقه‌ای کش می‌شود تا هر
+  درخواست محافظت‌شده، کاربر را دوباره از دیتابیس نخواند.
+- **صف کارها (Task Queue):** `app/core/queue.py` با کتابخانه‌ی RQ (Redis Queue).
+  کارهای پس‌زمینه (مثل `app/tasks/resume_processing.py`) به‌صورت ناهمگام
+  (`fire-and-forget`، بدون مسدود کردن پاسخ اصلی سرور) به صف اضافه می‌شوند.
+- در startup سرور یک PING به Redis زده می‌شود و نتیجه (موفق/ناموفق) در لاگ سرور
+  ثبت می‌گردد؛ در دسترس نبودن Redis باعث بالا نیامدن سرور نمی‌شود (فقط کش/صف
+  موقتاً غیرفعال می‌مانند).
+- برای اجرای Worker که کارهای صف را واقعاً پردازش می‌کند (باید هم‌زمان با سرور،
+  در یک ترمینال جدا، در حال اجرا باشد):
+  ```bash
+  # لینوکس / مک:
+  rq worker --url redis://localhost:6379/0 default
+
+  # ویندوز (RQ پیش‌فرض به SIGALRM نیاز دارد که در ویندوز وجود ندارد؛
+  # این اسکریپت جایگزین از Timer به‌جای سیگنال یونیکسی استفاده می‌کند):
+  python -m app.worker
+  ```
 
 ## ساختار کلی ریپو
 
 ```
 ats-smart-backend/            # ریشه‌ی ریپو
 ├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications)
+│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications, resumes)
 │   ├── core/
 │   │   ├── config.py             # تنظیمات و متغیرهای محیطی
 │   │   ├── security.py            # هش کردن گذرواژه (Bcrypt) و صدور/رمزگشایی توکن‌های JWT
-│   │   ├── deps.py                # لایه‌ی RBAC: get_current_user و require_roles
+│   │   ├── deps.py                # لایه‌ی RBAC: get_current_user (با کش Redis) و require_roles
 │   │   ├── limiter.py              # پیکربندی Rate Limiting
 │   │   ├── sanitize.py             # پاکسازی ورودی متنی در برابر XSS
-│   │   └── state_machine.py        # ماشین وضعیت صلب بورد کانبان + قانون ضدپرش
+│   │   ├── state_machine.py        # ماشین وضعیت صلب بورد کانبان + قانون ضدپرش
+│   │   ├── storage.py               # لایه‌ی انتزاعی ذخیره‌سازی فایل (دیسک محلی / S3)
+│   │   ├── redis_client.py          # اتصال Async به Redis (برای کش)
+│   │   ├── cache.py                  # لایه‌ی سبک Cache روی Redis
+│   │   └── queue.py                   # صف کارهای پس‌زمینه با RQ (Redis Queue)
+│   ├── tasks/
+│   │   └── resume_processing.py       # کارهای پس‌زمینه‌ای که Worker اجرا می‌کند
 │   ├── db/
 │   │   └── session.py             # اتصال async به دیتابیس
 │   ├── models/                  # مدل‌های ORM (SQLAlchemy) — 14 جدول طراحی دیتابیس
@@ -205,8 +248,9 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, health.py)
-│   └── main.py                    # نقطه ورود برنامه
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, health.py)
+│   ├── main.py                    # نقطه ورود برنامه (شامل lifespan: بررسی اتصال Redis در startup)
+│   └── worker.py                   # اجرای Worker صف کارها (سازگار با ویندوز)
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
 ├── tests/                       # تست‌های بک‌اند
 ├── frontend/                    # فرانت‌اند (React + TypeScript + Tailwind)

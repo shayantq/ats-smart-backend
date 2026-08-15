@@ -8,6 +8,7 @@
 فقط کاربرانی با نقش Candidate اجازه‌ی آپلود رزومه‌ی خودشان را دارند.
 """
 
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -15,10 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
+from app.core.queue import enqueue_task
 from app.core.storage import get_storage_backend
 from app.db.session import get_db
 from app.models import Application, Candidate, Job, Resume, User
 from app.schemas.resumes import ResumeUploadResponse
+from app.tasks.resume_processing import process_resume_task
 
 router = APIRouter()
 
@@ -73,6 +76,10 @@ async def upload_resume(
        یا (در صورت بروز خطا) هر دو با هم Rollback می‌شوند.
     ۶. پاسخ 202 Accepted، چون پردازش هوش مصنوعی رزومه در پس‌زمینه شروع می‌شود و
        این اندپوینت منتظر اتمامش نمی‌ماند.
+    ۷. بلافاصله پس از موفقیت، یک کار (Task) پردازش رزومه به صف Redis اضافه
+       می‌شود (بنگرید app/core/queue.py و app/tasks/resume_processing.py) —
+       این کار به‌صورت fire-and-forget انجام می‌شود تا کارکرد اصلی سرور
+       معطل ارتباط با Redis نماند.
     """
     original_filename = file.filename or ""
     file_extension = f".{original_filename.rsplit('.', 1)[-1].lower()}" if "." in original_filename else ""
@@ -129,6 +136,10 @@ async def upload_resume(
         )
 
     await db.refresh(application)
+
+    # ارسال کار پردازش رزومه به صف Redis — عمداً با create_task (نه await مستقیم)
+    # تا خودِ درخواست HTTP اصلی معطل ارتباط با Redis نماند و پاسخ 202 فوری برگردد.
+    asyncio.create_task(enqueue_task(process_resume_task, str(application.id), file_url))
 
     return ResumeUploadResponse(
         application_id=application.id,
