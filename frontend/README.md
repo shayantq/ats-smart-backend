@@ -25,13 +25,31 @@ http://localhost:5173
 ⚠️ برای اینکه بورد کانبان بتواند با بک‌اند صحبت کند، بک‌اند هم باید هم‌زمان روی
 `http://localhost:8000` در حال اجرا باشد (`uvicorn app.main:app --reload`).
 
-## بورد کانبان داشبورد HR
+## سوییچر موقت بین دو پورتال
 
-صفحه‌ی اصلی اپلیکیشن (`src/pages/HRDashboard.tsx`) بورد کانبان مدیریت متقاضیان یک آگهی
-شغلی خاص را نشان می‌دهد — کارت هر کارجو با کشیدن (Drag & Drop) بین ستون‌ها جابه‌جا می‌شود.
+چون هنوز صفحه‌ی لاگین و مسیریابی بر اساس نقش کاربر ساخته نشده، `App.tsx` یک
+سوییچر ساده (بدون URL Routing) بین «پورتال کارجو» و «داشبورد HR» نمایش می‌دهد؛
+هر دو پورتال هم‌زمان در کد وجود دارند و فقط با کلیک روی تب بالای صفحه عوض می‌شوند.
 
-چون هنوز صفحه‌ی لاگین و صفحه‌ی انتخاب آگهی در فرانت‌اند ساخته نشده، فعلاً دو فیلد بالای
-صفحه («شناسه‌ی آگهی» و «توکن دسترسی») باید دستی پر شوند تا بورد بتواند با بک‌اند صحبت کند.
+## پورتال کارجو (Candidate Portal)
+
+صفحه‌ی `src/pages/CandidatePortal.tsx` سه تب دارد:
+
+- **پروفایل** (`ProfileTab.tsx`): ویرایش نام، نام‌خانوادگی، شماره تماس و
+  تگ‌های مهارتی (`SkillTagInput.tsx`)، به‌همراه آپلود رزومه
+  (`ResumeUploadWidget.tsx` — انتخاب آگهی مقصد + Drag & Drop فایل PDF/DOCX،
+  ارسال ناهمگام به `POST /api/v1/resumes/upload` و نمایش فوری Toast موفقیت
+  بدون قفل شدن صفحه).
+- **پیگیری وضعیت** (`TrackerTab.tsx` + `ApplicationTrackerCard.tsx`): برای هر
+  درخواست، یک نوار مرحله‌ای (Stepper) بصری نشان می‌دهد کارجو در کدام مرحله از
+  ماشین وضعیت (`Draft` تا `Hired`) قرار دارد؛ حالت `Rejected` جدا و به‌صورت یک
+  نشان قرمز نمایش داده می‌شود.
+- **صندوق پیشنهادها** (`OffersTab.tsx` + `OfferCard.tsx`): فقط درخواست‌هایی با
+  وضعیت `Offer` را نشان می‌دهد؛ دکمه‌های «قبول پیشنهاد» و «رد پیشنهاد» به
+  `PUT /api/v1/candidates/me/applications/{id}/respond` وصل‌اند.
+
+مثل داشبورد HR، چون صفحه‌ی لاگین واقعی هنوز نیست، یک فیلد موقت «توکن دسترسی»
+بالای پورتال کارجو قرار دارد.
 
 ## مدیریت وضعیت (State Management)
 
@@ -50,21 +68,34 @@ frontend/
 │   ├── components/
 │   │   ├── ApplicationCard.tsx     # کارت کارجو (Draggable) + نشان امتیاز هوش مصنوعی
 │   │   ├── KanbanColumn.tsx         # یک ستون بورد (Droppable)
-│   │   └── KanbanBoard.tsx           # هماهنگ‌کننده‌ی بورد: fetch, drag&drop, snap-back, toast
+│   │   ├── KanbanBoard.tsx           # هماهنگ‌کننده‌ی بورد: fetch, drag&drop, snap-back, toast
+│   │   └── candidate/                 # کامپوننت‌های پورتال کارجو
+│   │       ├── SkillTagInput.tsx         # ورودی تگ‌های مهارتی
+│   │       ├── ResumeUploadWidget.tsx     # انتخاب آگهی + Drag&Drop رزومه + آپلود ناهمگام
+│   │       ├── ProfileTab.tsx              # ویرایش مشخصات فردی و مهارت‌ها
+│   │       ├── ApplicationTrackerCard.tsx   # نوار مرحله‌ای بصری وضعیت یک درخواست
+│   │       ├── TrackerTab.tsx                # لیست همه‌ی درخواست‌های کارجو
+│   │       ├── OfferCard.tsx                  # کارت پیشنهاد + دکمه‌های قبول/رد
+│   │       └── OffersTab.tsx                   # صندوق ورودی پیشنهادها
 │   ├── context/
 │   │   └── ToastContext.tsx           # سیستم Toast Notification (موفقیت/خطا)
 │   ├── pages/
-│   │   └── HRDashboard.tsx             # صفحه‌ی داشبورد HR (فرم Job ID/Token موقت + بورد)
+│   │   ├── HRDashboard.tsx             # صفحه‌ی داشبورد HR (فرم Job ID/Token موقت + بورد)
+│   │   └── CandidatePortal.tsx          # صفحه‌ی پورتال کارجو (پروفایل/رهگیر/پیشنهادها)
 │   ├── services/
-│   │   ├── apiClient.ts                # fetch wrapper با هدر Authorization و خطای تایپ‌شده
-│   │   ├── applicationsApi.ts           # GET لیست و PUT تغییر وضعیت
-│   │   ├── tokenStorage.ts               # ذخیره‌ی موقت توکن در localStorage
+│   │   ├── apiClient.ts                # fetch wrapper + apiUploadFile (multipart) + خطای تایپ‌شده
+│   │   ├── applicationsApi.ts           # GET لیست و PUT تغییر وضعیت (سمت HR)
+│   │   ├── candidatesApi.ts              # پروفایل، رهگیر، پیشنهادها، آپلود رزومه (سمت کارجو)
+│   │   ├── jobsApi.ts                     # لیست آگهی‌های فعال (مسیر عمومی)
+│   │   ├── tokenStorage.ts                 # ذخیره‌ی موقت توکن در localStorage
 │   │   └── queryClient.ts
 │   ├── types/
-│   │   └── application.ts                # ستون‌های وضعیت + تایپ‌های کارت (منطبق بر بک‌اند)
+│   │   ├── application.ts                # ستون‌های وضعیت + تایپ‌های کارت (منطبق بر بک‌اند)
+│   │   ├── candidate.ts                   # تایپ‌های پروفایل/رهگیر/پیشنهاد کارجو
+│   │   └── job.ts                          # تایپ آگهی شغلی
 │   ├── hooks/
 │   ├── store/                             # Redux Toolkit (auth)
-│   ├── App.tsx
+│   ├── App.tsx                             # سوییچر موقت بین دو پورتال
 │   ├── main.tsx
 │   └── index.css
 ├── package.json
