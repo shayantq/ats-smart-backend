@@ -18,6 +18,27 @@ export class ApiError extends Error {
   }
 }
 
+async function parseResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let detail = `خطای سرور (کد ${response.status})`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) {
+        detail = body.detail;
+      }
+    } catch {
+      // بدنه‌ی پاسخ JSON نبود؛ از پیام پیش‌فرض بالا استفاده می‌شود
+    }
+    throw new ApiError(detail, response.status);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return (await response.json()) as T;
+}
+
 interface ApiRequestOptions extends RequestInit {
   /** آیا هدر Authorization اضافه شود؟ پیش‌فرض: بله */
   auth?: boolean;
@@ -43,22 +64,25 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     headers: finalHeaders,
   });
 
-  if (!response.ok) {
-    let detail = `خطای سرور (کد ${response.status})`;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) {
-        detail = body.detail;
-      }
-    } catch {
-      // بدنه‌ی پاسخ JSON نبود؛ از پیام پیش‌فرض بالا استفاده می‌شود
-    }
-    throw new ApiError(detail, response.status);
+  return parseResponse<T>(response);
+}
+
+/**
+ * برای آپلود فایل (multipart/form-data) — عمداً هدر Content-Type دستی ست
+ * نمی‌شود، چون مرورگر خودش باید boundary درست را برای FormData بسازد.
+ */
+export async function apiUploadFile<T>(path: string, formData: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
 
-  return (await response.json()) as T;
+  return parseResponse<T>(response);
 }
