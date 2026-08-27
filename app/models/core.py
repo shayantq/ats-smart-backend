@@ -57,6 +57,8 @@ class Candidate(Base):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=True)
+    # تگ‌های مهارتی که خود کارجو از پروفایلش ثبت می‌کند (بخش پورتال کارجو)
+    skills: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(100)), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="candidate_profile")
 

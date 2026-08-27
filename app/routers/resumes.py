@@ -15,11 +15,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.candidate_utils import get_or_create_candidate_profile
 from app.core.deps import get_current_user, require_roles
 from app.core.queue import enqueue_task
 from app.core.storage import get_storage_backend
 from app.db.session import get_db
-from app.models import Application, Candidate, Job, Resume, User
+from app.models import Application, Job, Resume, User
 from app.schemas.resumes import ResumeUploadResponse
 from app.tasks.resume_processing import process_resume_task
 
@@ -31,24 +32,6 @@ _ALLOWED_CONTENT_TYPES = {
 }
 _ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 _MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # ۱۰ مگابایت
-
-
-async def _get_or_create_candidate_profile(db: AsyncSession, user: User) -> Candidate:
-    """
-    چون هنوز اندپوینت اختصاصی «تکمیل پروفایل کارجو» در پروژه ساخته نشده، اولین باری
-    که یک کاربر با نقش Candidate رزومه آپلود می‌کند، یک پروفایل حداقلی برایش ساخته
-    می‌شود تا این تسک به آن اندپوینت (که هنوز وجود ندارد) وابسته نباشد.
-    """
-    result = await db.execute(select(Candidate).where(Candidate.user_id == user.id))
-    candidate = result.scalar_one_or_none()
-    if candidate is not None:
-        return candidate
-
-    placeholder_name = user.email.split("@")[0]
-    candidate = Candidate(user_id=user.id, first_name=placeholder_name, last_name="")
-    db.add(candidate)
-    await db.flush()
-    return candidate
 
 
 @router.post(
@@ -106,7 +89,7 @@ async def upload_resume(
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="آگهی شغلی موردنظر یافت نشد.")
 
-    candidate = await _get_or_create_candidate_profile(db, current_user)
+    candidate = await get_or_create_candidate_profile(db, current_user)
 
     storage_backend = get_storage_backend()
     file_url = await storage_backend.save_file(
