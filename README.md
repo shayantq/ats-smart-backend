@@ -222,12 +222,60 @@ Object Storage سازگار با S3 برای پروداکشن، بسته به `S
   python -m app.worker
   ```
 
+## پورتال اختصاصی کارجو (Candidate Portal)
+
+مسیرهای زیر همه فقط برای نقش `Candidate` و همیشه روی «پروفایل/درخواست‌های خودِ
+کاربر لاگین‌شده» عمل می‌کنند (هیچ‌جا candidate_id از ورودی کاربر گرفته نمی‌شود).
+
+```
+GET  /api/v1/candidates/me                          مشاهده‌ی پروفایل (نام، تلفن، مهارت‌ها، ایمیل)
+PUT  /api/v1/candidates/me                            ویرایش پروفایل (Partial Update)
+GET  /api/v1/candidates/me/applications                 رهگیر وضعیت: لیست درخواست‌ها + عنوان آگهی + وضعیت فعلی
+GET  /api/v1/candidates/me/offers                        صندوق ورودی: فقط درخواست‌هایی با وضعیت Offer
+PUT  /api/v1/candidates/me/applications/{id}/respond       پاسخ به یک پیشنهاد: {"decision": "accept" | "reject"}
+```
+
+- اولین باری که یک کاربر Candidate به هر کدام از این مسیرها دسترسی پیدا کند، اگر
+  هنوز پروفایل نداشته باشد، یک پروفایل حداقلی برایش ساخته می‌شود (بنگرید
+  `app/core/candidate_utils.py` — همین تابع در روتر آپلود رزومه هم استفاده می‌شود).
+- `respond` فقط وقتی `current_status` درخواست دقیقاً `Offer` باشد کار می‌کند و
+  از همان ماشین وضعیت مرکزی (`app/core/state_machine.py`) عبور می‌کند —
+  `accept` به `Accepted` و `reject` به `Rejected` تبدیل می‌شود؛ هر دو مسیر مجاز
+  از `Offer` طبق ماشین وضعیت هستند، پس امکان پرش غیرمجاز از این طریق وجود ندارد.
+- تگ‌های مهارتی (`skills`) به‌صورت یک آرایه‌ی متنی ساده روی خودِ جدول `candidates`
+  ذخیره می‌شوند (نه از طریق جدول `skills` مرکزی که فعلاً فقط یک بانک استاندارد
+  خام است، بدون رابطه‌ی چندبه‌چند با کارجوها).
+
+## موتور استخراج متن رزومه (OCR Engine)
+
+مرحله‌ی اول خط لوله‌ی هوش مصنوعی: بلافاصله بعد از آپلود موفق رزومه، Worker
+(همان صفی که بخش «کش و صف کارها» بالا توضیح داده) فایل را دانلود، متن خامش را
+استخراج، و در ستون `raw_text` جدول `resumes` ذخیره می‌کند (`app/core/text_extraction.py`
++ `app/tasks/resume_processing.py`).
+
+- **PDF:** ابتدا لایه‌ی متنی جاسازی‌شده با PyMuPDF (`fitz`) خوانده می‌شود. اگر این
+  متن به‌طرز مشکوکی کوتاه بود (نشانه‌ی رزومه‌ی اسکن‌شده/تصویری)، هر صفحه به
+  تصویر رندر شده و با موتور OCR واقعی **Tesseract** (از طریق `pytesseract`)
+  کاراکترهای متنی استخراج می‌شوند.
+- **DOCX:** مستقیم با `python-docx` خوانده می‌شود (پاراگراف‌ها + سلول‌های جدول).
+- فایل خراب، ناخوانا، یا رمزگذاری‌شده با گذرواژه → `UnreadableResumeFileError`
+  پرتاب می‌شود؛ Worker این خطا را با جزئیات لاگ می‌کند و بدون کرش کردن، فقط
+  پردازش همان رزومه را متوقف می‌کند (بقیه‌ی کارهای صف دست‌نخورده ادامه می‌یابند).
+- متن نهایی پیش از ذخیره یکپارچه‌سازی می‌شود (فاصله‌های نامتعارف/خط خالی اضافه
+  حذف می‌شوند) تا در دیتابیس بدون به‌هم‌ریختگی کاراکتری ثبت شود.
+
+⚠️ **پیش‌نیاز سیستمی (نه پکیج پایتون):** خودِ موتور Tesseract OCR باید جداگانه
+روی سیستم نصب شود (`pytesseract` فقط یک wrapper است که این باینری را صدا می‌زند).
+برای پشتیبانی از رزومه‌های فارسی، پکیج زبان فارسی Tesseract هم لازم است. اگر
+باینری در PATH سیستم نیست (مخصوصاً ویندوز)، مسیر کامل آن را در `TESSERACT_CMD_PATH`
+(در `.env`) بده.
+
 ## ساختار کلی ریپو
 
 ```
 ats-smart-backend/            # ریشه‌ی ریپو
 ├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications, resumes)
+│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications, resumes, candidates)
 │   ├── core/
 │   │   ├── config.py             # تنظیمات و متغیرهای محیطی
 │   │   ├── security.py            # هش کردن گذرواژه (Bcrypt) و صدور/رمزگشایی توکن‌های JWT
@@ -238,7 +286,9 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── storage.py               # لایه‌ی انتزاعی ذخیره‌سازی فایل (دیسک محلی / S3)
 │   │   ├── redis_client.py          # اتصال Async به Redis (برای کش)
 │   │   ├── cache.py                  # لایه‌ی سبک Cache روی Redis
-│   │   └── queue.py                   # صف کارهای پس‌زمینه با RQ (Redis Queue)
+│   │   ├── queue.py                   # صف کارهای پس‌زمینه با RQ (Redis Queue)
+│   │   ├── candidate_utils.py          # یافتن/ساخت پروفایل کارجو (مشترک بین resumes و candidates)
+│   │   └── text_extraction.py           # موتور استخراج متن رزومه + OCR (Tesseract/PyMuPDF)
 │   ├── tasks/
 │   │   └── resume_processing.py       # کارهای پس‌زمینه‌ای که Worker اجرا می‌کند
 │   ├── db/
@@ -248,7 +298,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, health.py)
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, candidates.py, health.py)
 │   ├── main.py                    # نقطه ورود برنامه (شامل lifespan: بررسی اتصال Redis در startup)
 │   └── worker.py                   # اجرای Worker صف کارها (سازگار با ویندوز)
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس

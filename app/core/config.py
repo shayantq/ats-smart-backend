@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     S3_REGION: str = "us-east-1"
     S3_PUBLIC_BASE_URL: str = ""  # اگر bucket دامنه‌ی عمومی یا CDN اختصاصی دارد
 
+    # ---- موتور استخراج متن رزومه (OCR Engine) ----
+    # زبان‌های Tesseract برای OCR رزومه‌های اسکن‌شده/تصویری (فارسی+انگلیسی به‌صورت پیش‌فرض)
+    OCR_LANGUAGES: str = "fas+eng"
+    # اگر باینری tesseract در PATH سیستم نبود، مسیر کامل exe را اینجا بده (مخصوصاً روی ویندوز)
+    TESSERACT_CMD_PATH: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
