@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -67,6 +67,9 @@ class Resume(Base):
     file_url: Mapped[str] = mapped_column(String(500), nullable=False)
     # فیلد متنی خام رزومه جهت فعال‌سازی موتور جستجوی متنی (Full-Text Search / GIN Index) در آینده
     raw_text: Mapped[str] = mapped_column(Text, nullable=True)
+    # خروجی ساختاریافته‌ی ماژول NER (اطلاعات فردی + سوابق تحصیلی + تجربیات شغلی)
+    # که به مرحله‌ی بعدی خط لوله‌ی هوش مصنوعی (امتیازدهی) منتقل می‌شود
+    parsed_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     candidate: Mapped["Candidate"] = relationship()
 
