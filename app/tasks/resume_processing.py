@@ -11,6 +11,7 @@ import urllib.request
 
 from sqlalchemy import select
 
+from app.core.resume_parser import parse_resume_text
 from app.core.text_extraction import UnreadableResumeFileError, extract_raw_text
 from app.db.session import AsyncSessionLocal
 from app.models import Resume
@@ -36,9 +37,15 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
     استخراج متن خام آن (مستقیم یا از طریق OCR — بنگرید app/core/text_extraction.py)،
     و ذخیره‌ی یکپارچه‌ی آن در ستون raw_text از جدول resumes.
 
+    مرحله ۲: اجرای ماژول پارسینگ متنی و NER (app/core/resume_parser.py) روی
+    همان متن خام، برای استخراج اطلاعات فردی، سوابق تحصیلی و تجربیات شغلی به
+    شکل یک شیء JSON ساختاریافته که در ستون parsed_data همان ردیف ذخیره می‌شود.
+
     در هر مرحله، اگر خطایی رخ دهد (دانلود ناموفق، فایل خراب/ناخوانا، یا هر
     خطای غیرمنتظره‌ی دیگر)، فرآیند برای همین رزومه متوقف می‌شود و خطا با
     جزئیات کافی لاگ می‌شود — بدون این‌که کل Worker (و پردازش سایر کارها) کرش کند.
+    شکست مرحله‌ی پارسینگ (مرحله ۲) باعث از دست رفتن raw_text ثبت‌شده در مرحله ۱
+    نمی‌شود؛ فقط parsed_data خالی می‌ماند.
     """
     logger.info(
         "شروع پردازش پس‌زمینه‌ی رزومه | application_id=%s | file_url=%s",
@@ -74,6 +81,17 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
         )
         return
 
+    parsed_data_dict: dict | None = None
+    try:
+        parsed_data = parse_resume_text(raw_text)
+        parsed_data_dict = parsed_data.model_dump()
+    except Exception as error:  # noqa: BLE001 - شکست پارسینگ نباید کل Task را متوقف کند؛ raw_text باز هم ارزشمند است
+        logger.error(
+            "خطای غیرمنتظره هنگام پارس‌کردن ساختاریافته‌ی رزومه (NER) | application_id=%s | error=%s",
+            application_id,
+            error,
+        )
+
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Resume).where(Resume.file_url == file_url))
         resume = result.scalar_one_or_none()
@@ -87,15 +105,27 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
             return
 
         resume.raw_text = raw_text
+        if parsed_data_dict is not None:
+            resume.parsed_data = parsed_data_dict
         db.add(resume)
         await db.commit()
 
-    logger.info(
-        "متن خام رزومه با موفقیت استخراج و ذخیره شد | application_id=%s | resume_id=%s | تعداد_کاراکتر=%d",
-        application_id,
-        resume.id,
-        len(raw_text),
-    )
+    if parsed_data_dict is not None:
+        logger.info(
+            "متن خام و داده‌ی ساختاریافته‌ی رزومه با موفقیت ذخیره شدند | application_id=%s | resume_id=%s | "
+            "تعداد_کاراکتر=%d | تعداد_تجربه=%d | تعداد_تحصیلات=%d",
+            application_id,
+            resume.id,
+            len(raw_text),
+            len(parsed_data_dict.get("work_experience", [])),
+            len(parsed_data_dict.get("education", [])),
+        )
+    else:
+        logger.info(
+            "متن خام رزومه ذخیره شد، ولی پارسینگ ساختاریافته (NER) ناموفق بود | application_id=%s | resume_id=%s",
+            application_id,
+            resume.id,
+        )
 
 
 def _download_file(file_url: str) -> bytes:

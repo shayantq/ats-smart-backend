@@ -270,6 +270,46 @@ PUT  /api/v1/candidates/me/applications/{id}/respond       پاسخ به یک پ
 باینری در PATH سیستم نیست (مخصوصاً ویندوز)، مسیر کامل آن را در `TESSERACT_CMD_PATH`
 (در `.env`) بده.
 
+## پارسینگ متنی و بازشناسی موجودیت‌های نامدار (NER)
+
+مرحله‌ی دوم خط لوله: بلافاصله بعد از استخراج `raw_text` (مرحله‌ی OCR بالا)، همان
+Worker متن خام را به `app/core/resume_parser.py` می‌دهد و خروجی ساختاریافته را
+در ستون JSONB جدید `parsed_data` از جدول `resumes` ذخیره می‌کند. ساختار خروجی:
+
+```json
+{
+  "personal_info": { "name": "...", "email": "...", "phone": "..." },
+  "education": [ { "degree": "...", "university": "...", "gpa": 17.5 } ],
+  "work_experience": [ { "company": "...", "job_title": "...", "duration": "1398 - 1401" } ]
+}
+```
+
+**رویکرد ترکیبی (Hybrid):**
+- موجودیت‌های با الگوی ثابت (ایمیل، تلفن، معدل، بازه‌ی تاریخ) با Regex استخراج
+  می‌شوند — دقت این روش برای این نوع داده‌ها بالاتر از یک مدل NER عمومی است.
+- بخش‌های رزومه (تجربه/تحصیلات) با هدینگ‌های متداول فارسی/انگلیسی مرزبندی
+  می‌شوند، سپس هر بخش به بلوک‌های مجزا (هر بلوک = یک ردیف تجربه/تحصیل) شکسته
+  می‌شود.
+- نام شرکت/دانشگاه ابتدا با قاعده‌ی متنی فارسی («شرکت X» / «دانشگاه X») و در
+  نبود نتیجه، با موجودیت‌های ORG مدل NER کتابخانه‌ی **spaCy** استخراج می‌شود.
+- نام شخص هم به همین ترتیب: ابتدا موجودیت PERSON مدل spaCy روی چند خط ابتدایی
+  سند، و در نبودش، اولین خط غیرخالی متن (قرارداد رایج رزومه‌ها).
+
+⚠️ **محدودیت شناخته‌شده و صادقانه:** مدل NER پیش‌فرض (`en_core_web_sm`) برای
+زبان **انگلیسی** آموزش دیده؛ برای بخش‌های فارسی متن صرفاً یک لایه‌ی کمکی/جانبی
+است و استخراج فارسی عمدتاً به قواعد متنی (Regex + کلیدواژه) تکیه دارد. برای
+دقت بالاتر روی رزومه‌های کاملاً فارسی، جایگزینی با یک مدل NER فارسی
+تخصصی‌شده در آینده پیشنهاد می‌شود.
+
+⚠️ **پیش‌نیاز نصب (نه فقط pip):** بعد از `pip install -r requirements.txt`، مدل
+زبانی spaCy با این دستور جداگانه دانلود می‌شود:
+```bash
+python -m spacy download en_core_web_sm
+```
+بدون این مدل، ماژول کرش نمی‌کند — فقط بدون کمک NER (فقط با قواعد متنی) با دقت
+کمتر برای نام‌های آزاد ادامه می‌دهد؛ این وضعیت در لاگ Worker با یک `warning`
+مشخص می‌شود.
+
 ## ساختار کلی ریپو
 
 ```
@@ -288,7 +328,8 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── cache.py                  # لایه‌ی سبک Cache روی Redis
 │   │   ├── queue.py                   # صف کارهای پس‌زمینه با RQ (Redis Queue)
 │   │   ├── candidate_utils.py          # یافتن/ساخت پروفایل کارجو (مشترک بین resumes و candidates)
-│   │   └── text_extraction.py           # موتور استخراج متن رزومه + OCR (Tesseract/PyMuPDF)
+│   │   ├── text_extraction.py           # موتور استخراج متن رزومه + OCR (Tesseract/PyMuPDF)
+│   │   └── resume_parser.py              # پارسینگ متنی و NER (spaCy + Regex)
 │   ├── tasks/
 │   │   └── resume_processing.py       # کارهای پس‌زمینه‌ای که Worker اجرا می‌کند
 │   ├── db/
@@ -298,7 +339,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, candidates.py, health.py)
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, candidates.py, health.py)
 │   ├── main.py                    # نقطه ورود برنامه (شامل lifespan: بررسی اتصال Redis در startup)
 │   └── worker.py                   # اجرای Worker صف کارها (سازگار با ویندوز)
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
