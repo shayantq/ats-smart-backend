@@ -12,6 +12,7 @@ import urllib.request
 from sqlalchemy import select
 
 from app.core.resume_parser import parse_resume_text
+from app.core.skill_engine import run_skill_engine
 from app.core.text_extraction import UnreadableResumeFileError, extract_raw_text
 from app.db.session import AsyncSessionLocal
 from app.models import Resume
@@ -41,11 +42,16 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
     همان متن خام، برای استخراج اطلاعات فردی، سوابق تحصیلی و تجربیات شغلی به
     شکل یک شیء JSON ساختاریافته که در ستون parsed_data همان ردیف ذخیره می‌شود.
 
+    مرحله ۳: اجرای موتور مهارت (app/core/skill_engine.py) روی متن خام و
+    تجربیات شغلی مرحله‌ی ۲ — تطبیق مهارت‌ها با گراف مهارت و محاسبه‌ی مجموع
+    سال‌های سابقه‌ی کاری خالص (با کسر تداخل و فیلتر دوره‌های نامعتبر/بزرگ‌نمایی‌شده)
+    که در ستون skill_analysis همان ردیف ذخیره می‌شود.
+
     در هر مرحله، اگر خطایی رخ دهد (دانلود ناموفق، فایل خراب/ناخوانا، یا هر
     خطای غیرمنتظره‌ی دیگر)، فرآیند برای همین رزومه متوقف می‌شود و خطا با
     جزئیات کافی لاگ می‌شود — بدون این‌که کل Worker (و پردازش سایر کارها) کرش کند.
-    شکست مرحله‌ی پارسینگ (مرحله ۲) باعث از دست رفتن raw_text ثبت‌شده در مرحله ۱
-    نمی‌شود؛ فقط parsed_data خالی می‌ماند.
+    شکست یک مرحله باعث از دست رفتن نتیجه‌ی مراحل قبلی نمی‌شود؛ فقط همان ستون
+    مرحله‌ی شکست‌خورده خالی می‌ماند.
     """
     logger.info(
         "شروع پردازش پس‌زمینه‌ی رزومه | application_id=%s | file_url=%s",
@@ -92,6 +98,17 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
             error,
         )
 
+    skill_analysis_dict: dict | None = None
+    try:
+        work_experience = parsed_data_dict.get("work_experience", []) if parsed_data_dict else []
+        skill_analysis_dict = run_skill_engine(raw_text, work_experience)
+    except Exception as error:  # noqa: BLE001 - شکست موتور مهارت نباید نتایج مراحل قبلی را از بین ببرد
+        logger.error(
+            "خطای غیرمنتظره هنگام اجرای موتور مهارت (Skill Engine) | application_id=%s | error=%s",
+            application_id,
+            error,
+        )
+
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(Resume).where(Resume.file_url == file_url))
         resume = result.scalar_one_or_none()
@@ -107,6 +124,8 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
         resume.raw_text = raw_text
         if parsed_data_dict is not None:
             resume.parsed_data = parsed_data_dict
+        if skill_analysis_dict is not None:
+            resume.skill_analysis = skill_analysis_dict
         db.add(resume)
         await db.commit()
 
@@ -123,6 +142,22 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
     else:
         logger.info(
             "متن خام رزومه ذخیره شد، ولی پارسینگ ساختاریافته (NER) ناموفق بود | application_id=%s | resume_id=%s",
+            application_id,
+            resume.id,
+        )
+
+    if skill_analysis_dict is not None:
+        logger.info(
+            "موتور مهارت با موفقیت اجرا شد | application_id=%s | resume_id=%s | "
+            "تعداد_مهارت=%d | سابقه_خالص_سال=%s",
+            application_id,
+            resume.id,
+            len(skill_analysis_dict.get("skills", [])),
+            skill_analysis_dict.get("total_experience_years"),
+        )
+    else:
+        logger.info(
+            "موتور مهارت اجرا نشد یا ناموفق بود | application_id=%s | resume_id=%s",
             application_id,
             resume.id,
         )

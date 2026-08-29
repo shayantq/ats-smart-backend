@@ -70,6 +70,9 @@ class Resume(Base):
     # خروجی ساختاریافته‌ی ماژول NER (اطلاعات فردی + سوابق تحصیلی + تجربیات شغلی)
     # که به مرحله‌ی بعدی خط لوله‌ی هوش مصنوعی (امتیازدهی) منتقل می‌شود
     parsed_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # خروجی موتور مهارت (Skill Engine): مهارت‌های تطبیق‌یافته با گراف مهارت +
+    # تحلیل خالص سال‌های سابقه‌ی کاری (بعد از کسر تداخل و فیلتر دوره‌های نامعتبر)
+    skill_analysis: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     candidate: Mapped["Candidate"] = relationship()
 
