@@ -310,6 +310,56 @@ python -m spacy download en_core_web_sm
 کمتر برای نام‌های آزاد ادامه می‌دهد؛ این وضعیت در لاگ Worker با یک `warning`
 مشخص می‌شود.
 
+## موتور استخراج مهارت‌ها و تحلیل سوابق کاری (Skill Engine)
+
+مرحله‌ی سوم خط لوله: بلافاصله بعد از مرحله‌ی NER، همان Worker خروجی را به
+`app/core/skill_engine.py` می‌دهد و نتیجه را در ستون JSONB جدید `skill_analysis`
+از جدول `resumes` ذخیره می‌کند. ساختار خروجی:
+
+```json
+{
+  "skills": ["Python", "FastAPI", "Django", "SQL", "PostgreSQL"],
+  "total_experience_years": 8.0,
+  "experience_entries": [
+    {
+      "company": "اسنپ", "job_title": "توسعه‌دهنده بک‌اند", "duration": "1396 - 1399",
+      "start_year": 1396, "end_year": 1399, "is_valid": true, "flag_reason": null
+    },
+    {
+      "company": "شرکت جعلی", "job_title": "مدیرعامل", "duration": "1400 - 1395",
+      "start_year": 1400, "end_year": 1395, "is_valid": false,
+      "flag_reason": "تاریخ پایان قبل از تاریخ شروع است (دوره‌ی زمانی متناقض)."
+    }
+  ]
+}
+```
+
+### گراف مهارت (`app/core/skill_graph.py`)
+یک دیکشنری از «مهارت اصلی» (گره ریشه) به لیست «مهارت‌های زیرمجموعه» (گره‌های
+فرزند) — مثلاً `FastAPI`/`Django`/`Flask` همه زیرشاخه‌ی `Python` هستند. متن
+رزومه برای تمام گره‌های این گراف اسکن می‌شود؛ اگر یک زیرشاخه پیدا شود، هم
+خودش و هم مهارت اصلی/گره والدش (که کارجو تصریح نکرده ولی منطقاً بلد است) به
+نتیجه اضافه می‌شوند. تطبیق با مرز کلمه (Word Boundary) انجام می‌شود تا مثلاً
+`java` به‌اشتباه داخل `javascript` تشخیص داده نشود.
+
+### تحلیل‌گر سوابق کاری (`app/core/experience_analyzer.py`)
+- بازه‌ی هر `duration` (مثل `"1398 - 1401"` یا `"1401 - تاکنون"`) به (سال
+  شروع، سال پایان) پارس می‌شود؛ تقویم شمسی/میلادی به‌صورت خودکار از روی
+  مقدار سال (کمتر یا بیشتر از ۱۵۰۰) تشخیص داده می‌شود.
+- **فیلتر صحت‌سنجی:** دوره‌هایی که تاریخ پایانشان قبل از شروع باشد (متناقض)،
+  در آینده باشد (نامعتبر)، یا بیش از ۴۰ سال طول بکشد (بزرگ‌نمایی‌شده)، فیلتر
+  می‌شوند و در محاسبه‌ی سابقه‌ی خالص شرکت داده نمی‌شوند — ولی همراه با
+  `flag_reason` مشخص، در خروجی باقی می‌مانند (برای شفافیت، نه حذف کامل).
+- **محاسبه‌ی سابقه‌ی خالص:** فقط دوره‌های معتبر با الگوریتم استاندارد ادغام
+  بازه‌های همپوشان (Merge Intervals) با هم ترکیب می‌شوند تا دو شغل هم‌زمان
+  (Overlap) دوبار حساب نشوند.
+
+⚠️ **محدودیت شناخته‌شده:** تبدیل تقویم شمسی↔میلادی با یک افست ساده‌شده
+(۶۲۱ سال) انجام می‌شود؛ برای سطح این تحلیل (رد کردن تاریخ‌های آینده و محاسبه‌ی
+اختلاف سال) دقت کافی است، ولی تبدیل دقیق تقویمی (با احتساب کبیسه) نیست.
+همچنین فرض شده همه‌ی تاریخ‌های یک رزومه‌ی واحد از یک تقویم واحد استفاده
+می‌کنند (تبدیل بین دو تقویم مختلف در یک رزومه پشتیبانی نمی‌شود).
+
 ## ساختار کلی ریپو
 
 ```
@@ -329,7 +379,10 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── queue.py                   # صف کارهای پس‌زمینه با RQ (Redis Queue)
 │   │   ├── candidate_utils.py          # یافتن/ساخت پروفایل کارجو (مشترک بین resumes و candidates)
 │   │   ├── text_extraction.py           # موتور استخراج متن رزومه + OCR (Tesseract/PyMuPDF)
-│   │   └── resume_parser.py              # پارسینگ متنی و NER (spaCy + Regex)
+│   │   ├── resume_parser.py              # پارسینگ متنی و NER (spaCy + Regex)
+│   │   ├── skill_graph.py                 # گراف مهارت (Skill Ontology) + تطبیق زیرشاخه‌ها
+│   │   ├── experience_analyzer.py          # محاسبه‌ی سابقه‌ی خالص + فیلتر تقلب/تناقض تاریخ
+│   │   └── skill_engine.py                  # موتور مهارت (ترکیب دو ماژول بالا)
 │   ├── tasks/
 │   │   └── resume_processing.py       # کارهای پس‌زمینه‌ای که Worker اجرا می‌کند
 │   ├── db/
@@ -339,7 +392,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, candidates.py, health.py)
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, skill_analysis.py, candidates.py, health.py)
 │   ├── main.py                    # نقطه ورود برنامه (شامل lifespan: بررسی اتصال Redis در startup)
 │   └── worker.py                   # اجرای Worker صف کارها (سازگار با ویندوز)
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
