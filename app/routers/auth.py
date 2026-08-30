@@ -4,12 +4,15 @@
 حملات حدس رمز عبور (Brute-Force) و DDOS محافظت شوند.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.core.notification_service import notify_new_user_registered
 from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models import User
@@ -61,6 +64,11 @@ async def register_user(
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
+
+    # محرک (Trigger) زیرسیستم اطلاع‌رسانی: ارسال ایمیل خوش‌آمدگویی/تأیید اصالت.
+    # عمداً با create_task (نه await مستقیم) تا این درخواست ثبت‌نام هیچ‌وقت
+    # معطل ارتباط با Redis یا ارسال واقعی ایمیل نماند و پاسخ فوراً صادر شود.
+    asyncio.create_task(notify_new_user_registered(new_user.email))
 
     return RegisterResponse(
         status="success",

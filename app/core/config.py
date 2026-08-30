@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # اگر باینری tesseract در PATH سیستم نبود، مسیر کامل exe را اینجا بده (مخصوصاً روی ویندوز)
     TESSERACT_CMD_PATH: str = ""
 
+    # ---- سرویس ایمیل (SMTP) — برای زیرسیستم اطلاع‌رسانی رویدادمحور (Notification Service) ----
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_FROM_EMAIL: str = "no-reply@ats-smart.local"
+    SMTP_FROM_NAME: str = "ATS Smart"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
