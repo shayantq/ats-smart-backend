@@ -8,14 +8,16 @@
 import asyncio
 import logging
 import urllib.request
+import uuid
 
 from sqlalchemy import select
 
+from app.core.matching_engine import calculate_matching_score
 from app.core.resume_parser import parse_resume_text
 from app.core.skill_engine import run_skill_engine
 from app.core.text_extraction import UnreadableResumeFileError, extract_raw_text
 from app.db.session import AsyncSessionLocal
-from app.models import Resume
+from app.models import Application, Candidate, Job, Resume
 
 logger = logging.getLogger("ats_smart.tasks.resume")
 
@@ -34,24 +36,23 @@ def process_resume_task(application_id: str, file_url: str) -> None:
 
 async def _process_resume_async(application_id: str, file_url: str) -> None:
     """
-    مرحله ۱ از خط لوله‌ی هوش مصنوعی: دانلود فایل رزومه از فضای ذخیره‌سازی،
-    استخراج متن خام آن (مستقیم یا از طریق OCR — بنگرید app/core/text_extraction.py)،
-    و ذخیره‌ی یکپارچه‌ی آن در ستون raw_text از جدول resumes.
+    مرحله ۱: دانلود فایل رزومه از فضای ذخیره‌سازی، استخراج متن خام آن (مستقیم
+    یا از طریق OCR — بنگرید app/core/text_extraction.py)، و ذخیره در raw_text.
 
-    مرحله ۲: اجرای ماژول پارسینگ متنی و NER (app/core/resume_parser.py) روی
-    همان متن خام، برای استخراج اطلاعات فردی، سوابق تحصیلی و تجربیات شغلی به
-    شکل یک شیء JSON ساختاریافته که در ستون parsed_data همان ردیف ذخیره می‌شود.
+    مرحله ۲: پارسینگ متنی و NER (app/core/resume_parser.py) — اطلاعات فردی،
+    سوابق تحصیلی و تجربیات شغلی، ذخیره در ستون parsed_data.
 
-    مرحله ۳: اجرای موتور مهارت (app/core/skill_engine.py) روی متن خام و
-    تجربیات شغلی مرحله‌ی ۲ — تطبیق مهارت‌ها با گراف مهارت و محاسبه‌ی مجموع
-    سال‌های سابقه‌ی کاری خالص (با کسر تداخل و فیلتر دوره‌های نامعتبر/بزرگ‌نمایی‌شده)
-    که در ستون skill_analysis همان ردیف ذخیره می‌شود.
+    مرحله ۳: موتور مهارت (app/core/skill_engine.py) — تطبیق مهارت‌ها با گراف
+    مهارت + محاسبه‌ی سابقه‌ی کاری خالص، ذخیره در ستون skill_analysis.
 
-    در هر مرحله، اگر خطایی رخ دهد (دانلود ناموفق، فایل خراب/ناخوانا، یا هر
-    خطای غیرمنتظره‌ی دیگر)، فرآیند برای همین رزومه متوقف می‌شود و خطا با
-    جزئیات کافی لاگ می‌شود — بدون این‌که کل Worker (و پردازش سایر کارها) کرش کند.
-    شکست یک مرحله باعث از دست رفتن نتیجه‌ی مراحل قبلی نمی‌شود؛ فقط همان ستون
-    مرحله‌ی شکست‌خورده خالی می‌ماند.
+    مرحله ۴ (نهایی): موتور نمره‌دهی و رتبه‌بندی (app/core/matching_engine.py) —
+    رزومه‌ی ساختاریافته (خروجی مراحل ۲ و ۳) در برابر نیازمندی‌های همان آگهی
+    شغلی که این Application برایش ثبت شده قرار می‌گیرد و نمره‌ی نهایی (۰ تا ۱۰۰)
+    در ستون score_ai جدول applications ذخیره می‌شود.
+
+    در هر مرحله، اگر خطایی رخ دهد، فرآیند برای همین رزومه متوقف می‌شود و خطا
+    با جزئیات کافی لاگ می‌شود — بدون این‌که کل Worker (و پردازش سایر کارها)
+    کرش کند. شکست یک مرحله باعث از دست رفتن نتیجه‌ی مراحل قبلی نمی‌شود.
     """
     logger.info(
         "شروع پردازش پس‌زمینه‌ی رزومه | application_id=%s | file_url=%s",
@@ -127,6 +128,65 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
         if skill_analysis_dict is not None:
             resume.skill_analysis = skill_analysis_dict
         db.add(resume)
+
+        # مرحله ۴: نمره‌دهی و رتبه‌بندی — فقط اگر مراحل NER و Skill Engine هر دو
+        # موفق بوده باشند (بدون داده‌ی ساختاریافته، نمره‌دهی بی‌معنی است)
+        matching_score_dict: dict | None = None
+        if parsed_data_dict is not None and skill_analysis_dict is not None:
+            try:
+                application_result = await db.execute(
+                    select(Application).where(Application.id == uuid.UUID(application_id))
+                )
+                application = application_result.scalar_one_or_none()
+
+                if application is None:
+                    logger.error("رکورد Application پیدا نشد | application_id=%s", application_id)
+                else:
+                    job_result = await db.execute(select(Job).where(Job.id == application.job_id))
+                    job = job_result.scalar_one_or_none()
+
+                    candidate_result = await db.execute(
+                        select(Candidate).where(Candidate.id == resume.candidate_id)
+                    )
+                    candidate = candidate_result.scalar_one_or_none()
+
+                    if job is None:
+                        logger.error(
+                            "آگهی شغلی مرتبط با این درخواست پیدا نشد | application_id=%s | job_id=%s",
+                            application_id,
+                            application.job_id,
+                        )
+                    else:
+                        candidate_job_titles = [
+                            entry.get("job_title")
+                            for entry in parsed_data_dict.get("work_experience", [])
+                            if entry.get("job_title")
+                        ]
+
+                        matching_score_dict = calculate_matching_score(
+                            job_skills_required=job.skills_required,
+                            job_title=job.title,
+                            job_required_seniority=job.required_seniority,
+                            job_required_education=job.required_education,
+                            job_location=job.location,
+                            job_description=job.description,
+                            candidate_skills=skill_analysis_dict.get("skills", []),
+                            candidate_job_titles=candidate_job_titles,
+                            candidate_total_experience_years=skill_analysis_dict.get(
+                                "total_experience_years", 0.0
+                            ),
+                            candidate_education_entries=parsed_data_dict.get("education", []),
+                            candidate_location=candidate.location if candidate else None,
+                        )
+                        application.score_ai = round(matching_score_dict["final_score"])
+                        db.add(application)
+            except Exception as error:  # noqa: BLE001 - شکست نمره‌دهی نباید نتایج مراحل قبلی را از بین ببرد
+                logger.error(
+                    "خطای غیرمنتظره هنگام محاسبه‌ی نمره‌ی تطابق (Matching Score) | application_id=%s | error=%s",
+                    application_id,
+                    error,
+                )
+
         await db.commit()
 
     if parsed_data_dict is not None:
@@ -160,6 +220,20 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
             "موتور مهارت اجرا نشد یا ناموفق بود | application_id=%s | resume_id=%s",
             application_id,
             resume.id,
+        )
+
+    if matching_score_dict is not None:
+        logger.info(
+            "نمره‌ی تطابق (Matching Score) با موفقیت محاسبه و ذخیره شد | application_id=%s | "
+            "نمره_نهایی=%s | ریزنمرات=%s",
+            application_id,
+            matching_score_dict["final_score"],
+            matching_score_dict["breakdown"],
+        )
+    else:
+        logger.info(
+            "نمره‌ی تطابق محاسبه نشد یا ناموفق بود | application_id=%s",
+            application_id,
         )
 
 

@@ -59,6 +59,8 @@ class Candidate(Base):
     phone: Mapped[str] = mapped_column(String(20), nullable=True)
     # تگ‌های مهارتی که خود کارجو از پروفایلش ثبت می‌کند (بخش پورتال کارجو)
     skills: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(100)), nullable=True)
+    # موقعیت مکانی کارجو — برای موتور نمره‌دهی و رتبه‌بندی رزومه (Matching Score) استفاده می‌شود
+    location: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="candidate_profile")
 
@@ -87,6 +89,10 @@ class Job(Base):
     skills_required: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(100)), nullable=True)
     salary_range: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="Active", nullable=False)  # Active, Closed
+    # فیلدهای زیر برای موتور نمره‌دهی و رتبه‌بندی رزومه (Matching Score) استفاده می‌شوند
+    required_seniority: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Junior, Mid-Level, Senior, Lead
+    required_education: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # کارشناسی، کارشناسی ارشد و ...
+    location: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     company: Mapped[Optional["Company"]] = relationship(back_populates="jobs")
