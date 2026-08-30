@@ -23,6 +23,7 @@ class CandidateProfileResponse(BaseModel):
     first_name: str
     last_name: str
     phone: Optional[str] = None
+    location: Optional[str] = None
     skills: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True, "populate_by_name": True}
@@ -37,9 +38,10 @@ class CandidateProfileUpdateRequest(BaseModel):
     first_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     phone: Optional[str] = Field(default=None, max_length=20)
+    location: Optional[str] = Field(default=None, max_length=100)
     skills: Optional[list[str]] = None
 
-    @field_validator("first_name", "last_name", "phone", mode="before")
+    @field_validator("first_name", "last_name", "phone", "location", mode="before")
     @classmethod
     def sanitize_text_fields(cls, value):
         """پاکسازی فیلدهای متنی آزاد از تگ HTML/جاوااسکریپت پیش از پردازش (دفاع XSS)."""

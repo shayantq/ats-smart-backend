@@ -55,6 +55,7 @@ async def get_my_profile(
         first_name=candidate.first_name,
         last_name=candidate.last_name,
         phone=candidate.phone,
+        location=candidate.location,
         skills=candidate.skills or [],
     )
 
@@ -87,6 +88,7 @@ async def update_my_profile(
         first_name=candidate.first_name,
         last_name=candidate.last_name,
         phone=candidate.phone,
+        location=candidate.location,
         skills=candidate.skills or [],
     )
 

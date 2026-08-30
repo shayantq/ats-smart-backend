@@ -92,3 +92,20 @@ def match_skills(text: str) -> list[str]:
             detected_skills.add(core_skill)
 
     return sorted(detected_skills)
+
+
+def get_core_skill(skill_name: str) -> str:
+    """
+    اگر skill_name (زیرشاخه یا خودِ مهارت اصلی) در گراف مهارت شناخته‌شده باشد،
+    نام مهارت اصلی/گره والدش را برمی‌گرداند؛ در غیر این صورت خودِ ورودی را
+    بدون تغییر پس می‌دهد (برای مهارت‌هایی خارج از گراف، مثل «Photoshop»).
+
+    این تابع توسط موتور نمره‌دهی (app/core/matching_engine.py) استفاده می‌شود
+    تا مهارت اجباری آگهی («Python») را حتی وقتی کارجو فقط زیرشاخه‌اش
+    («FastAPI») را ذکر کرده، تطبیق‌یافته تشخیص دهد.
+    """
+    if not skill_name:
+        return skill_name
+
+    entry = _SKILL_LOOKUP_TABLE.get(skill_name.strip().lower())
+    return entry[1] if entry else skill_name

@@ -46,6 +46,9 @@ async def create_job(
         description=payload.description,
         skills_required=payload.skills_required,
         salary_range=payload.salary_range,
+        required_seniority=payload.required_seniority,
+        required_education=payload.required_education,
+        location=payload.location,
         status="Active",
         created_by=current_user.id,
     )
