@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>سلام {{ candidate_name }} عزیز،</h2>
+<p>وضعیت درخواست شما برای موقعیت شغلی «<strong>{{ job_title }}</strong>» به‌روزرسانی شد.</p>
+<p>وضعیت جدید: <strong>{{ stage_label }}</strong></p>
+<p>{{ stage_message }}</p>
+<p>می‌توانید جزئیات کامل و آخرین وضعیت درخواست خود را از بخش «پیگیری وضعیت» در پورتال کارجو مشاهده کنید.</p>
+<p>با آرزوی موفقیت،<br>تیم ATS Smart</p>
+{% endblock %}

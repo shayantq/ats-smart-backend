@@ -409,10 +409,13 @@ Application برایش ثبت شده قرار می‌دهد (`app/core/matching_
 درخواست HTTP فرستاده نمی‌شود.
 
 - **`app/core/email_service.py`:** تنها لایه‌ای که واقعاً با SMTP صحبت
-  می‌کند (`smtplib` استاندارد پایتون، بدون وابستگی جانبی). این ماژول همگام
-  (Sync) است و همیشه باید فقط از داخل یک Task پس‌زمینه صدا زده شود.
-- **`app/tasks/notifications.py`:** کارهای پس‌زمینه‌ی واقعی (فعلاً
-  `send_welcome_email_task`) که توسط Worker (`app/worker.py`) اجرا می‌شوند.
+  می‌کند (`smtplib` استاندارد پایتون، بدون وابستگی جانبی برای خودِ ارسال).
+  این ماژول همگام (Sync) است و همیشه باید فقط از داخل یک Task پس‌زمینه صدا
+  زده شود؛ از پیوست فایل (مثلاً PDF) هم پشتیبانی می‌کند.
+- **`app/tasks/notifications.py`:** کارهای پس‌زمینه‌ی واقعی
+  (`send_welcome_email_task`, `send_status_update_email_task`,
+  `send_job_offer_email_task`, `send_otp_email_task`) که توسط Worker
+  (`app/worker.py`) اجرا می‌شوند.
 - **`app/core/notification_service.py`:** نمای سطح بالا (Facade) که بقیه‌ی
   اپلیکیشن (مثل روترها) با آن کار می‌کند — فقط یک رویداد را به صف اضافه
   می‌کند، بدون این‌که خودش با جزئیات Task/Queue درگیر باشد.
@@ -429,6 +432,68 @@ Application برایش ثبت شده قرار می‌دهد (`app/core/matching_
 `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`. برای یک ایمیل تست واقعی بدون نیاز به
 یک اکانت ایمیل واقعی، هر سرویس SMTP تستی (مثل Mailtrap) یا یک SMTP Debug
 Server محلی کار می‌کند.
+
+## قالب‌های ایمیل و ماتریس محرک‌ها (Email Templates & Triggers)
+
+### قالب‌های HTML (`app/templates/emails/`)
+سه قالب، همه با یک Layout مشترک (`base.html`) که با Jinja2
+(`app/core/email_templates.py`) Render می‌شوند — چون autoescape فعال است،
+مقادیر متغیر (مثل نام کارجو) خودکار از نظر HTML امن می‌شوند:
+
+- **`status_update.html`:** اطلاع‌رسانی تغییر وضعیت عمومی (مثل ورود به
+  غربالگری یا مصاحبه). متغیرها: `candidate_name`, `job_title`,
+  `stage_label`, `stage_message`.
+- **`job_offer.html`:** نامه‌ی رسمی پیشنهاد همکاری، شامل دو دکمه‌ی تعاملی
+  «قبول/رد» که کارجو را به پورتال کارجو هدایت می‌کنند. متغیرها:
+  `candidate_name`, `job_title`, `company_name`, `accept_url`, `reject_url`.
+- **`otp_reset.html`:** کد یک‌بارمصرف بازیابی رمز عبور. متغیرها: `otp_code`,
+  `expires_in_minutes`.
+
+⚠️ **محدودیت شناخته‌شده:** دکمه‌های «قبول/رد» ایمیل پیشنهاد همکاری فعلاً به
+صفحه‌ی اصلی فرانت‌اند (`FRONTEND_ORIGIN`) لینک می‌شوند، نه مستقیم به تب
+«صندوق پیشنهادها» — چون فرانت‌اند فعلاً یک SPA بدون URL Routing است (تب‌ها
+فقط با state داخلی جابه‌جا می‌شوند). کارجو باید بعد از ورود، خودش به آن تب
+برود؛ افزودن Routing واقعی خارج از محدوده‌ی این تسک است.
+
+### نامه‌ی PDF پیشنهاد همکاری (`app/core/offer_letter.py`)
+با ReportLab ساخته می‌شود و به‌عنوان ضمیمه‌ی ایمیل پیشنهاد همکاری فرستاده
+می‌شود. ⚠️ محدودیت شناخته‌شده: محتوای PDF عمداً **انگلیسی** است — فونت‌های
+پیش‌فرض ReportLab از شکل‌دهی درست حروف فارسی/عربی (Reshape + BiDi) پشتیبانی
+نمی‌کنند و بدون کتابخانه‌های اضافی (`arabic-reshaper`, `python-bidi`) و یک
+فونت فارسی TTF، متن فارسی در PDF به‌هم‌ریخته نمایش داده می‌شود.
+
+### ماتریس محرک‌ها (Hooks در ماشین وضعیت صلب)
+`app/core/status_notifier.py` نقطه‌ی اتصال بین ماشین وضعیت
+(`app/core/state_machine.py`) و زیرسیستم اطلاع‌رسانی است. بعد از هر
+جابه‌جایی موفق وضعیت در بورد کانبان HR (`PUT /api/v1/applications/{id}/status`)،
+`trigger_status_change_email` به‌صورت fire-and-forget صدا زده می‌شود:
+
+| وضعیت جدید | ایمیل ارسالی |
+|---|---|
+| `Screening`, `Technical Interview`, `HR Interview` | اطلاع‌رسانی تغییر وضعیت عمومی (`status_update.html`) |
+| `Offer` | نامه‌ی رسمی پیشنهاد همکاری + پیوست PDF (`job_offer.html`) |
+| `Rejected` | اطلاع‌رسانی عدم تأیید (`status_update.html`) |
+| `Draft`, `Applied`, `Accepted`, `Hired` | فعلاً ایمیلی تعریف نشده |
+
+⚠️ **تصمیم طراحی مستند:** این هوک عمداً فقط به مسیر HR (`applications.py`)
+وصل شده، نه به `PUT /candidates/me/applications/{id}/respond` (پاسخ خودِ
+کارجو به یک پیشنهاد) — چون قالب عمومی «Rejected» با لحن «متأسفانه رد شدید»
+برای حالتی که خودِ کارجو پیشنهاد را رد کرده معنای نادرستی می‌داد؛ ارسال
+ایمیل برای تصمیم خودِ کاربر هم منطقاً لازم نیست (او همین الان از تصمیم خودش
+باخبر است).
+
+### بازیابی رمز عبور با OTP
+دو مسیر جدید اضافه شدند:
+```
+POST /api/v1/auth/forgot-password   { "email": "..." }
+POST /api/v1/auth/reset-password    { "email": "...", "otp_code": "123456", "new_password": "..." }
+```
+کد OTP شش‌رقمی با `secrets` (نه `random` معمولی) تولید و در Redis با TTL ده
+دقیقه‌ای ذخیره می‌شود (همان لایه‌ی کش بخش «کش و صف کارها» بالا). پاسخ
+`forgot-password` همیشه یک پیام یکسان است (چه ایمیل وجود داشته باشد چه نه)
+تا این مسیر برای حدس زدن ایمیل‌های ثبت‌شده در سیستم قابل‌سوءاستفاده نباشد
+(User Enumeration). بعد از مصرف موفق، کد OTP بلافاصله از Redis حذف می‌شود
+تا یک‌بارمصرف بودنش تضمین شود.
 
 ## ساختار کلی ریپو
 
@@ -454,11 +519,15 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── experience_analyzer.py          # محاسبه‌ی سابقه‌ی خالص + فیلتر تقلب/تناقض تاریخ
 │   │   ├── skill_engine.py                  # موتور مهارت (ترکیب دو ماژول بالا)
 │   │   ├── matching_engine.py                # موتور نمره‌دهی و رتبه‌بندی (وزن‌دهی ۵۰/۳۰/۲۰)
-│   │   ├── email_service.py                   # اتصال واقعی به SMTP (smtplib)
-│   │   └── notification_service.py             # نمای سطح بالا برای ثبت رویدادهای اطلاع‌رسانی
+│   │   ├── email_service.py                   # اتصال واقعی به SMTP (smtplib) + پیوست فایل
+│   │   ├── notification_service.py             # نمای سطح بالا برای ثبت رویدادهای اطلاع‌رسانی
+│   │   ├── email_templates.py                    # موتور Render قالب‌های ایمیل (Jinja2)
+│   │   ├── offer_letter.py                        # تولید PDF نامه‌ی پیشنهاد همکاری (ReportLab)
+│   │   └── status_notifier.py                      # هوک ماشین وضعیت -> اطلاع‌رسانی
+│   ├── templates/emails/                # قالب‌های HTML ایمیل (base, status_update, job_offer, otp_reset)
 │   ├── tasks/
 │   │   ├── resume_processing.py       # کارهای پس‌زمینه‌ای که Worker اجرا می‌کند (خط لوله‌ی AI)
-│   │   └── notifications.py            # کارهای پس‌زمینه‌ی ارسال ایمیل (Worker اجرا می‌کند)
+│   │   └── notifications.py            # کارهای پس‌زمینه‌ی ارسال ایمیل (welcome, status, offer, OTP)
 │   ├── db/
 │   │   └── session.py             # اتصال async به دیتابیس
 │   ├── models/                  # مدل‌های ORM (SQLAlchemy) — 14 جدول طراحی دیتابیس

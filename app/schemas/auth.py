@@ -72,3 +72,47 @@ class LoginResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class ForgotPasswordRequest(BaseModel):
+    """بدنه‌ی درخواست بازیابی رمز عبور — فقط ایمیل لازم است."""
+
+    email: EmailStr
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def sanitize_email(cls, value: str) -> str:
+        return strip_html_tags(value)
+
+
+class ForgotPasswordResponse(BaseModel):
+    """
+    پیام همیشه یکسان است (چه ایمیل در سیستم ثبت شده باشد چه نه) تا این مسیر
+    نتواند برای حدس زدن ایمیل‌های موجود در سیستم استفاده شود (User Enumeration).
+    """
+
+    message: str
+
+
+class ResetPasswordRequest(BaseModel):
+    """بدنه‌ی درخواست تکمیل بازیابی رمز عبور با کد OTP دریافتی از ایمیل."""
+
+    email: EmailStr
+    otp_code: str = Field(min_length=6, max_length=6)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def sanitize_email(cls, value: str) -> str:
+        return strip_html_tags(value)
+
+    @field_validator("otp_code", mode="before")
+    @classmethod
+    def sanitize_otp(cls, value: str) -> str:
+        if isinstance(value, str):
+            return strip_html_tags(value)
+        return value
+
+
+class ResetPasswordResponse(BaseModel):
+    message: str

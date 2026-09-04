@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: Tahoma, "Segoe UI", sans-serif; background-color: #f4f5f7; margin: 0; padding: 0; }
+  .container { max-width: 600px; margin: 24px auto; background: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+  .header { background-color: #1e293b; color: #ffffff; padding: 20px; text-align: center; font-size: 18px; font-weight: bold; }
+  .body { padding: 24px; color: #334155; line-height: 1.9; font-size: 15px; }
+  .footer { padding: 16px 24px; font-size: 12px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; }
+  .button { display: inline-block; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: bold; margin: 6px; font-size: 14px; }
+  .button-accept { background-color: #16a34a; color: #ffffff !important; }
+  .button-reject { background-color: #dc2626; color: #ffffff !important; }
+  .otp-code { font-size: 32px; letter-spacing: 8px; font-weight: bold; text-align: center; background: #f1f5f9; padding: 16px; border-radius: 8px; margin: 16px 0; color: #1e293b; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">ATS Smart</div>
+    <div class="body">
+      {% block content %}{% endblock %}
+    </div>
+    <div class="footer">
+      این ایمیل به‌صورت خودکار از سامانه‌ی ATS Smart ارسال شده است.
+    </div>
+  </div>
+</body>
+</html>

@@ -7,6 +7,7 @@
 فقط نقش‌های Admin و HR_Manager اجازه‌ی مشاهده و جابه‌جایی وضعیت را دارند.
 """
 
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
 from app.core.state_machine import is_transition_allowed
+from app.core.status_notifier import trigger_status_change_email
 from app.db.session import get_db
 from app.models import Application, Candidate, StatusHistory, User
 from app.schemas.applications import (
@@ -110,6 +112,9 @@ async def update_application_status(
        به‌صورت خودکار توسط دیتابیس به‌روزرسانی می‌شود، و یک ردیف جدید
        در جدول StatusHistory با وضعیت قبلی/جدید و شناسه‌ی کاربر ثبت‌کننده
        درج می‌شود -> 200 OK.
+    ۵. بلافاصله بعد از commit موفق، هوک اطلاع‌رسانی (app/core/status_notifier.py)
+       به‌صورت fire-and-forget صدا زده می‌شود تا در صورت لزوم، ایمیل متناظر
+       وضعیت جدید (مثلاً پیشنهاد همکاری برای Offer) به صف Redis اضافه شود.
     """
     result = await db.execute(select(Application).where(Application.id == application_id))
     application = result.scalar_one_or_none()
@@ -154,6 +159,17 @@ async def update_application_status(
 
     await db.commit()
     await db.refresh(application)
+
+    # هوک ماشین وضعیت -> زیرسیستم اطلاع‌رسانی: اگر وضعیت جدید نیاز به ایمیل
+    # داشته باشد (مثلاً Offer یا ورود به مرحله‌ی غربالگری/مصاحبه)، fire-and-forget
+    # اضافه می‌شود تا این پاسخ HTTP هیچ‌وقت معطل آن نماند.
+    asyncio.create_task(
+        trigger_status_change_email(
+            candidate_id=application.candidate_id,
+            job_id=application.job_id,
+            new_status=application.current_status,
+        )
+    )
 
     return ApplicationStatusUpdateResponse(
         application_id=application.id,
