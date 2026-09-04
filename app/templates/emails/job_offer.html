@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>تبریک {{ candidate_name }} عزیز! 🎉</h2>
+<p>ما خوشحالیم به اطلاع برسانیم پیشنهاد همکاری رسمی برای موقعیت شغلی «<strong>{{ job_title }}</strong>»{% if company_name %} در <strong>{{ company_name }}</strong>{% endif %} برای شما صادر شده است.</p>
+<p>جزئیات کامل این پیشنهاد در فایل PDF پیوست‌شده‌ی همین ایمیل موجود است.</p>
+<p>لطفاً با کلیک روی یکی از دکمه‌های زیر (یا از طریق بخش «صندوق پیشنهادها» در پورتال کارجو)، تصمیم خود را اعلام کنید:</p>
+<div style="text-align: center; margin: 24px 0;">
+  <a href="{{ accept_url }}" class="button button-accept">قبول پیشنهاد</a>
+  <a href="{{ reject_url }}" class="button button-reject">رد پیشنهاد</a>
+</div>
+<p>با احترام،<br>تیم ATS Smart</p>
+{% endblock %}

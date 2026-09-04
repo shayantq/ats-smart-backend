@@ -2,7 +2,6 @@
 نقطه ورود اصلی پلتفرم ATS Smart - بک‌اند
 معماری: FastAPI (Async)
 """
-
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
