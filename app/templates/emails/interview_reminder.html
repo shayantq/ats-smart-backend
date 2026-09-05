@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>یادآوری جلسه‌ی مصاحبه</h2>
+<p>سلام {{ recipient_name }}،</p>
+<p>یادآوری می‌کنیم که جلسه‌ی مصاحبه‌ی زیر با حضور <strong>{{ candidate_name }}</strong> و <strong>{{ interviewer_name }}</strong>، فردا برگزار خواهد شد:</p>
+<ul>
+  <li>تاریخ: <strong>{{ interview_date }}</strong></li>
+  <li>ساعت: <strong>{{ interview_time }}</strong></li>
+  <li>مصاحبه‌کننده: <strong>{{ interviewer_name }}</strong></li>
+</ul>
+<div style="text-align: center; margin: 24px 0;">
+  <a href="{{ meeting_link }}" class="button button-accept">ورود به اتاق مصاحبه</a>
+</div>
+<p>لطفاً چند دقیقه زودتر از موعد مقرر آماده باشید.</p>
+<p>موفق باشید،<br>تیم ATS Smart</p>
+{% endblock %}

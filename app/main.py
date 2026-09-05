@@ -2,6 +2,7 @@
 نقطه ورود اصلی پلتفرم ATS Smart - بک‌اند
 معماری: FastAPI (Async)
 """
+
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,7 +17,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.redis_client import check_redis_connection, close_redis_connection
-from app.routers import admin, applications, auth, candidates, health, jobs, resumes
+from app.routers import admin, applications, auth, candidates, health, interviews, jobs, resumes
 
 logging.basicConfig(level=logging.INFO)
 
@@ -65,6 +66,7 @@ app.include_router(jobs.router, prefix=f"{settings.API_V1_PREFIX}/jobs")
 app.include_router(applications.router, prefix=f"{settings.API_V1_PREFIX}/applications")
 app.include_router(resumes.router, prefix=f"{settings.API_V1_PREFIX}/resumes")
 app.include_router(candidates.router, prefix=f"{settings.API_V1_PREFIX}/candidates")
+app.include_router(interviews.router, prefix=f"{settings.API_V1_PREFIX}/interviews")
 
 
 @app.get("/", tags=["Root"])

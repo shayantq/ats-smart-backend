@@ -495,12 +495,53 @@ POST /api/v1/auth/reset-password    { "email": "...", "otp_code": "123456", "new
 (User Enumeration). بعد از مصرف موفق، کد OTP بلافاصله از Redis حذف می‌شود
 تا یک‌بارمصرف بودنش تضمین شود.
 
+## سرویس مدیریت مصاحبه‌ها (Interview Service)
+
+```
+POST   /api/v1/interviews/                        ساخت جلسه‌ی مصاحبه‌ی جدید
+GET    /api/v1/interviews/{id}                       مشاهده‌ی جزئیات یک مصاحبه
+GET    /api/v1/interviews/?application_id=...          لیست مصاحبه‌های یک درخواست خاص
+PUT    /api/v1/interviews/{id}                           ویرایش (زمان/مصاحبه‌کننده/لینک)
+DELETE /api/v1/interviews/{id}                             لغو یک مصاحبه
+```
+
+- **ساخت/ویرایش/لغو:** فقط `Admin` و `HR_Manager`.
+- **مشاهده‌ی یک مصاحبه:** `Admin`/`HR_Manager`، یا خودِ مصاحبه‌کننده‌ی تخصیص‌یافته.
+- **اعتبارسنجی تخصیص مصاحبه‌کننده:** اگر `interviewer_id` ارسالی به کاربری
+  اشاره کند که نقشش `Interviewer` یا `HR_Manager` نباشد، کد `422` برمی‌گردد
+  (طبق معیار پذیرش تسک).
+- موفقیت ساخت: کد `201` با جزئیات کامل مصاحبه.
+
+### یادآور خودکار ۲۴ ساعته (`app/core/interview_scheduler.py`)
+بلافاصله بعد از ساخت (یا ویرایش زمان/مصاحبه‌کننده‌ی) یک مصاحبه، دو یادآور
+ایمیلی (یکی برای کارجو، یکی برای مصاحبه‌کننده) دقیقاً برای **۲۴ ساعت پیش از
+`scheduled_at`** با **rq-scheduler** زمان‌بندی می‌شوند — نه یک Cron/Polling
+جداگانه که هر چند دقیقه دیتابیس را چک کند. اگر فاصله‌ی زمان‌بندی کمتر از
+۲۴ ساعت باشد، یادآور فوراً ارسال می‌شود (نه در گذشته). شناسه‌ی این کارهای
+زمان‌بندی‌شده در ستون `interviews.reminder_job_ids` نگه‌داری می‌شود تا در
+صورت تغییر زمان یا لغو مصاحبه، یادآورهای قدیمی cancel شوند.
+
+⚠️ **پیش‌نیاز اجرایی مهم:** علاوه بر Worker معمولی (`python -m app.worker`)،
+یک فرآیند دیگر هم باید هم‌زمان در حال اجرا باشد تا کارهای زمان‌بندی‌شده در
+لحظه‌ی موعودشان وارد صف اصلی شوند:
+```bash
+rqscheduler --host localhost --port 6379
+```
+بدون این فرآیند، یادآورها هیچ‌وقت واقعاً اجرا نمی‌شوند (فقط در Redis منتظر می‌مانند).
+
+⚠️ **دو محدودیت شناخته‌شده و مستند:**
+- «ایجاد اتاق مجازی» فعلاً یعنی ثبت یک `meeting_link` از پیش‌ساخته توسط HR
+  (مثلاً یک لینک Google Meet/Zoom که خودش خارج از این سیستم ساخته می‌شود)،
+  نه یکپارچگی خودکار با یک API واقعی ویدئوکنفرانس.
+- چون جدول `users` فیلد نام ندارد (فقط `email`)، «نام مصاحبه‌کننده» در پاسخ
+  API و متن ایمیل یادآور فعلاً همان آدرس ایمیل مصاحبه‌کننده است.
+
 ## ساختار کلی ریپو
 
 ```
 ats-smart-backend/            # ریشه‌ی ریپو
 ├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications, resumes, candidates)
+│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications, resumes, candidates, interviews)
 │   ├── core/
 │   │   ├── config.py             # تنظیمات و متغیرهای محیطی
 │   │   ├── security.py            # هش کردن گذرواژه (Bcrypt) و صدور/رمزگشایی توکن‌های JWT
@@ -523,8 +564,9 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── notification_service.py             # نمای سطح بالا برای ثبت رویدادهای اطلاع‌رسانی
 │   │   ├── email_templates.py                    # موتور Render قالب‌های ایمیل (Jinja2)
 │   │   ├── offer_letter.py                        # تولید PDF نامه‌ی پیشنهاد همکاری (ReportLab)
-│   │   └── status_notifier.py                      # هوک ماشین وضعیت -> اطلاع‌رسانی
-│   ├── templates/emails/                # قالب‌های HTML ایمیل (base, status_update, job_offer, otp_reset)
+│   │   ├── status_notifier.py                      # هوک ماشین وضعیت -> اطلاع‌رسانی
+│   │   └── interview_scheduler.py                    # زمان‌بند یادآور مصاحبه (rq-scheduler)
+│   ├── templates/emails/                # قالب‌های HTML ایمیل (base, status_update, job_offer, otp_reset, interview_reminder)
 │   ├── tasks/
 │   │   ├── resume_processing.py       # کارهای پس‌زمینه‌ای که Worker اجرا می‌کند (خط لوله‌ی AI)
 │   │   └── notifications.py            # کارهای پس‌زمینه‌ی ارسال ایمیل (welcome, status, offer, OTP)
@@ -535,7 +577,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, skill_analysis.py, candidates.py, health.py)
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, skill_analysis.py, candidates.py, interviews.py, health.py)
 │   ├── main.py                    # نقطه ورود برنامه (شامل lifespan: بررسی اتصال Redis در startup)
 │   └── worker.py                   # اجرای Worker صف کارها (سازگار با ویندوز)
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
