@@ -5,9 +5,10 @@ Applications, Interviews, Resumes, Skills
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -50,8 +51,14 @@ class Interview(Base):
         UUID(as_uuid=True), ForeignKey("applications.id"), nullable=False
     )
     interviewer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    scheduled_at: Mapped[datetime] = mapped_column(nullable=True)
+    # timezone=True عمداً اضافه شد (قبلاً نبود) تا با بقیه‌ی ستون‌های زمانی پروژه
+    # (مثل updated_at) هم‌خوان باشد و مقایسه‌ی «۲۴ ساعت پیش از الان» بدون خطای
+    # naive/aware ممکن شود (بنگرید app/core/interview_scheduler.py)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     meeting_link: Mapped[str] = mapped_column(String(500), nullable=True)
+    # شناسه‌ی کارهای زمان‌بندی‌شده‌ی یادآور (rq-scheduler) برای این جلسه — تا در
+    # صورت تغییر زمان یا لغو مصاحبه، بتوان یادآورهای قبلی را cancel کرد
+    reminder_job_ids: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(100)), nullable=True)
 
     application: Mapped["Application"] = relationship(back_populates="interviews")
     interviewer: Mapped["User"] = relationship()

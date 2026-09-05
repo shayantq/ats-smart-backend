@@ -8,6 +8,7 @@ Render می‌کنند و از app/core/email_service.py برای ارسال و�
 """
 
 import logging
+from datetime import datetime
 
 from app.core.config import settings
 from app.core.email_service import send_email
@@ -149,4 +150,38 @@ def send_otp_email_task(to_email: str, otp_code: str, expires_in_minutes: int) -
         send_email(to_email=to_email, subject=subject, html_body=html_body)
     except Exception as error:  # noqa: BLE001
         logger.error("ارسال ایمیل OTP ناموفق بود | to=%s | error=%s", to_email, error)
+        raise
+
+
+def send_interview_reminder_email_task(
+    to_email: str,
+    recipient_name: str,
+    candidate_name: str,
+    interviewer_name: str,
+    scheduled_at_iso: str,
+    meeting_link: str,
+) -> None:
+    """
+    ایمیل یادآور جلسه‌ی مصاحبه — محرک: دقیقاً ۲۴ ساعت پیش از شروع جلسه، توسط
+    زمان‌بند rq-scheduler اجرا می‌شود (بنگرید app/core/interview_scheduler.py).
+    به هر دو نفر (کارجو و مصاحبه‌کننده) جداگانه ارسال می‌شود؛ recipient_name
+    نام همان گیرنده‌ی این نسخه‌ی خاص ایمیل است.
+    """
+    scheduled_at = datetime.fromisoformat(scheduled_at_iso)
+
+    html_body = render_email_template(
+        "interview_reminder.html",
+        recipient_name=recipient_name,
+        candidate_name=candidate_name,
+        interviewer_name=interviewer_name,
+        interview_date=scheduled_at.strftime("%Y-%m-%d"),
+        interview_time=scheduled_at.strftime("%H:%M"),
+        meeting_link=meeting_link,
+    )
+    subject = "یادآوری: مصاحبه‌ی شما فردا برگزار می‌شود"
+
+    try:
+        send_email(to_email=to_email, subject=subject, html_body=html_body)
+    except Exception as error:  # noqa: BLE001
+        logger.error("ارسال ایمیل یادآور مصاحبه ناموفق بود | to=%s | error=%s", to_email, error)
         raise
