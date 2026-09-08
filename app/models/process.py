@@ -59,6 +59,15 @@ class Interview(Base):
     # شناسه‌ی کارهای زمان‌بندی‌شده‌ی یادآور (rq-scheduler) برای این جلسه — تا در
     # صورت تغییر زمان یا لغو مصاحبه، بتوان یادآورهای قبلی را cancel کرد
     reminder_job_ids: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(100)), nullable=True)
+    # وضعیت فرم ارزیابی: "Pending" (پیش‌فرض) تا وقتی مصاحبه‌کننده نمره ثبت نکرده،
+    # "Completed" بلافاصله بعد از ثبت موفق ارزیابی نهایی
+    status: Mapped[str] = mapped_column(String(20), default="Pending", nullable=False)
+    # نمرات تخصصی به تفکیک معیار — مثلاً {"technical_skill": 8, "communication": 7}
+    evaluation_scores: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # میانگین نمرات evaluation_scores — برای نمایش/مرتب‌سازی سریع، سرور محاسبه می‌کند
+    overall_score: Mapped[Optional[float]] = mapped_column(nullable=True)
+    feedback_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evaluated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     application: Mapped["Application"] = relationship(back_populates="interviews")
     interviewer: Mapped["User"] = relationship()

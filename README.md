@@ -500,17 +500,37 @@ POST /api/v1/auth/reset-password    { "email": "...", "otp_code": "123456", "new
 ```
 POST   /api/v1/interviews/                        ساخت جلسه‌ی مصاحبه‌ی جدید
 GET    /api/v1/interviews/{id}                       مشاهده‌ی جزئیات یک مصاحبه
-GET    /api/v1/interviews/?application_id=...          لیست مصاحبه‌های یک درخواست خاص
+GET    /api/v1/interviews/?application_id=&date=&status=  لیست مصاحبه‌ها (هر سه فیلتر اختیاری)
 PUT    /api/v1/interviews/{id}                           ویرایش (زمان/مصاحبه‌کننده/لینک)
-DELETE /api/v1/interviews/{id}                             لغو یک مصاحبه
+PUT    /api/v1/interviews/{id}/evaluation                   ثبت ارزیابی نهایی و نمرات
+DELETE /api/v1/interviews/{id}                                لغو یک مصاحبه
 ```
 
 - **ساخت/ویرایش/لغو:** فقط `Admin` و `HR_Manager`.
-- **مشاهده‌ی یک مصاحبه:** `Admin`/`HR_Manager`، یا خودِ مصاحبه‌کننده‌ی تخصیص‌یافته.
+- **مشاهده (یک مصاحبه یا لیست):** `Admin`/`HR_Manager` بدون محدودیت (برای
+  «لیست مصاحبه‌های روزانه» در داشبورد)؛ `Interviewer` فقط مصاحبه‌های خودش را
+  می‌بیند — پارامتر `date=YYYY-MM-DD` برای فیلتر «مصاحبه‌های امروز» و
+  `status=Pending|Completed` برای فیلتر وضعیت فرم ارزیابی استفاده می‌شود.
 - **اعتبارسنجی تخصیص مصاحبه‌کننده:** اگر `interviewer_id` ارسالی به کاربری
   اشاره کند که نقشش `Interviewer` یا `HR_Manager` نباشد، کد `422` برمی‌گردد
   (طبق معیار پذیرش تسک).
 - موفقیت ساخت: کد `201` با جزئیات کامل مصاحبه.
+
+### ثبت ارزیابی و نمرات (`PUT /interviews/{id}/evaluation`)
+فقط خودِ مصاحبه‌کننده‌ی تخصیص‌یافته (یا `Admin`/`HR_Manager` برای ثبت
+جایگزین). بدنه‌ی درخواست:
+```json
+{
+  "evaluation_scores": { "technical_skill": 8, "communication": 7 },
+  "feedback_text": "متن بازخورد کیفی مصاحبه‌کننده..."
+}
+```
+معیارهای مجاز نمره‌دهی یک مجموعه‌ی ثابت است: `technical_skill`,
+`problem_solving`, `communication`, `culture_fit` — هرکدام بین ۱ تا ۱۰.
+`overall_score` توسط سرور به‌عنوان میانگین همین نمرات محاسبه می‌شود (نه
+چیزی که کلاینت مستقیم بفرستد) تا همیشه با نمرات واقعی هم‌خوان بماند. بعد از
+ثبت موفق، `status` مصاحبه از `Pending` به **`Completed`** تغییر می‌کند
+(طبق معیار پذیرش دوم تسک) و `evaluated_at` ثبت می‌شود.
 
 ### یادآور خودکار ۲۴ ساعته (`app/core/interview_scheduler.py`)
 بلافاصله بعد از ساخت (یا ویرایش زمان/مصاحبه‌کننده‌ی) یک مصاحبه، دو یادآور

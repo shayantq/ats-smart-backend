@@ -2,13 +2,14 @@
 سرویس مدیریت مصاحبه‌ها (Interview Service):
 - POST   /api/v1/interviews/                        ساخت جلسه‌ی مصاحبه جدید
 - GET    /api/v1/interviews/{id}                       مشاهده‌ی جزئیات یک مصاحبه
-- GET    /api/v1/interviews/?application_id=...          لیست مصاحبه‌های یک درخواست خاص
+- GET    /api/v1/interviews/?...                         لیست مصاحبه‌ها (فیلترپذیر: application_id, date, status)
 - PUT    /api/v1/interviews/{id}                           ویرایش (تغییر زمان/مصاحبه‌کننده/لینک)
-- DELETE /api/v1/interviews/{id}                             لغو یک مصاحبه
+- PUT    /api/v1/interviews/{id}/evaluation                   ثبت ارزیابی نهایی و نمرات
+- DELETE /api/v1/interviews/{id}                                لغو یک مصاحبه
 
-فقط Admin و HR_Manager اجازه‌ی ساخت/ویرایش/لغو مصاحبه دارند. مشاهده برای
-Admin/HR_Manager و همچنین خودِ مصاحبه‌کننده‌ی تخصیص‌یافته (فقط مصاحبه‌های
-خودش) مجاز است.
+فقط Admin و HR_Manager اجازه‌ی ساخت/ویرایش/لغو مصاحبه دارند. مشاهده و ثبت
+ارزیابی برای Admin/HR_Manager و همچنین خودِ مصاحبه‌کننده‌ی تخصیص‌یافته (فقط
+مصاحبه‌های خودش) مجاز است.
 
 ⚠️ محدودیت شناخته‌شده‌ی مستند (نه یک نقص فراموش‌شده): «ایجاد اتاق مجازی»
 فعلاً به‌معنای ثبت یک meeting_link از پیش‌ساخته توسط HR است (مثلاً یک لینک
@@ -17,17 +18,20 @@ Google Meet/Zoom که خودش خارج از این سیستم ساخته)، ن�
 """
 
 import uuid
+from datetime import date as date_type
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
 from app.core.interview_scheduler import cancel_interview_reminder, schedule_interview_reminder
 from app.db.session import get_db
-from app.models import Application, Candidate, Interview, User
+from app.models import Application, Candidate, Interview, Job, User
 from app.schemas.interviews import (
     InterviewCreateRequest,
+    InterviewEvaluationRequest,
     InterviewListResponse,
     InterviewResponse,
     InterviewUpdateRequest,
@@ -39,6 +43,8 @@ router = APIRouter()
 INTERVIEW_MANAGER_ROLES = ("Admin", "HR_Manager")
 # نقش‌هایی که مجازند به‌عنوان مصاحبه‌کننده (interviewer_id) تخصیص داده شوند
 _VALID_INTERVIEWER_ROLES = ("Interviewer", "HR_Manager")
+# نقش‌هایی که اصلاً مجاز به مشاهده‌ی مسیرهای این سرویس‌اند
+_INTERVIEW_VIEWER_ROLES = (*INTERVIEW_MANAGER_ROLES, "Interviewer")
 
 
 async def _get_valid_interviewer(db: AsyncSession, interviewer_id: uuid.UUID) -> User:
@@ -78,14 +84,41 @@ async def _get_candidate_contact(db: AsyncSession, application: Application) -> 
     return user.email, candidate_name
 
 
-def _build_interview_response(interview: Interview, interviewer_name: str) -> InterviewResponse:
+async def _build_interview_response(db: AsyncSession, interview: Interview) -> InterviewResponse:
+    """
+    پاسخ کامل یک مصاحبه را می‌سازد — شامل نام مصاحبه‌کننده، نام کارجو، و عنوان
+    آگهی (با join از طریق Application) تا جدول‌های داشبورد بدون درخواست‌های
+    اضافی، اطلاعات لازم برای نمایش را داشته باشند.
+    """
+    interviewer_result = await db.execute(select(User).where(User.id == interview.interviewer_id))
+    interviewer = interviewer_result.scalar_one_or_none()
+
+    application_result = await db.execute(
+        select(Job.title, Candidate.first_name, Candidate.last_name)
+        .select_from(Application)
+        .join(Job, Job.id == Application.job_id)
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .where(Application.id == interview.application_id)
+    )
+    row = application_result.first()
+
+    job_title = row.title if row is not None else ""
+    candidate_name = f"{row.first_name} {row.last_name}".strip() if row is not None else ""
+
     return InterviewResponse(
         interview_id=interview.id,
         application_id=interview.application_id,
         interviewer_id=interview.interviewer_id,
-        interviewer_name=interviewer_name,
+        interviewer_name=interviewer.email if interviewer else "",
+        candidate_name=candidate_name,
+        job_title=job_title,
         scheduled_at=interview.scheduled_at,
         meeting_link=interview.meeting_link,
+        status=interview.status,
+        evaluation_scores=interview.evaluation_scores,
+        overall_score=interview.overall_score,
+        feedback_text=interview.feedback_text,
+        evaluated_at=interview.evaluated_at,
     )
 
 
@@ -105,7 +138,7 @@ async def create_interview(
     ترتیب پردازش:
     ۱. اطمینان از وجود درخواست (Application) با application_id ارسالی -> در غیر این صورت 404.
     ۲. اعتبارسنجی نقش مصاحبه‌کننده (باید Interviewer یا HR_Manager باشد) -> در غیر این صورت 422.
-    ۳. ساخت ردیف Interview و ثبت در دیتابیس -> 201 Created.
+    ۳. ساخت ردیف Interview با وضعیت پیش‌فرض Pending و ثبت در دیتابیس -> 201 Created.
     ۴. زمان‌بندی یادآور ایمیل برای هر دو نفر (کارجو و مصاحبه‌کننده)، دقیقاً
        ۲۴ ساعت پیش از scheduled_at (بنگرید app/core/interview_scheduler.py).
     """
@@ -141,7 +174,7 @@ async def create_interview(
     await db.commit()
     await db.refresh(interview)
 
-    return _build_interview_response(interview, interviewer_name=interviewer.email)
+    return await _build_interview_response(db, interview)
 
 
 @router.get(
@@ -167,10 +200,7 @@ async def get_interview(
     if not (is_manager or is_assigned_interviewer):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="شما اجازه‌ی مشاهده‌ی این مصاحبه را ندارید.")
 
-    interviewer_result = await db.execute(select(User).where(User.id == interview.interviewer_id))
-    interviewer = interviewer_result.scalar_one_or_none()
-
-    return _build_interview_response(interview, interviewer_name=interviewer.email if interviewer else "")
+    return await _build_interview_response(db, interview)
 
 
 @router.get(
@@ -178,24 +208,41 @@ async def get_interview(
     response_model=InterviewListResponse,
     status_code=status.HTTP_200_OK,
     tags=["Interviews"],
-    summary="لیست مصاحبه‌های یک درخواست خاص",
-    dependencies=[Depends(require_roles(*INTERVIEW_MANAGER_ROLES))],
+    summary="لیست مصاحبه‌ها (فیلترپذیر بر اساس درخواست/تاریخ/وضعیت)",
 )
 async def list_interviews(
-    application_id: uuid.UUID = Query(..., description="شناسه‌ی درخواست موردنظر"),
+    application_id: uuid.UUID | None = Query(default=None, description="فیلتر بر اساس یک درخواست خاص"),
+    day: date_type | None = Query(default=None, alias="date", description="فیلتر بر اساس روز برگزاری (YYYY-MM-DD)"),
+    evaluation_status: str | None = Query(
+        default=None, alias="status", description="فیلتر بر اساس وضعیت فرم ارزیابی: Pending یا Completed"
+    ),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> InterviewListResponse:
-    """فقط Admin/HR_Manager — لیست همه‌ی مصاحبه‌های زمان‌بندی‌شده برای یک درخواست خاص."""
-    query = (
-        select(Interview, User.email)
-        .join(User, User.id == Interview.interviewer_id)
-        .where(Interview.application_id == application_id)
-        .order_by(Interview.scheduled_at.asc())
-    )
-    result = await db.execute(query)
-    rows = result.all()
+    """
+    Admin/HR_Manager بدون محدودیت (برای «لیست مصاحبه‌های روزانه» در داشبورد)؛
+    Interviewer فقط مصاحبه‌های خودش را می‌بیند (صرف‌نظر از پارامترهای ارسالی) —
+    تا کسی نتواند لیست مصاحبه‌های سایر مصاحبه‌کنندگان را ببیند.
+    """
+    if current_user.role not in _INTERVIEW_VIEWER_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="شما اجازه‌ی دسترسی به این بخش را ندارید.")
 
-    items = [_build_interview_response(interview, interviewer_name=email) for interview, email in rows]
+    query = select(Interview)
+
+    if application_id is not None:
+        query = query.where(Interview.application_id == application_id)
+    if day is not None:
+        query = query.where(func.date(Interview.scheduled_at) == day)
+    if evaluation_status is not None:
+        query = query.where(Interview.status == evaluation_status)
+    if current_user.role == "Interviewer":
+        query = query.where(Interview.interviewer_id == current_user.id)
+
+    query = query.order_by(Interview.scheduled_at.asc())
+    result = await db.execute(query)
+    interviews = result.scalars().all()
+
+    items = [await _build_interview_response(db, interview) for interview in interviews]
 
     return InterviewListResponse(total=len(items), items=items)
 
@@ -262,11 +309,54 @@ async def update_interview(
     await db.commit()
     await db.refresh(interview)
 
-    if interviewer is None:
-        interviewer_result = await db.execute(select(User).where(User.id == interview.interviewer_id))
-        interviewer = interviewer_result.scalar_one_or_none()
+    return await _build_interview_response(db, interview)
 
-    return _build_interview_response(interview, interviewer_name=interviewer.email if interviewer else "")
+
+@router.put(
+    "/{interview_id}/evaluation",
+    response_model=InterviewResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Interviews"],
+    summary="ثبت ارزیابی نهایی و نمرات یک مصاحبه",
+)
+async def submit_interview_evaluation(
+    interview_id: uuid.UUID,
+    payload: InterviewEvaluationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> InterviewResponse:
+    """
+    فقط خودِ مصاحبه‌کننده‌ی تخصیص‌یافته به این مصاحبه (یا Admin/HR_Manager برای
+    ثبت جایگزین) می‌تواند نمره ثبت کند. میانگین evaluation_scores به‌عنوان
+    overall_score محاسبه می‌شود (نه این‌که کلاینت آن را مستقیم بفرستد) تا
+    همیشه با نمرات واقعی هم‌خوان بماند. بعد از ثبت موفق، status به Completed
+    تغییر می‌کند — طبق معیار پذیرش تسک.
+    """
+    result = await db.execute(select(Interview).where(Interview.id == interview_id))
+    interview = result.scalar_one_or_none()
+    if interview is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مصاحبه موردنظر یافت نشد.")
+
+    is_manager = current_user.role in INTERVIEW_MANAGER_ROLES
+    is_assigned_interviewer = current_user.id == interview.interviewer_id
+    if not (is_manager or is_assigned_interviewer):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="شما اجازه‌ی ثبت ارزیابی برای این مصاحبه را ندارید."
+        )
+
+    overall_score = sum(payload.evaluation_scores.values()) / len(payload.evaluation_scores)
+
+    interview.evaluation_scores = payload.evaluation_scores
+    interview.overall_score = round(overall_score, 2)
+    interview.feedback_text = payload.feedback_text
+    interview.status = "Completed"
+    interview.evaluated_at = datetime.now(timezone.utc)
+
+    db.add(interview)
+    await db.commit()
+    await db.refresh(interview)
+
+    return await _build_interview_response(db, interview)
 
 
 @router.delete(

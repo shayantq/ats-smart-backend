@@ -51,6 +51,26 @@ http://localhost:5173
 مثل داشبورد HR، چون صفحه‌ی لاگین واقعی هنوز نیست، یک فیلد موقت «توکن دسترسی»
 بالای پورتال کارجو قرار دارد.
 
+## پورتال ثبت نمرات و ارزیابی مصاحبه (Interview Evaluation)
+
+داخل `HRDashboard.tsx` یک تب داخلی دوم («مصاحبه‌های امروز») اضافه شده،
+کنار تب «بورد کانبان» موجود:
+
+- **`TodayInterviewsPanel.tsx`**: لیست مصاحبه‌های امروز (`GET /interviews/?date=...`)
+  را نشان می‌دهد؛ یک دکمه هم برای دیدن «همه‌ی فرم‌های ارزیابی معوقه»
+  (`?status=Pending`، صرف‌نظر از تاریخ) وجود دارد تا دسترسی سریع به فرم‌های
+  عقب‌افتاده ممکن باشد.
+- **`InterviewRow.tsx`**: هر ردیف یک مصاحبه — اگر `status` آن `Completed`
+  باشد فقط خلاصه‌ی نمره را نشان می‌دهد، وگرنه دکمه‌ی «ثبت ارزیابی» فرم را
+  باز/بسته می‌کند.
+- **`EvaluationForm.tsx`**: فیلدهای عددی (Range Slider، ۱ تا ۱۰) برای هر
+  معیار نمره‌دهی (`technical_skill`, `problem_solving`, `communication`,
+  `culture_fit` — دقیقاً همان مجموعه‌ای که بک‌اند می‌پذیرد) + یک فیلد متنی
+  برای بازخورد کیفی. ثبت با `PUT /interviews/{id}/evaluation` (از طریق
+  React Query `useMutation`) انجام می‌شود؛ بعد از موفقیت، Toast نمایش داده
+  می‌شود و لیست مصاحبه‌ها بدون رفرش صفحه دوباره خوانده می‌شود (invalidate
+  شدن Query)، پس وضعیت آن ردیف فوراً به «تکمیل شده» تغییر می‌کند.
+
 ## مدیریت وضعیت (State Management)
 
 - **Redux Toolkit**: برای وضعیت های سراسری اپلیکیشن (فعلاً فقط اطلاعات کاربر لاگین شده در `store/slices/authSlice.ts`). به‌جای `useDispatch`/`useSelector` خام، همیشه از هوک های تایپ‌شده در `store/hooks.ts` استفاده کنید.
@@ -69,29 +89,35 @@ frontend/
 │   │   ├── ApplicationCard.tsx     # کارت کارجو (Draggable) + نشان امتیاز هوش مصنوعی
 │   │   ├── KanbanColumn.tsx         # یک ستون بورد (Droppable)
 │   │   ├── KanbanBoard.tsx           # هماهنگ‌کننده‌ی بورد: fetch, drag&drop, snap-back, toast
-│   │   └── candidate/                 # کامپوننت‌های پورتال کارجو
-│   │       ├── SkillTagInput.tsx         # ورودی تگ‌های مهارتی
-│   │       ├── ResumeUploadWidget.tsx     # انتخاب آگهی + Drag&Drop رزومه + آپلود ناهمگام
-│   │       ├── ProfileTab.tsx              # ویرایش مشخصات فردی و مهارت‌ها
-│   │       ├── ApplicationTrackerCard.tsx   # نوار مرحله‌ای بصری وضعیت یک درخواست
-│   │       ├── TrackerTab.tsx                # لیست همه‌ی درخواست‌های کارجو
-│   │       ├── OfferCard.tsx                  # کارت پیشنهاد + دکمه‌های قبول/رد
-│   │       └── OffersTab.tsx                   # صندوق ورودی پیشنهادها
+│   │   ├── candidate/                 # کامپوننت‌های پورتال کارجو
+│   │   │   ├── SkillTagInput.tsx         # ورودی تگ‌های مهارتی
+│   │   │   ├── ResumeUploadWidget.tsx     # انتخاب آگهی + Drag&Drop رزومه + آپلود ناهمگام
+│   │   │   ├── ProfileTab.tsx              # ویرایش مشخصات فردی و مهارت‌ها
+│   │   │   ├── ApplicationTrackerCard.tsx   # نوار مرحله‌ای بصری وضعیت یک درخواست
+│   │   │   ├── TrackerTab.tsx                # لیست همه‌ی درخواست‌های کارجو
+│   │   │   ├── OfferCard.tsx                  # کارت پیشنهاد + دکمه‌های قبول/رد
+│   │   │   └── OffersTab.tsx                   # صندوق ورودی پیشنهادها
+│   │   └── interview/                 # کامپوننت‌های پورتال ارزیابی مصاحبه
+│   │       ├── TodayInterviewsPanel.tsx  # لیست مصاحبه‌های امروز/معوقه (React Query)
+│   │       ├── InterviewRow.tsx           # یک ردیف: خلاصه‌ی نمره یا دکمه‌ی «ثبت ارزیابی»
+│   │       └── EvaluationForm.tsx          # فرم نمرات عددی (Slider) + بازخورد کیفی
 │   ├── context/
 │   │   └── ToastContext.tsx           # سیستم Toast Notification (موفقیت/خطا)
 │   ├── pages/
-│   │   ├── HRDashboard.tsx             # صفحه‌ی داشبورد HR (فرم Job ID/Token موقت + بورد)
+│   │   ├── HRDashboard.tsx             # داشبورد HR (تب بورد کانبان + تب مصاحبه‌های امروز)
 │   │   └── CandidatePortal.tsx          # صفحه‌ی پورتال کارجو (پروفایل/رهگیر/پیشنهادها)
 │   ├── services/
 │   │   ├── apiClient.ts                # fetch wrapper + apiUploadFile (multipart) + خطای تایپ‌شده
 │   │   ├── applicationsApi.ts           # GET لیست و PUT تغییر وضعیت (سمت HR)
 │   │   ├── candidatesApi.ts              # پروفایل، رهگیر، پیشنهادها، آپلود رزومه (سمت کارجو)
+│   │   ├── interviewsApi.ts               # لیست مصاحبه‌ها (فیلترپذیر) + ثبت ارزیابی
 │   │   ├── jobsApi.ts                     # لیست آگهی‌های فعال (مسیر عمومی)
 │   │   ├── tokenStorage.ts                 # ذخیره‌ی موقت توکن در localStorage
 │   │   └── queryClient.ts
 │   ├── types/
 │   │   ├── application.ts                # ستون‌های وضعیت + تایپ‌های کارت (منطبق بر بک‌اند)
 │   │   ├── candidate.ts                   # تایپ‌های پروفایل/رهگیر/پیشنهاد کارجو
+│   │   ├── interview.ts                    # تایپ مصاحبه + معیارهای نمره‌دهی
 │   │   └── job.ts                          # تایپ آگهی شغلی
 │   ├── hooks/
 │   ├── store/                             # Redux Toolkit (auth)
