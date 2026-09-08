@@ -1,8 +1,17 @@
 import { useState } from "react";
 import KanbanBoard from "../components/KanbanBoard";
+import TodayInterviewsPanel from "../components/interview/TodayInterviewsPanel";
 import { getToken, setToken as saveToken } from "../services/tokenStorage";
 
+type HRTab = "kanban" | "interviews";
+
+const TABS: { value: HRTab; label: string }[] = [
+  { value: "kanban", label: "بورد کانبان" },
+  { value: "interviews", label: "مصاحبه‌های امروز" },
+];
+
 export default function HRDashboard() {
+  const [activeTab, setActiveTab] = useState<HRTab>("kanban");
   const [jobIdInput, setJobIdInput] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [tokenInput, setTokenInput] = useState(getToken() ?? "");
@@ -19,7 +28,7 @@ export default function HRDashboard() {
           داشبورد کارشناس منابع انسانی
         </h1>
         <p className="mb-6 text-sm text-slate-500">
-          بورد کانبان فرآیند استخدام — کارت کارجو را بین ستون‌ها بکشید تا وضعیتش تغییر کند.
+          بورد کانبان فرآیند استخدام، و دسترسی سریع به فرم‌های ارزیابی مصاحبه‌های امروز.
         </p>
 
         {/* بخش موقت توسعه: تا زمانی که صفحه‌ی ورود (Login) و انتخاب آگهی ساخته شود */}
@@ -56,7 +65,24 @@ export default function HRDashboard() {
           </button>
         </div>
 
-        <KanbanBoard jobId={activeJobId} />
+        <div className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200">
+          {TABS.map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setActiveTab(tab.value)}
+              className={`shrink-0 rounded-t-lg px-4 py-2 text-sm font-semibold transition-colors ${
+                activeTab === tab.value
+                  ? "border-b-2 border-blue-600 text-blue-700"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "kanban" && <KanbanBoard jobId={activeJobId} />}
+        {activeTab === "interviews" && <TodayInterviewsPanel />}
       </div>
     </div>
   );
