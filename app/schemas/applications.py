@@ -56,5 +56,10 @@ class ApplicationListItem(BaseModel):
 
 
 class ApplicationListResponse(BaseModel):
-    total: int
+    """پاسخ لیست درخواست‌های یک آگهی — صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination)."""
+
     items: list[ApplicationListItem]
+    next_cursor: Optional[str] = None
+    previous_cursor: Optional[str] = None
+    has_next: bool = False
+    has_previous: bool = False

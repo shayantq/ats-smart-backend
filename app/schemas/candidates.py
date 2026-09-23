@@ -68,8 +68,13 @@ class ApplicationTrackerItem(BaseModel):
 
 
 class ApplicationTrackerResponse(BaseModel):
-    total: int
+    """پاسخ سیستم رهگیر وضعیت — صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination)."""
+
     items: list[ApplicationTrackerItem]
+    next_cursor: Optional[str] = None
+    previous_cursor: Optional[str] = None
+    has_next: bool = False
+    has_previous: bool = False
 
 
 class OfferInboxItem(BaseModel):
@@ -83,8 +88,13 @@ class OfferInboxItem(BaseModel):
 
 
 class OfferInboxResponse(BaseModel):
-    total: int
+    """پاسخ صندوق ورودی پیشنهادها — صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination)."""
+
     items: list[OfferInboxItem]
+    next_cursor: Optional[str] = None
+    previous_cursor: Optional[str] = None
+    has_next: bool = False
+    has_previous: bool = False
 
 
 class OfferResponseRequest(BaseModel):

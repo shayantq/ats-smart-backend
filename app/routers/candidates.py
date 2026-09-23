@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.candidate_utils import get_or_create_candidate_profile
 from app.core.deps import get_current_user, require_roles
+from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
 from app.core.state_machine import ApplicationStatus, is_transition_allowed
 from app.db.session import get_db
 from app.models import Application, Company, Job, StatusHistory, User
@@ -103,7 +104,14 @@ async def update_my_profile(
 async def list_my_applications(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    page: CursorParams = Depends(cursor_params),
 ) -> ApplicationTrackerResponse:
+    """
+    صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination): جدیدترین تغییر وضعیت اول
+    (updated_at DESC) — از همان ایندکس مرکب (candidate_id, updated_at, id)
+    روی applications استفاده می‌کند که برای این کوئری هم فیلتر candidate_id
+    و هم ترتیب صفحه‌بندی را پوشش می‌دهد.
+    """
     candidate = await get_or_create_candidate_profile(db, current_user)
     await db.commit()
 
@@ -111,10 +119,16 @@ async def list_my_applications(
         select(Application.id, Application.job_id, Job.title, Application.current_status, Application.updated_at)
         .join(Job, Job.id == Application.job_id)
         .where(Application.candidate_id == candidate.id)
-        .order_by(Application.updated_at.desc())
     )
-    result = await db.execute(query)
-    rows = result.all()
+
+    cursor_page = await paginate_by_cursor(
+        db,
+        query,
+        sort_column=Application.updated_at,
+        id_column=Application.id,
+        params=page,
+        descending=True,
+    )
 
     items = [
         ApplicationTrackerItem(
@@ -124,10 +138,16 @@ async def list_my_applications(
             current_status=row.current_status,
             updated_at=row.updated_at,
         )
-        for row in rows
+        for row in cursor_page.items
     ]
 
-    return ApplicationTrackerResponse(total=len(items), items=items)
+    return ApplicationTrackerResponse(
+        items=items,
+        next_cursor=cursor_page.next_cursor,
+        previous_cursor=cursor_page.previous_cursor,
+        has_next=cursor_page.has_next,
+        has_previous=cursor_page.has_previous,
+    )
 
 
 @router.get(
@@ -140,7 +160,13 @@ async def list_my_applications(
 async def list_my_offers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    page: CursorParams = Depends(cursor_params),
 ) -> OfferInboxResponse:
+    """
+    صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination) — همان الگوی سایر لیست‌ها
+    (updated_at DESC)؛ فیلتر current_status از ایندکس ix_applications_current_status
+    و فیلتر candidate_id + ترتیب از ایندکس مرکب (candidate_id, updated_at, id) استفاده می‌کند.
+    """
     candidate = await get_or_create_candidate_profile(db, current_user)
     await db.commit()
 
@@ -152,10 +178,16 @@ async def list_my_offers(
             Application.candidate_id == candidate.id,
             Application.current_status == ApplicationStatus.OFFER.value,
         )
-        .order_by(Application.updated_at.desc())
     )
-    result = await db.execute(query)
-    rows = result.all()
+
+    cursor_page = await paginate_by_cursor(
+        db,
+        query,
+        sort_column=Application.updated_at,
+        id_column=Application.id,
+        params=page,
+        descending=True,
+    )
 
     items = [
         OfferInboxItem(
@@ -165,10 +197,16 @@ async def list_my_offers(
             company_name=row.name,
             updated_at=row.updated_at,
         )
-        for row in rows
+        for row in cursor_page.items
     ]
 
-    return OfferInboxResponse(total=len(items), items=items)
+    return OfferInboxResponse(
+        items=items,
+        next_cursor=cursor_page.next_cursor,
+        previous_cursor=cursor_page.previous_cursor,
+        has_next=cursor_page.has_next,
+        has_previous=cursor_page.has_previous,
+    )
 
 
 @router.put(

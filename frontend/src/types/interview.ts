@@ -29,9 +29,13 @@ export interface Interview {
   evaluated_at: string | null;
 }
 
+/** خروجی GET /api/v1/interviews/ — صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination) */
 export interface InterviewListResponse {
-  total: number;
   items: Interview[];
+  next_cursor: string | null;
+  previous_cursor: string | null;
+  has_next: boolean;
+  has_previous: boolean;
 }
 
 /** بدنه‌ی درخواست PUT /interviews/{id}/evaluation */

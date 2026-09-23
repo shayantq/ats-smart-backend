@@ -11,7 +11,11 @@ export interface Job {
   created_at: string | null;
 }
 
+/** خروجی GET /api/v1/jobs/ — صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination) */
 export interface JobListResponse {
-  total: number;
   items: Job[];
+  next_cursor: string | null;
+  previous_cursor: string | null;
+  has_next: boolean;
+  has_previous: boolean;
 }

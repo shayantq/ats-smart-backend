@@ -37,9 +37,13 @@ export interface ApplicationListItem {
   updated_at: string;
 }
 
+/** خروجی GET /api/v1/applications/ — صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination) */
 export interface ApplicationListResponse {
-  total: number;
   items: ApplicationListItem[];
+  next_cursor: string | null;
+  previous_cursor: string | null;
+  has_next: boolean;
+  has_previous: boolean;
 }
 
 /** خروجی موفق PUT /api/v1/applications/{id}/status */

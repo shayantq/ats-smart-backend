@@ -68,6 +68,61 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 }
 
 /**
+ * ساختار عمومی پاسخ اندپوینت‌های GET List بک‌اند بعد از مهاجرت به
+ * Cursor Pagination (بنگرید app/core/pagination.py). دیگر `total` وجود
+ * ندارد — چون محاسبه‌ی COUNT(*) دقیق روی جدول‌های حجیم دقیقاً همان مشکل
+ * کارایی‌ای است که این معماری قرار است حذفش کند.
+ */
+export interface CursorPageResponse<T> {
+  items: T[];
+  next_cursor: string | null;
+  previous_cursor: string | null;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+/** باید با app.core.pagination.MAX_PAGE_SIZE بک‌اند یکی باشد. */
+const MAX_PAGE_SIZE = 100;
+
+/**
+ * تمام صفحات یک اندپوینت Cursor-Paginated بک‌اند را پشت‌سرهم می‌خواند و
+ * به‌صورت یک آرایه‌ی واحد برمی‌گرداند.
+ *
+ * چرا؟ بخش زیادی از UI فعلی (بورد کانبان، رهگیر وضعیت، صندوق پیشنهادها،
+ * پنل مصاحبه‌های امروز) طوری نوشته شده که انتظار دارد کل لیست یک‌جا برگردد
+ * (بدون دکمه‌ی «بیشتر»/اسکرول بی‌نهایت). این تابع همان رفتار را برای
+ * کامپوننت‌ها حفظ می‌کند، درحالی‌که هر درخواست واقعی به بک‌اند همچنان
+ * صفحه‌بندی‌شده و بهینه است — نه یک SELECT بدون سقف روی جدول‌های حجیم.
+ *
+ * برای لیست‌های واقعاً بزرگ (مثل هزاران رزومه)، گام بعدی طبیعی این است که
+ * UI به Infinite Scroll/دکمه‌ی «بیشتر» با useInfiniteQuery مهاجرت کند و
+ * این حلقه‌ی خودکار حذف شود؛ فعلاً برای هم‌خوانی کامل با رفتار فعلی UI
+ * نگه داشته شده است.
+ */
+export async function fetchAllCursorPages<T>(
+  path: string,
+  options: { params?: Record<string, string>; auth?: boolean } = {},
+): Promise<T[]> {
+  const { params = {}, auth = true } = options;
+  const items: T[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const searchParams = new URLSearchParams(params);
+    searchParams.set("limit", String(MAX_PAGE_SIZE));
+    if (cursor) {
+      searchParams.set("cursor", cursor);
+    }
+
+    const data = await apiRequest<CursorPageResponse<T>>(`${path}?${searchParams.toString()}`, { auth });
+    items.push(...data.items);
+    cursor = data.has_next ? data.next_cursor ?? undefined : undefined;
+  } while (cursor);
+
+  return items;
+}
+
+/**
  * برای آپلود فایل (multipart/form-data) — عمداً هدر Content-Type دستی ست
  * نمی‌شود، چون مرورگر خودش باید boundary درست را برای FormData بسازد.
  */

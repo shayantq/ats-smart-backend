@@ -65,5 +65,17 @@ class JobResponse(BaseModel):
 
 
 class JobListResponse(BaseModel):
-    total: int
+    """
+    پاسخ لیست آگهی‌ها با صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination).
+
+    به‌جای شماره صفحه/total، از next_cursor و previous_cursor استفاده کنید:
+    برای صفحه‌ی بعد همان مقدار next_cursor را در پارامتر ?cursor= بفرستید
+    (با direction=next که پیش‌فرض است)، برای صفحه‌ی قبل مقدار
+    previous_cursor را با direction=prev.
+    """
+
     items: list[JobResponse]
+    next_cursor: Optional[str] = None
+    previous_cursor: Optional[str] = None
+    has_next: bool = False
+    has_previous: bool = False

@@ -7,7 +7,7 @@
  * - POST    /api/v1/resumes/upload                                آپلود رزومه
  */
 
-import { apiRequest, apiUploadFile } from "./apiClient";
+import { apiRequest, apiUploadFile, fetchAllCursorPages } from "./apiClient";
 import type {
   ApplicationTrackerItem,
   CandidateProfile,
@@ -30,15 +30,11 @@ export async function updateMyProfile(payload: CandidateProfileUpdatePayload): P
 }
 
 export async function fetchMyApplications(): Promise<ApplicationTrackerItem[]> {
-  const data = await apiRequest<{ total: number; items: ApplicationTrackerItem[] }>(
-    "/candidates/me/applications",
-  );
-  return data.items;
+  return fetchAllCursorPages<ApplicationTrackerItem>("/candidates/me/applications");
 }
 
 export async function fetchMyOffers(): Promise<OfferInboxItem[]> {
-  const data = await apiRequest<{ total: number; items: OfferInboxItem[] }>("/candidates/me/offers");
-  return data.items;
+  return fetchAllCursorPages<OfferInboxItem>("/candidates/me/offers");
 }
 
 export async function respondToOffer(

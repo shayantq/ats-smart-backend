@@ -19,14 +19,15 @@ Google Meet/Zoom که خودش خارج از این سیستم ساخته)، ن�
 
 import uuid
 from datetime import date as date_type
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
 from app.core.interview_scheduler import cancel_interview_reminder, schedule_interview_reminder
+from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
 from app.db.session import get_db
 from app.models import Application, Candidate, Interview, Job, User
 from app.schemas.interviews import (
@@ -218,11 +219,21 @@ async def list_interviews(
     ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    page: CursorParams = Depends(cursor_params),
 ) -> InterviewListResponse:
     """
     Admin/HR_Manager بدون محدودیت (برای «لیست مصاحبه‌های روزانه» در داشبورد)؛
     Interviewer فقط مصاحبه‌های خودش را می‌بیند (صرف‌نظر از پارامترهای ارسالی) —
     تا کسی نتواند لیست مصاحبه‌های سایر مصاحبه‌کنندگان را ببیند.
+
+    صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination): زودترین مصاحبه اول
+    (scheduled_at ASC) — از ایندکس مرکب (scheduled_at, id) استفاده می‌کند.
+
+    نکته‌ی فنی درباره‌ی فیلتر day: قبلاً با func.date(scheduled_at) == day
+    نوشته شده بود که چون ستون را داخل یک تابع می‌پیچد، ایندکس معمولی روی
+    scheduled_at را غیرقابل‌استفاده می‌کرد (Non-Sargable). اینجا به یک بازه‌ی
+    نیمه‌باز [شروع روز, شروع روز بعد) تبدیل شده تا هم نتیجه‌ی یکسانی بدهد و
+    هم بتواند از همان ایندکس (scheduled_at, id) به‌صورت Range Scan استفاده کند.
     """
     if current_user.role not in _INTERVIEW_VIEWER_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="شما اجازه‌ی دسترسی به این بخش را ندارید.")
@@ -232,19 +243,32 @@ async def list_interviews(
     if application_id is not None:
         query = query.where(Interview.application_id == application_id)
     if day is not None:
-        query = query.where(func.date(Interview.scheduled_at) == day)
+        day_start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+        day_end = day_start + timedelta(days=1)
+        query = query.where(Interview.scheduled_at >= day_start, Interview.scheduled_at < day_end)
     if evaluation_status is not None:
         query = query.where(Interview.status == evaluation_status)
     if current_user.role == "Interviewer":
         query = query.where(Interview.interviewer_id == current_user.id)
 
-    query = query.order_by(Interview.scheduled_at.asc())
-    result = await db.execute(query)
-    interviews = result.scalars().all()
+    cursor_page = await paginate_by_cursor(
+        db,
+        query,
+        sort_column=Interview.scheduled_at,
+        id_column=Interview.id,
+        params=page,
+        descending=False,
+    )
 
-    items = [await _build_interview_response(db, interview) for interview in interviews]
+    items = [await _build_interview_response(db, interview) for interview in cursor_page.items]
 
-    return InterviewListResponse(total=len(items), items=items)
+    return InterviewListResponse(
+        items=items,
+        next_cursor=cursor_page.next_cursor,
+        previous_cursor=cursor_page.previous_cursor,
+        has_next=cursor_page.has_next,
+        has_previous=cursor_page.has_previous,
+    )
 
 
 @router.put(
