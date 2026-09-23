@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
+from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
 from app.db.session import get_db
 from app.models import Job, User
 from app.schemas.jobs import JobCreateRequest, JobListResponse, JobResponse
@@ -71,10 +72,15 @@ async def list_jobs(
     db: AsyncSession = Depends(get_db),
     status_filter: str | None = Query(default=None, alias="status", description="فیلتر بر اساس وضعیت آگهی"),
     department: str | None = Query(default=None, description="فیلتر بر اساس دپارتمان"),
+    page: CursorParams = Depends(cursor_params),
 ) -> JobListResponse:
     """
     این مسیر عمومی است (بدون نیاز به توکن) تا کارجویان هم بتوانند آگهی‌ها را ببینند.
     فیلترهای اولیه: status و department (هر دو اختیاری).
+
+    صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination): جدیدترین آگهی‌ها اول
+    (created_at DESC) — بنگرید app/core/pagination.py و مایگریشن مربوط به
+    ایندکس مرکب (created_at, id) روی جدول jobs.
     """
     query = select(Job)
 
@@ -83,12 +89,21 @@ async def list_jobs(
     if department is not None:
         query = query.where(Job.department == department)
 
-    result = await db.execute(query)
-    jobs = result.scalars().all()
+    cursor_page = await paginate_by_cursor(
+        db,
+        query,
+        sort_column=Job.created_at,
+        id_column=Job.id,
+        params=page,
+        descending=True,
+    )
 
     return JobListResponse(
-        total=len(jobs),
-        items=[JobResponse.model_validate(job) for job in jobs],
+        items=[JobResponse.model_validate(job) for job in cursor_page.items],
+        next_cursor=cursor_page.next_cursor,
+        previous_cursor=cursor_page.previous_cursor,
+        has_next=cursor_page.has_next,
+        has_previous=cursor_page.has_previous,
     )
 
 

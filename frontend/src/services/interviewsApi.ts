@@ -4,8 +4,8 @@
  * - PUT /api/v1/interviews/{id}/evaluation                    ثبت ارزیابی و نمرات
  */
 
-import { apiRequest } from "./apiClient";
-import type { Interview, InterviewEvaluationPayload, InterviewListResponse, InterviewStatus } from "../types/interview";
+import { apiRequest, fetchAllCursorPages } from "./apiClient";
+import type { Interview, InterviewEvaluationPayload, InterviewStatus } from "../types/interview";
 
 export interface FetchInterviewsParams {
   date?: string; // فرمت YYYY-MM-DD
@@ -14,16 +14,12 @@ export interface FetchInterviewsParams {
 }
 
 export async function fetchInterviews(params: FetchInterviewsParams = {}): Promise<Interview[]> {
-  const searchParams = new URLSearchParams();
-  if (params.date) searchParams.set("date", params.date);
-  if (params.status) searchParams.set("status", params.status);
-  if (params.applicationId) searchParams.set("application_id", params.applicationId);
+  const queryParams: Record<string, string> = {};
+  if (params.date) queryParams.date = params.date;
+  if (params.status) queryParams.status = params.status;
+  if (params.applicationId) queryParams.application_id = params.applicationId;
 
-  const query = searchParams.toString();
-  const path = query ? `/interviews/?${query}` : "/interviews/";
-
-  const data = await apiRequest<InterviewListResponse>(path);
-  return data.items;
+  return fetchAllCursorPages<Interview>("/interviews/", { params: queryParams });
 }
 
 export async function submitInterviewEvaluation(

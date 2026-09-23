@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
+from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
 from app.core.state_machine import is_transition_allowed
 from app.core.status_notifier import trigger_status_change_email
 from app.db.session import get_db
@@ -44,12 +45,18 @@ APPLICATION_MANAGER_ROLES = ("Admin", "HR_Manager")
 async def list_applications(
     job_id: uuid.UUID = Query(..., description="شناسه‌ی آگهی شغلی موردنظر"),
     db: AsyncSession = Depends(get_db),
+    page: CursorParams = Depends(cursor_params),
 ) -> ApplicationListResponse:
     """
-    لیست تمام درخواست‌های یک آگهی شغلی خاص را برمی‌گرداند — دقیقاً همان
-    داده‌ای که بورد کانبان فرانت‌اند (HR Dashboard) برای رندر کردن ستون‌ها
-    و کارت‌های کارجو مصرف می‌کند (نام کارجو + امتیاز هوش مصنوعی + وضعیت فعلی).
+    لیست درخواست‌های یک آگهی شغلی خاص را برمی‌گرداند — دقیقاً همان داده‌ای
+    که بورد کانبان فرانت‌اند (HR Dashboard) برای رندر کردن ستون‌ها و کارت‌های
+    کارجو مصرف می‌کند (نام کارجو + امتیاز هوش مصنوعی + وضعیت فعلی).
     فقط Admin و HR_Manager دسترسی دارند.
+
+    صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination): جدیدترین تغییر وضعیت اول
+    (updated_at DESC) — بنگرید app/core/pagination.py و مایگریشن مربوط به
+    ایندکس مرکب (job_id, updated_at, id) روی جدول applications که همزمان
+    فیلتر job_id و همین ترتیب صفحه‌بندی را در یک اسکن ایندکس پوشش می‌دهد.
     """
     query = (
         select(
@@ -63,10 +70,16 @@ async def list_applications(
         )
         .join(Candidate, Candidate.id == Application.candidate_id)
         .where(Application.job_id == job_id)
-        .order_by(Application.updated_at.desc())
     )
-    result = await db.execute(query)
-    rows = result.all()
+
+    cursor_page = await paginate_by_cursor(
+        db,
+        query,
+        sort_column=Application.updated_at,
+        id_column=Application.id,
+        params=page,
+        descending=True,
+    )
 
     items = [
         ApplicationListItem(
@@ -77,10 +90,16 @@ async def list_applications(
             score_ai=row.score_ai,
             updated_at=row.updated_at,
         )
-        for row in rows
+        for row in cursor_page.items
     ]
 
-    return ApplicationListResponse(total=len(items), items=items)
+    return ApplicationListResponse(
+        items=items,
+        next_cursor=cursor_page.next_cursor,
+        previous_cursor=cursor_page.previous_cursor,
+        has_next=cursor_page.has_next,
+        has_previous=cursor_page.has_previous,
+    )
 
 
 @router.put(

@@ -4,19 +4,15 @@
  * - PUT  /api/v1/applications/{id}/status   جابه‌جایی وضعیت یک کارت
  */
 
-import { apiRequest } from "./apiClient";
+import { apiRequest, fetchAllCursorPages } from "./apiClient";
 import type {
   ApplicationListItem,
-  ApplicationListResponse,
   ApplicationStatus,
   ApplicationStatusUpdateResult,
 } from "../types/application";
 
 export async function fetchApplicationsForJob(jobId: string): Promise<ApplicationListItem[]> {
-  const data = await apiRequest<ApplicationListResponse>(
-    `/applications/?job_id=${encodeURIComponent(jobId)}`,
-  );
-  return data.items;
+  return fetchAllCursorPages<ApplicationListItem>("/applications/", { params: { job_id: jobId } });
 }
 
 export interface UpdateApplicationStatusPayload {
