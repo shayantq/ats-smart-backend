@@ -556,6 +556,59 @@ rqscheduler --host localhost --port 6379
 - چون جدول `users` فیلد نام ندارد (فقط `email`)، «نام مصاحبه‌کننده» در پاسخ
   API و متن ایمیل یادآور فعلاً همان آدرس ایمیل مصاحبه‌کننده است.
 
+## موتور جستجوی پیشرفته‌ی متنی و فیلترینگ چندگانه‌ی کارجویان (HR)
+
+```
+GET /api/v1/candidates/search/?q=&skills=&skills=&min_experience_years=&min_ai_score=
+```
+
+فقط `Admin` و `HR_Manager` دسترسی دارند (طبق همان الگوی نقش‌های مدیریتی
+`app/routers/jobs.py`/`app/routers/applications.py`؛ برخلاف بقیه‌ی مسیرهای
+این فایل، این مسیر روی «پروفایل خودِ کاربر لاگین‌شده» عمل نمی‌کند و همه‌ی
+کارجویان پلتفرم را جست‌وجو می‌کند). تمام پارامترها اختیارند و **با هم AND**
+می‌شوند (نتیجه‌ی نهایی، تقاطع همه‌ی شروط ارسالی‌ست):
+
+- **`q`** — جستجوی تمام‌متن روی `resumes.raw_text` (با ایندکس GIN
+  `to_tsvector('simple', ...)`، پس Case-Insensitive و فارسی/انگلیسی/مخلوط‌پذیر
+  است). از عملگرهای منطقی **`AND`/`OR`** پشتیبانی می‌کند — مثلاً
+  `q=Python AND Django` یا `q=React OR Vue` (پارسر در
+  `app/core/search_query.py`؛ بین دو کلمه‌ی متوالی بدون عملگر صریح هم AND
+  پیش‌فرض در نظر گرفته می‌شود).
+  پیش از تبدیل به tsvector، نویسه‌های پرکاربرد در نام فناوری‌ها
+  (`./+#@_-`) با `translate()` به فاصله تبدیل می‌شوند (بنگرید
+  `resume_fts_tsvector_expression`) — چون پارسر پیش‌فرض پستگرس چیزی مثل
+  «Node.js» یا «C++» را یک توکن ترکیبی واحد می‌بیند، نه دو کلمه‌ی جدا؛
+  بدون این نرمال‌سازی، جستجوی تک‌کلمه‌ای «Node» هیچ‌وقت با رزومه‌ای که فقط
+  «Node.js» نوشته مطابقت پیدا نمی‌کرد.
+- **`skills`** — قابل تکرار (`skills=Python&skills=Django`)؛ کارجو باید
+  طبق خروجی موتور مهارت (`resumes.skill_analysis->'skills'`) **همه‌ی**
+  این مهارت‌ها را داشته باشد (Case-Insensitive).
+- **`min_experience_years`** — حداقل سال‌های سابقه‌ی کاری خالص
+  (`resumes.skill_analysis->>'total_experience_years'`).
+- **`min_ai_score`** — حداقل `score_ai` در میان درخواست‌های این کارجو؛
+  فقط بین ۰ تا ۱۰۰ معتبر است — هر مقدار خارج از این بازه (مثلاً بالای ۱۰۰)
+  با محدودیت `ge`/`le` روی خودِ پارامتر Query، خودکار `422 Unprocessable
+  Entity` برمی‌گرداند (بدون نیاز به بررسی دستی در کد).
+
+پاسخ، صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination، همان الگوی بقیه‌ی
+لیست‌های پروژه) است و هر ردیف شامل پروفایل خلاصه‌ی کارجو + `best_ai_score`
+و `best_experience_years` (بهترین مقدار موجود در میان رزومه‌ها/درخواست‌های
+همان کارجو) می‌باشد.
+
+⚠️ **تصمیم مهندسی مستند:** چون جدول `candidates` ستون زمانی ندارد، صفحه‌بندی
+این مسیر (برخلاف بقیه‌ی مسیرهای پروژه) روی خودِ `Candidate.id` انجام می‌شود
+نه `created_at`/`updated_at` — ترتیب نمایش معنای زمانی ندارد ولی پایدار است.
+همچنین `min_ai_score` روی `applications.score_ai` (نمره‌ی مخصوص هر
+آگهی/رزومه) فیلتر می‌کند نه یک نمره‌ی عمومی مستقل از آگهی که در طراحی فعلی
+دیتابیس اصلاً وجود ندارد؛ یعنی این فیلتر یعنی «کارجویی که *حداقل در یکی* از
+درخواست‌هایش این نمره یا بالاتر را گرفته باشد».
+
+ایندکس‌های پشتیبان این موتور (علاوه بر GIN اصلی `raw_text`، که به‌خاطر باگ
+توکنایزیشن بالا در مایگریشن `f7b1e9a3c852` با ایندکس `ix_resumes_raw_text_fts_v2`
+جایگزین شد): GIN با `jsonb_path_ops` روی `resumes.skill_analysis` و ایندکس
+مرکب `(candidate_id, score_ai)` روی `applications` — بنگرید مایگریشن
+`a4d8f0c2b716`.
+
 ## ساختار کلی ریپو
 
 ```
@@ -574,6 +627,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── cache.py                  # لایه‌ی سبک Cache روی Redis
 │   │   ├── queue.py                   # صف کارهای پس‌زمینه با RQ (Redis Queue)
 │   │   ├── candidate_utils.py          # یافتن/ساخت پروفایل کارجو (مشترک بین resumes و candidates)
+│   │   ├── search_query.py              # پارسر AND/OR جستجوی متنی -> عبارت to_tsquery پستگرس
 │   │   ├── text_extraction.py           # موتور استخراج متن رزومه + OCR (Tesseract/PyMuPDF)
 │   │   ├── resume_parser.py              # پارسینگ متنی و NER (spaCy + Regex)
 │   │   ├── skill_graph.py                 # گراف مهارت (Skill Ontology) + تطبیق زیرشاخه‌ها
@@ -597,7 +651,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, skill_analysis.py, candidates.py, interviews.py, health.py)
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, skill_analysis.py, candidates.py, candidate_search.py, interviews.py, health.py)
 │   ├── main.py                    # نقطه ورود برنامه (شامل lifespan: بررسی اتصال Redis در startup)
 │   └── worker.py                   # اجرای Worker صف کارها (سازگار با ویندوز)
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
