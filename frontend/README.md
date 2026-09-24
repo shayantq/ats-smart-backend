@@ -71,7 +71,37 @@ http://localhost:5173
   می‌شود و لیست مصاحبه‌ها بدون رفرش صفحه دوباره خوانده می‌شود (invalidate
   شدن Query)، پس وضعیت آن ردیف فوراً به «تکمیل شده» تغییر می‌کند.
 
-## مدیریت وضعیت (State Management)
+## داشبورد تحلیلی (Analytics Dashboard)
+
+داخل `HRDashboard.tsx` یک تب داخلی سوم («داشبورد تحلیلی») اضافه شده، کنار
+«بورد کانبان» و «مصاحبه‌های امروز» — چون هنوز صفحه‌ی جدای «پنل ادمین» ساخته
+نشده، مثل تسک قبلی همین‌جا (داشبورد HR/Admin موجود) اضافه شد:
+
+- **`AnalyticsDashboard.tsx`**: هماهنگ‌کننده‌ی دو کارت نمودار، هرکدام با
+  `useQuery` جدا (کند بودن یکی دیگری را بلاک نمی‌کند)، دکمه‌ی «به‌روزرسانی»
+  دستی برای هرکدام، انتخاب بازه‌ی زمانی (۷/۳۰/۹۰ روز) برای نمودار روند، و
+  یک چک‌باکس اختیاری برای محدود کردن هر دو نمودار به همان Job ID که در
+  فیلد موقت بالای داشبورد وارد شده.
+- **`RecruitmentFunnelChart.tsx`**: نمودار قیف (`GET /analytics/funnel`) با
+  کتابخانه‌ی **Recharts**؛ برچسب هر مرحله از همان `STATUS_COLUMNS` موجود
+  (`types/application.ts`) خوانده می‌شود تا با بورد کانبان یکدست بماند.
+  Tooltip هر مرحله، هم تعداد و هم نرخ تبدیل (نسبت به مرحله‌ی قبل و نسبت به
+  ابتدای قیف) را نشان می‌دهد.
+- **`ApplicationsTrendChart.tsx`**: نمودار خطی (`GET
+  /analytics/applications-trend`) با Recharts؛ محور افقی و Tooltip با
+  `toLocaleDateString("fa-IR")` فرمت می‌شوند (همان الگوی بقیه‌ی تاریخ‌های
+  پروژه).
+- **`ChartSkeleton.tsx`**: اسکلتون بارگذاری عمومی (Tailwind
+  `animate-pulse`) — طبق معیار پذیرش تسک، به‌جای متن ساده‌ی «در حال
+  بارگذاری...» در زمان Fetch نمایش داده می‌شود.
+
+⚠️ **نکته‌ی فنی مهم:** هر دو نمودار داخل یک ظرف `dir="ltr"` رندر می‌شوند.
+Recharts رسماً از چیدمان RTL پشتیبانی نمی‌کند (محاسبه‌ی مختصات Tooltip/Hover
+زیر والد RTL درست کار نمی‌کند)؛ این فقط جهت چیدمان داخلی SVG را عوض
+می‌کند، متن‌های فارسی داخل Tooltip/برچسب‌ها طبق جهت طبیعی خودشان درست
+نمایش داده می‌شوند.
+
+
 
 - **Redux Toolkit**: برای وضعیت های سراسری اپلیکیشن (فعلاً فقط اطلاعات کاربر لاگین شده در `store/slices/authSlice.ts`). به‌جای `useDispatch`/`useSelector` خام، همیشه از هوک های تایپ‌شده در `store/hooks.ts` استفاده کنید.
 - **React Query**: برای گرفتن و کش کردن داده از بک اند (تنظیماتش در `services/queryClient.ts`).
@@ -97,17 +127,23 @@ frontend/
 │   │   │   ├── TrackerTab.tsx                # لیست همه‌ی درخواست‌های کارجو
 │   │   │   ├── OfferCard.tsx                  # کارت پیشنهاد + دکمه‌های قبول/رد
 │   │   │   └── OffersTab.tsx                   # صندوق ورودی پیشنهادها
-│   │   └── interview/                 # کامپوننت‌های پورتال ارزیابی مصاحبه
-│   │       ├── TodayInterviewsPanel.tsx  # لیست مصاحبه‌های امروز/معوقه (React Query)
-│   │       ├── InterviewRow.tsx           # یک ردیف: خلاصه‌ی نمره یا دکمه‌ی «ثبت ارزیابی»
-│   │       └── EvaluationForm.tsx          # فرم نمرات عددی (Slider) + بازخورد کیفی
+│   │   ├── interview/                 # کامپوننت‌های پورتال ارزیابی مصاحبه
+│   │   │   ├── TodayInterviewsPanel.tsx  # لیست مصاحبه‌های امروز/معوقه (React Query)
+│   │   │   ├── InterviewRow.tsx           # یک ردیف: خلاصه‌ی نمره یا دکمه‌ی «ثبت ارزیابی»
+│   │   │   └── EvaluationForm.tsx          # فرم نمرات عددی (Slider) + بازخورد کیفی
+│   │   └── analytics/                 # کامپوننت‌های داشبورد تحلیلی
+│   │       ├── AnalyticsDashboard.tsx    # هماهنگ‌کننده: دو useQuery جدا + دکمه‌ی رفرش + انتخاب بازه
+│   │       ├── RecruitmentFunnelChart.tsx # نمودار قیف (Recharts) + Tooltip نرخ تبدیل
+│   │       ├── ApplicationsTrendChart.tsx  # نمودار خطی روند ثبت درخواست (Recharts)
+│   │       └── ChartSkeleton.tsx            # اسکلتون بارگذاری عمومی (Tailwind animate-pulse)
 │   ├── context/
 │   │   └── ToastContext.tsx           # سیستم Toast Notification (موفقیت/خطا)
 │   ├── pages/
-│   │   ├── HRDashboard.tsx             # داشبورد HR (تب بورد کانبان + تب مصاحبه‌های امروز)
+│   │   ├── HRDashboard.tsx             # داشبورد HR (کانبان + مصاحبه‌های امروز + داشبورد تحلیلی)
 │   │   └── CandidatePortal.tsx          # صفحه‌ی پورتال کارجو (پروفایل/رهگیر/پیشنهادها)
 │   ├── services/
 │   │   ├── apiClient.ts                # fetch wrapper + apiUploadFile (multipart) + خطای تایپ‌شده
+│   │   ├── analyticsApi.ts              # قیف استخدام + سری زمانی ثبت درخواست‌ها
 │   │   ├── applicationsApi.ts           # GET لیست و PUT تغییر وضعیت (سمت HR)
 │   │   ├── candidatesApi.ts              # پروفایل، رهگیر، پیشنهادها، آپلود رزومه (سمت کارجو)
 │   │   ├── interviewsApi.ts               # لیست مصاحبه‌ها (فیلترپذیر) + ثبت ارزیابی
@@ -115,6 +151,7 @@ frontend/
 │   │   ├── tokenStorage.ts                 # ذخیره‌ی موقت توکن در localStorage
 │   │   └── queryClient.ts
 │   ├── types/
+│   │   ├── analytics.ts                  # تایپ قیف استخدام + سری زمانی (منطبق بر بک‌اند)
 │   │   ├── application.ts                # ستون‌های وضعیت + تایپ‌های کارت (منطبق بر بک‌اند)
 │   │   ├── candidate.ts                   # تایپ‌های پروفایل/رهگیر/پیشنهاد کارجو
 │   │   ├── interview.ts                    # تایپ مصاحبه + معیارهای نمره‌دهی
