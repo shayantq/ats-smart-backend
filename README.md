@@ -609,12 +609,53 @@ GET /api/v1/candidates/search/?q=&skills=&skills=&min_experience_years=&min_ai_s
 مرکب `(candidate_id, score_ai)` روی `applications` — بنگرید مایگریشن
 `a4d8f0c2b716`.
 
+## API های تجمیعی داشبورد تحلیلی (Data Aggregation Analytics)
+
+```
+GET /api/v1/analytics/funnel?job_id=
+GET /api/v1/analytics/applications-trend?days=30&job_id=
+```
+
+فقط `Admin` و `HR_Manager` («مدیر سازمان») دسترسی دارند؛ هر نقش دیگری (مثلاً
+`Candidate` یا `Interviewer`) با `403 Forbidden` مواجه می‌شود — کاملاً روی
+`dependencies=[Depends(require_roles(...))]` پیاده شده (بنگرید
+`app/routers/analytics.py`)، دقیقاً همان الگوی `app/routers/admin.py`.
+هر دو کوئری مستقیماً و بدون کش روی دیتابیس اجرا می‌شوند تا همیشه وضعیت
+Real-time را بازتاب دهند.
+
+**`GET /analytics/funnel`** — تعداد کارجویان در هر مرحله از قیف استخدام
+(`Applied → Screening → Technical Interview → HR Interview → Offer →
+Accepted → Hired`؛ ترتیب و فهرست دقیق در
+`app/core/state_machine.py::FUNNEL_STAGES`). خروجی، آرایه‌ای مرتب از
+`{stage, count}` است — مستقیماً قابل مصرف در نمودار قیفی/میله‌ای. با
+پارامتر اختیاری `job_id` می‌توان قیف را به یک آگهی خاص محدود کرد.
+
+⚠️ **تصمیم مهندسی مستند:** `count` هر مرحله یک شمارش **تجمعی** است — «چند
+درخواست تا این مرحله رسیده‌اند یا از آن گذشته‌اند» (از روی جدول
+`status_history`، نه `current_status` لحظه‌ای) — چون این تعریف استاندارد
+«قیف» در تحلیل محصول است و تضمین می‌کند اعداد همیشه یکنواخت نزولی باشند
+(دقیقاً به لطف قوانین ضدپرشِ ماشین وضعیت). Draft (هنوز واقعاً وارد قیف
+نشده) و Rejected (یک وضعیت نهایی موازی، نه یک مرحله‌ی خطی) عمداً از فهرست
+مراحل قیف کنار گذاشته شده‌اند.
+
+**`GET /analytics/applications-trend`** — سری زمانی تعداد درخواست‌های
+ثبت‌شده به تفکیک روز (پیش‌فرض ۳۰ روز گذشته، قابل تنظیم با `days`، بین ۱ تا
+۳۶۵)، با `DATE_TRUNC('day', ...)` پستگرس. روزهای بدون هیچ درخواستی هم با
+`count=0` در خروجی هست (Zero-Filling در بک‌اند) تا فرانت‌اند مجبور به
+پرکردن حفره‌های تاریخ نباشد.
+
+⚠️ **تصمیم مهندسی مستند:** جدول `applications` قبلاً هیچ ستون «زمان ثبت»ی
+نداشت (فقط `updated_at` که با هر جابه‌جایی روی بورد کانبان بازنویسی
+می‌شود). ستون `created_at` در مایگریشن `c39a7f1de204` اضافه شد؛ رکوردهای
+از قبل موجود با اولین ردیف `status_history`شان (یا در نبودش، `updated_at`)
+Backfill شدند.
+
 ## ساختار کلی ریپو
 
 ```
 ats-smart-backend/            # ریشه‌ی ریپو
 ├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications, resumes, candidates, interviews)
+│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications, resumes, candidates, interviews, analytics)
 │   ├── core/
 │   │   ├── config.py             # تنظیمات و متغیرهای محیطی
 │   │   ├── security.py            # هش کردن گذرواژه (Bcrypt) و صدور/رمزگشایی توکن‌های JWT
@@ -651,7 +692,7 @@ ats-smart-backend/            # ریشه‌ی ریپو
 │   │   ├── core.py               # User, Company, Candidate, Job
 │   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
 │   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, skill_analysis.py, candidates.py, candidate_search.py, interviews.py, health.py)
+│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, skill_analysis.py, candidates.py, candidate_search.py, interviews.py, analytics.py, health.py)
 │   ├── main.py                    # نقطه ورود برنامه (شامل lifespan: بررسی اتصال Redis در startup)
 │   └── worker.py                   # اجرای Worker صف کارها (سازگار با ویندوز)
 ├── alembic/                    # مدیریت نسخه‌بندی دیتابیس

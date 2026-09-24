@@ -30,6 +30,11 @@ class Application(Base):
     candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False)
     current_status: Mapped[str] = mapped_column(String(50), default="Draft", nullable=False)
     score_ai: Mapped[int] = mapped_column(Integer, nullable=True)
+    # زمان واقعی «ثبت درخواست» (آپلود رزومه) — برای گزارش‌های سری‌زمانی
+    # داشبورد تحلیلی (app/routers/analytics.py) استفاده می‌شود. عمداً از
+    # updated_at جدا نگه داشته شده چون updated_at با هر تغییر وضعیت روی
+    # بورد کانبان بازنویسی می‌شود و تاریخ ثبت اولیه را گم می‌کند.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     # آخرین زمان تغییر وضعیت (سرور آن را در هر UPDATE موفق خودکار به‌روز می‌کند)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
