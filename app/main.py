@@ -17,7 +17,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.redis_client import check_redis_connection, close_redis_connection
-from app.routers import admin, applications, auth, candidates, health, interviews, jobs, resumes
+from app.routers import admin, analytics, applications, auth, candidates, health, interviews, jobs, resumes
 
 logging.basicConfig(level=logging.INFO)
 
@@ -67,6 +67,7 @@ app.include_router(applications.router, prefix=f"{settings.API_V1_PREFIX}/applic
 app.include_router(resumes.router, prefix=f"{settings.API_V1_PREFIX}/resumes")
 app.include_router(candidates.router, prefix=f"{settings.API_V1_PREFIX}/candidates")
 app.include_router(interviews.router, prefix=f"{settings.API_V1_PREFIX}/interviews")
+app.include_router(analytics.router, prefix=f"{settings.API_V1_PREFIX}/analytics")
 
 
 @app.get("/", tags=["Root"])

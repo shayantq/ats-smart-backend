@@ -53,6 +53,26 @@ TERMINAL_STATUSES: frozenset[str] = frozenset({
     ApplicationStatus.REJECTED.value,
 })
 
+# مراحل «قیف استخدام» (Recruitment Funnel) برای داشبورد تحلیلی
+# (app/routers/analytics.py) — عمداً Draft و Rejected از این لیست کنار
+# گذاشته شده‌اند:
+# - Draft یعنی رزومه آپلود شده ولی هنوز واقعاً وارد قیف نشده (HR هنوز
+#   بررسی/تأییدش نکرده)، پس به‌عنوان مرحله‌ی رسمی قیف حساب نمی‌شود.
+# - Rejected یک وضعیت نهایی *موازی* با قیف است (می‌تواند از هر مرحله‌ای اتفاق
+#   بیفتد)، نه یک «مرحله»‌ی بعدی در مسیر خطی؛ گنجاندنش در قیف باعث می‌شد شکل
+#   قیف (که باید یکنواخت نزولی باشد) معنای درستی نداشته باشد.
+# ترتیب این لیست همان ترتیبی‌ست که در پاسخ API هم برگردانده می‌شود (مهم برای
+# نمودارساز فرانت‌اند).
+FUNNEL_STAGES: list[str] = [
+    ApplicationStatus.APPLIED.value,
+    ApplicationStatus.SCREENING.value,
+    ApplicationStatus.TECHNICAL_INTERVIEW.value,
+    ApplicationStatus.HR_INTERVIEW.value,
+    ApplicationStatus.OFFER.value,
+    ApplicationStatus.ACCEPTED.value,
+    ApplicationStatus.HIRED.value,
+]
+
 
 def get_allowed_next_statuses(current_status: str) -> frozenset[str]:
     """
