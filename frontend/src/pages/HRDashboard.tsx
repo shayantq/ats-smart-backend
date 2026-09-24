@@ -1,13 +1,15 @@
 import { useState } from "react";
 import KanbanBoard from "../components/KanbanBoard";
 import TodayInterviewsPanel from "../components/interview/TodayInterviewsPanel";
+import AnalyticsDashboard from "../components/analytics/AnalyticsDashboard";
 import { getToken, setToken as saveToken } from "../services/tokenStorage";
 
-type HRTab = "kanban" | "interviews";
+type HRTab = "kanban" | "interviews" | "analytics";
 
 const TABS: { value: HRTab; label: string }[] = [
   { value: "kanban", label: "بورد کانبان" },
   { value: "interviews", label: "مصاحبه‌های امروز" },
+  { value: "analytics", label: "داشبورد تحلیلی" },
 ];
 
 export default function HRDashboard() {
@@ -83,6 +85,7 @@ export default function HRDashboard() {
 
         {activeTab === "kanban" && <KanbanBoard jobId={activeJobId} />}
         {activeTab === "interviews" && <TodayInterviewsPanel />}
+        {activeTab === "analytics" && <AnalyticsDashboard jobId={activeJobId} />}
       </div>
     </div>
   );
