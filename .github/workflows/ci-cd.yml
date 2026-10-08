@@ -48,9 +48,9 @@ jobs:
     name: Lint (Black + Flake8)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -94,9 +94,9 @@ jobs:
       SECRET_KEY: ci-only-secret-key
       ENVIRONMENT: ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pytest-report
           path: pytest-report.xml
@@ -136,9 +136,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -187,7 +187,7 @@ jobs:
       backend_image: ${{ steps.tags.outputs.backend_image }}
       frontend_image: ${{ steps.tags.outputs.frontend_image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # تگ تغییرناپذیر بر اساس commit (برای Rollback دقیق) + تگ متحرک develop
       - id: tags
@@ -200,15 +200,15 @@ jobs:
           echo "backend_latest=${NAMESPACE}/ats-smart-backend:develop" >> "$GITHUB_OUTPUT"
           echo "frontend_latest=${NAMESPACE}/ats-smart-frontend:develop" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Backend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -219,7 +219,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
       - name: Frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           push: true
@@ -244,7 +244,7 @@ jobs:
       SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/ats-smart' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # کلید خصوصی فقط در حافظه‌ی همین Runner موقت؛ known_hosts از قبل ثبت‌شده
       # (نه ssh-keyscan در لحظه) تا امکان حمله‌ی Man-in-the-Middle وجود نداشته باشد
