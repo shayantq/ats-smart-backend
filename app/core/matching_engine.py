@@ -77,9 +77,7 @@ def calculate_matching_score(
     همراه ریزنمرات هر بخش (برای شفافیت و اشکال‌زدایی، نه ذخیره‌سازی اجباری)
     برمی‌گرداند.
     """
-    skill_score, matched_skills = _calculate_skill_match_score(
-        job_skills_required or [], candidate_skills or []
-    )
+    skill_score, matched_skills = _calculate_skill_match_score(job_skills_required or [], candidate_skills or [])
     title_score = _calculate_title_match_score(job_title, candidate_job_titles or [])
     seniority_score = _calculate_seniority_match_score(job_required_seniority, candidate_total_experience_years)
     education_score = _calculate_education_match_score(job_required_education, candidate_education_entries or [])
@@ -236,7 +234,10 @@ def _calculate_location_match_score(job_location: str | None, candidate_location
     if normalized_job_location == normalized_candidate_location:
         return LOCATION_MATCH_WEIGHT
 
-    if normalized_job_location in normalized_candidate_location or normalized_candidate_location in normalized_job_location:
+    if (
+        normalized_job_location in normalized_candidate_location
+        or normalized_candidate_location in normalized_job_location
+    ):
         return LOCATION_MATCH_WEIGHT * 0.7  # تطابق جزئی، مثلاً «تهران» در برابر «تهران، ایران»
 
     return 0.0

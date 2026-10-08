@@ -1,0 +1,80 @@
+# =============================================================================
+# لایه‌ی Production روی docker-compose.yml اصلی (همیشه با هم استفاده می‌شوند):
+#
+#   ./deploy/compose.sh <دستور>      # مثلاً: ./deploy/compose.sh ps
+#
+# تفاوت‌ها با محیط لوکال:
+#   - هیچ سرویسی جز gateway پورت عمومی ندارد (بک‌اند، فرانت‌اند، دیتابیس و ...
+#     فقط داخل شبکه‌ی ats_network در دسترس‌اند).
+#   - gateway (Nginx) تنها نقطه‌ی ورود است و تنها کانتینری است که هرگز در
+#     استقرار عادی جایگزین نمی‌شود — همین امکان «استقرار بدون قطعی» را می‌دهد:
+#     backend_api و frontend پشت آن به‌صورت Rolling جابه‌جا می‌شوند (deploy/deploy.sh).
+#   - ایمیج‌ها از Docker Hub کشیده می‌شوند (BACKEND_IMAGE/FRONTEND_IMAGE در
+#     deploy/release.env که deploy.sh می‌نویسد)، نه این‌که روی سرور بیلد شوند.
+#   - رازها (رمز دیتابیس، توکن عملیاتی، رمز Grafana) اجباری‌اند؛ پیش‌فرض توسعه ندارند.
+#
+# نیازمند Docker Compose نسخه‌ی 2.24.4 به بالا (برای !reset و !override).
+# =============================================================================
+
+services:
+  postgres_db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD را در .env سرور تنظیم کنید}
+
+  backend_api:
+    ports: !reset []
+    environment:
+      ENVIRONMENT: production
+      # درخواست‌ها فقط از Nginx داخلی می‌رسند (پورت بک‌اند بیرون باز نیست)، پس
+      # هدر X-Forwarded-For قابل اعتماد است — Rate Limit روی IP واقعی کاربر اعمال می‌شود
+      FORWARDED_ALLOW_IPS: "*"
+      OPS_WEBHOOK_TOKEN: ${OPS_WEBHOOK_TOKEN:?OPS_WEBHOOK_TOKEN را در .env سرور تنظیم کنید}
+
+  worker:
+    environment:
+      ENVIRONMENT: production
+
+  scheduler:
+    environment:
+      ENVIRONMENT: production
+
+  migrate:
+    environment:
+      ENVIRONMENT: production
+
+  frontend:
+    ports: !reset []
+
+  prometheus:
+    # فقط از خودِ سرور (مثلاً با SSH Tunnel) — نه از اینترنت
+    ports: !override
+      - "127.0.0.1:9090:9090"
+
+  alertmanager:
+    ports: !override
+      - "127.0.0.1:9093:9093"
+    environment:
+      OPS_WEBHOOK_TOKEN: ${OPS_WEBHOOK_TOKEN:?OPS_WEBHOOK_TOKEN را در .env سرور تنظیم کنید}
+
+  grafana:
+    ports: !reset []
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD را در .env سرور تنظیم کنید}
+      # Grafana از مسیر https://<دامنه>/grafana/ و از طریق gateway در دسترس است
+      GF_SERVER_ROOT_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL را در .env سرور تنظیم کنید}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/gateway-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - ats_network

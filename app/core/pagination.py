@@ -66,7 +66,8 @@ class CursorParams:
 def cursor_params(
     cursor: str | None = Query(
         default=None,
-        description="توکن صفحه‌ای که می‌خواهید بخوانید (از فیلد next_cursor/previous_cursor پاسخ قبلی). خالی = اولین صفحه.",
+        description="توکن صفحه‌ای که می‌خواهید بخوانید (از فیلد next_cursor/previous_cursor پاسخ قبلی). "
+        "خالی = اولین صفحه.",
     ),
     direction: str = Query(
         default="next",
@@ -207,9 +208,7 @@ async def paginate_by_cursor(
         else:
             fetch_query = fetch_query.where(tuple_(sort_column, id_column) > boundary)
 
-    order_by_cols = (
-        (sort_column.desc(), id_column.desc()) if fetch_descending else (sort_column.asc(), id_column.asc())
-    )
+    order_by_cols = (sort_column.desc(), id_column.desc()) if fetch_descending else (sort_column.asc(), id_column.asc())
     fetch_query = fetch_query.order_by(*order_by_cols).limit(limit)
 
     result = await db.execute(fetch_query)

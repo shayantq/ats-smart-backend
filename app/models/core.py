@@ -51,9 +51,7 @@ class Candidate(Base):
     __tablename__ = "candidates"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False)
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=True)
@@ -90,8 +88,12 @@ class Job(Base):
     salary_range: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="Active", nullable=False)  # Active, Closed
     # فیلدهای زیر برای موتور نمره‌دهی و رتبه‌بندی رزومه (Matching Score) استفاده می‌شوند
-    required_seniority: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Junior, Mid-Level, Senior, Lead
-    required_education: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # کارشناسی، کارشناسی ارشد و ...
+    required_seniority: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True
+    )  # Junior, Mid-Level, Senior, Lead
+    required_education: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True
+    )  # کارشناسی، کارشناسی ارشد و ...
     location: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

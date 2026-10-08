@@ -1,3 +1,6 @@
+# وابستگی‌های اجرای Production — همین فایل داخل ایمیج Docker نصب می‌شود.
+# ابزارهای تست و Lint جدا در requirements-dev.txt هستند (وارد ایمیج نهایی نمی‌شوند).
+
 # ---- Core Framework (Async) ----
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
@@ -51,7 +54,8 @@ pytesseract==0.3.13
 # نسخه عمداً pin نشده (>=3.8): نسخه‌های 3.7.x برای پایتون 3.13 wheel آماده
 # ندارند و pip مجبور به کامپایل از سورس می‌شود که روی ویندوز معمولاً fail می‌کند؛
 # spaCy 3.8+ برای 3.13 wheel رسمی دارد.
-spacy>=3.8.0
+# سقف <3.9 تا یک نسخه‌ی major/minor جدید ناخواسته وارد بیلد Docker/CI نشود.
+spacy>=3.8.0,<3.9
 
 # ---- سرویس ایمیل (SMTP) — برای زیرسیستم اطلاع‌رسانی ----
 # جدا از پکیج‌های بالا (که خودِ اسپرینت قبل اضافه شدن)، این دو مورد برای
@@ -59,12 +63,6 @@ spacy>=3.8.0
 jinja2==3.1.4
 reportlab==4.2.5
 
-# ---- Testing ----
-pytest==8.3.3
-pytest-asyncio==0.24.0
-httpx==0.27.2
-# فقط برای tests/test_pagination.py: تست منطق Cursor Pagination روی یک
-# دیتابیس SQLite در حافظه، بدون نیاز به یک PostgreSQL واقعی در محیط CI.
-# هیچ‌جای کد Production از aiosqlite استفاده نمی‌کند (آن همچنان روی
-# asyncpg/PostgreSQL اجرا می‌شود).
-aiosqlite==0.22.1
+# ---- مانیتورینگ (Prometheus) ----
+# متریک‌های HTTP (RPS/Latency/نرخ خطا) و طول صف RQ روی /metrics — بنگرید app/core/metrics.py
+prometheus-client==0.21.0

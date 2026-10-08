@@ -16,8 +16,21 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.core.metrics import setup_metrics
 from app.core.redis_client import check_redis_connection, close_redis_connection
-from app.routers import admin, analytics, applications, auth, candidates, health, interviews, jobs, resumes
+from app.routers import (
+    admin,
+    analytics,
+    applications,
+    auth,
+    candidates,
+    health,
+    interviews,
+    jobs,
+    notifications,
+    ops,
+    resumes,
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -68,6 +81,13 @@ app.include_router(resumes.router, prefix=f"{settings.API_V1_PREFIX}/resumes")
 app.include_router(candidates.router, prefix=f"{settings.API_V1_PREFIX}/candidates")
 app.include_router(interviews.router, prefix=f"{settings.API_V1_PREFIX}/interviews")
 app.include_router(analytics.router, prefix=f"{settings.API_V1_PREFIX}/analytics")
+app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notifications")
+app.include_router(ops.router, prefix=f"{settings.API_V1_PREFIX}/ops")
+
+# متریک‌های Prometheus (GET /metrics) — عمداً آخرین Middleware اضافه می‌شود تا
+# بیرونی‌ترین لایه باشد و پاسخ‌های CORS/Rate Limit (429) را هم بشمارد.
+# بنگرید app/core/metrics.py
+setup_metrics(app)
 
 
 @app.get("/", tags=["Root"])

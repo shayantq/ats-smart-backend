@@ -62,7 +62,8 @@ async def _ensure_job_exists(db: AsyncSession, job_id: uuid.UUID) -> None:
 async def get_recruitment_funnel(
     job_id: Optional[uuid.UUID] = Query(
         default=None,
-        description="اختیاری — اگر ارسال شود، قیف فقط برای همین آگهی محاسبه می‌شود؛ در غیر این صورت قیف کل سازمان (همه‌ی آگهی‌ها).",
+        description="اختیاری — اگر ارسال شود، قیف فقط برای همین آگهی محاسبه می‌شود؛ "
+        "در غیر این صورت قیف کل سازمان (همه‌ی آگهی‌ها).",
     ),
     db: AsyncSession = Depends(get_db),
 ) -> RecruitmentFunnelResponse:

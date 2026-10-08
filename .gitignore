@@ -12,3 +12,6 @@ htmlcov/
 .DS_Store
 *.zip
 media/
+
+# فایل نسخه‌ی منتشرشده روی سرور (deploy/deploy.sh می‌نویسد)
+deploy/release.env*

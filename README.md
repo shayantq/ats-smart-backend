@@ -1,703 +1,405 @@
 # ATS Smart
 
-پلتفرم هوشمند جذب و استخدام و تحلیل رزومه. این ریپو شامل دو بخش است:
-- ریشه‌ی ریپو (`app/`, `alembic/`, ...): بک‌اند (FastAPI + Async)
-- پوشه‌ی `frontend/`: فرانت‌اند (React + TypeScript + Tailwind CSS)
+پلتفرم هوشمند جذب و استخدام و تحلیل رزومه.
 
-راهنمای هرکدام در فایل README مخصوص همان بخش آمده:
-- راهنمای بک‌اند: همین فایل (پایین‌تر)
-- راهنمای فرانت‌اند: `frontend/README.md`
+- **بک‌اند** (ریشه‌ی ریپو): FastAPI (Async) · PostgreSQL · SQLAlchemy 2 · Alembic · Redis (کش + صف RQ)
+- **فرانت‌اند** (`frontend/`): React · TypeScript · Vite · Tailwind — راهنمای جدا: [`frontend/README.md`](frontend/README.md)
+- **زیرساخت:** Docker (Multi-stage) · Docker Compose · GitHub Actions · Prometheus · Grafana · Alertmanager
+
+**امکانات اصلی:** احراز هویت JWT و RBAC · مدیریت آگهی · بورد کانبان با ماشین وضعیت صلب · آپلود رزومه و خط لوله‌ی هوش مصنوعی (OCR → NER → موتور مهارت → نمره‌ی تطابق) · پورتال کارجو · مدیریت مصاحبه با یادآور خودکار · اطلاع‌رسانی ایمیلی · جستجوی پیشرفته‌ی کارجویان · داشبورد تحلیلی · مانیتورینگ و هشدار زنده
+
+## فهرست
+
+- [راه‌اندازی سریع با Docker](#راهاندازی-سریع-با-docker)
+- [توسعه‌ی محلی بدون Docker](#توسعهی-محلی-بدون-docker)
+- [تست و کیفیت کد](#تست-و-کیفیت-کد)
+- [متغیرهای محیطی](#متغیرهای-محیطی)
+- [API و امکانات](#api-و-امکانات)
+- [خط لوله‌ی هوش مصنوعی رزومه](#خط-لولهی-هوش-مصنوعی-رزومه)
+- [زیرساخت: Docker، مانیتورینگ، CI/CD و استقرار](#زیرساخت-docker-مانیتورینگ-cicd-و-استقرار)
+- [ساختار ریپو](#ساختار-ریپو)
+- [محدودیت‌های شناخته‌شده](#محدودیتهای-شناختهشده)
 
 ---
 
-## بک‌اند — راه‌اندازی محیط توسعه
+## راه‌اندازی سریع با Docker
+
+کل سیستم (بک‌اند، فرانت‌اند، دیتابیس، Redis، Worker و مانیتورینگ) با یک دستور — بدون نصب PostgreSQL/Redis/Tesseract روی سیستم:
+
+```bash
+cp .env.example .env          # برای اجرای لوکال، مقادیر پیش‌فرض کافی‌اند
+docker compose up -d --build
+docker compose ps             # همه Up؛ فقط migrate بعد از اجرای مایگریشن‌ها Exited (0) است
+```
+
+| آدرس | سرویس |
+|---|---|
+| http://localhost:8080 | سایت (فرانت‌اند) |
+| http://localhost:8000/docs | Swagger بک‌اند |
+| http://localhost:3000 | Grafana (لوکال: `admin` / `admin`) |
+| http://localhost:9090 · http://localhost:9093 | Prometheus · Alertmanager |
+
+- `docker compose down` داده‌ها را **پاک نمی‌کند** (Volumeهای نام‌دار)؛ فقط `docker compose down -v` همه‌چیز را حذف می‌کند.
+- اگر دانلود بسته‌های Debian حین بیلد وسط کار قطع شد (`unexpected EOF`): `docker compose build --build-arg DEBIAN_MIRROR=https://deb.debian.org`
+
+---
+
+## توسعه‌ی محلی بدون Docker
+
+پیش‌نیازها: Python 3.11+، PostgreSQL، Redis، و **موتور Tesseract OCR** (یک نرم‌افزار سیستمی جدا از pip، به‌همراه داده‌ی زبان فارسی).
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate      # ویندوز: .venv\Scripts\activate
+source .venv/bin/activate              # ویندوز: .venv\Scripts\activate
+pip install -r requirements-dev.txt    # وابستگی‌های برنامه + ابزارهای تست و Lint
+python -m spacy download en_core_web_sm  # مدل NER (بدون آن هم کار می‌کند، فقط با دقت کمتر)
 
-pip install -r requirements.txt
-
-cp .env.example .env
-# سپس مقادیر واقعی DATABASE_URL، REDIS_URL و SECRET_KEY را در .env تنظیم کنید
+cp .env.example .env                   # DATABASE_URL، REDIS_URL و SECRET_KEY را تنظیم کنید
+alembic upgrade head                   # ساخت/به‌روزرسانی جداول
+uvicorn app.main:app --reload          # http://localhost:8000/docs
 ```
 
-## اجرای سرور
+پردازش‌های پس‌زمینه هرکدام در یک ترمینال جدا:
 
 ```bash
-uvicorn app.main:app --reload
+python -m app.worker                            # Worker صف (پردازش رزومه، ایمیل) — سازگار با ویندوز
+rqscheduler --host localhost --port 6379        # زمان‌بند یادآورهای مصاحبه
 ```
 
-- Swagger: http://127.0.0.1:8000/docs
-- بررسی سلامت سرور: http://127.0.0.1:8000/api/v1/health
+- ساخت migration جدید بعد از تغییر مدل‌ها: `alembic revision --autogenerate -m "توضیح"`
+- اگر Tesseract در PATH نیست (مخصوصاً ویندوز)، مسیر کامل `tesseract.exe` را در `TESSERACT_CMD_PATH` بدهید.
+- روی لینوکس/مک به‌جای `python -m app.worker` می‌توان از `rq worker --url redis://localhost:6379/0 default` هم استفاده کرد (Worker پیش‌فرض RQ به `SIGALRM` نیاز دارد که در ویندوز وجود ندارد).
 
-## اجرای تست‌ها
+---
+
+## تست و کیفیت کد
 
 ```bash
-pytest
+pytest           # تست‌های واحد و یکپارچه‌سازی (بدون نیاز به PostgreSQL واقعی؛ از SQLite در حافظه استفاده می‌کنند)
+black app tests  # فرمت خودکار (تنظیمات: pyproject.toml — line-length 120)
+flake8           # استانداردهای نگارش (تنظیمات: .flake8)
 ```
 
-## مدیریت پایگاه داده با Alembic
+همین بررسی‌ها در خط لوله‌ی CI هم اجرا می‌شوند.
 
-اعمال آخرین ساختار جداول روی دیتابیس محلی:
-```bash
-alembic upgrade head
-```
+---
 
-ساخت یک فایل migration جدید بعد از تغییر مدل‌ها:
-```bash
-alembic revision --autogenerate -m "توضیح کوتاه تغییر"
-```
+## متغیرهای محیطی
 
-## احراز هویت (Auth)
+نمونه‌ی کامل در [`.env.example`](.env.example). مقادیر حساس هرگز داخل کد نوشته نمی‌شوند.
 
-### ثبت‌نام کاربر جدید
-```
-POST /api/v1/auth/register
-```
-عمومی (بدون نیاز به ورود قبلی). بدنه‌ی درخواست:
-```json
-{
-  "email": "user@example.com",
-  "password": "حداقل 8 کاراکتر",
-  "role": "Candidate"
-}
-```
-مقادیر مجاز `role`: `Admin`, `HR_Manager`, `Interviewer`, `Candidate`
+| متغیر | توضیح |
+|---|---|
+| `DATABASE_URL` · `REDIS_URL` | اتصال PostgreSQL (asyncpg) و Redis — داخل Docker خودکار با نام سرویس‌ها ساخته می‌شوند |
+| `SECRET_KEY` | کلید امضای JWT |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` · `REFRESH_TOKEN_EXPIRE_DAYS` | عمر توکن‌ها (پیش‌فرض ۱۵ دقیقه / ۷ روز) |
+| `FRONTEND_ORIGIN` | تنها Origin مجاز CORS |
+| `STORAGE_BACKEND` | `local` (دیسک، پیش‌فرض) یا `s3` (AWS S3، Liara، ArvanCloud، MinIO و ...) |
+| `MEDIA_ROOT` · `MEDIA_BASE_URL` | مسیر و آدرس فایل‌های آپلودی در حالت `local` |
+| `S3_*` | فقط برای `STORAGE_BACKEND=s3` |
+| `OCR_LANGUAGES` · `TESSERACT_CMD_PATH` | زبان‌های OCR (پیش‌فرض `fas+eng`) و مسیر باینری Tesseract |
+| `SMTP_*` | سرویس ایمیل (برای تست بدون ایمیل واقعی: Mailtrap یا یک SMTP Debug Server محلی) |
+| `OPS_WEBHOOK_TOKEN` | توکن مشترک Alertmanager و CI برای `/api/v1/ops/*` — خالی = غیرفعال |
+| `OPS_ALERT_RECIPIENT_ROLES` | نقش‌های «تیم فنی» که هشدارها را می‌گیرند (پیش‌فرض `Admin`) |
+| `POSTGRES_*` · `PUBLIC_BASE_URL` · `GRAFANA_ADMIN_*` · `GATEWAY_HTTP_PORT` | فقط Docker Compose / سرور |
 
-- در صورت موفقیت: کد `201` و اطلاعات کاربر ساخته‌شده (بدون پسورد)
-- در صورت تکراری بودن ایمیل: کد `400`
-- گذرواژه هرگز خام ذخیره نمی‌شود؛ همیشه با Bcrypt هش می‌شود (ستون `password_hash` در جدول `users`)
+---
 
-### ورود کاربر
-```
-POST /api/v1/auth/login
-```
-عمومی. بدنه‌ی درخواست:
-```json
-{
-  "email": "user@example.com",
-  "password": "همان پسورد ثبت‌نام"
-}
-```
+## API و امکانات
 
-- در صورت موفقیت: کد `200` و بدنه‌ی پاسخ شامل `access_token`, `refresh_token`, `token_type`, `expires_in`
-- در صورت ایمیل یا پسورد اشتباه: کد `401`
-- `access_token`: طول عمر کوتاه (پیش‌فرض ۱۵ دقیقه)، برای امضای درخواست‌های بعدی فرانت‌اند
-- `refresh_token`: طول عمر بلند (پیش‌فرض ۷ روز)، هم در بدنه‌ی پاسخ و هم در یک کوکی `HttpOnly` + `Secure` + `SameSite=Strict` قرار می‌گیرد
+همه‌ی مسیرها زیر `/api/v1` هستند. در Swagger برای مسیرهای محافظت‌شده روی 🔒 **Authorize** بزنید و `access_token` را (بدون کلمه‌ی `Bearer`) وارد کنید. همه‌ی لیست‌ها **صفحه‌بندی مبتنی بر نشانگر** دارند (پارامترهای `cursor`، `direction=next|prev`، `limit` تا ۱۰۰؛ پاسخ شامل `next_cursor`/`previous_cursor`/`has_next`/`has_previous`، بدون `total`).
 
-⚠️ نکته: چون کوکی با پرچم `Secure` تنظیم شده، مرورگر فقط آن را روی یک "Secure Context" ذخیره می‌کند. آدرس `http://localhost:8000/docs` این شرط را دارد، ولی `http://127.0.0.1:8000/docs` **ندارد**.
+### احراز هویت و امنیت
 
-## کنترل دسترسی بر اساس نقش (RBAC)
+| مسیر | دسترسی | توضیح |
+|---|---|---|
+| `POST /auth/register` | عمومی | `{email, password (حداقل ۸), role}` — نقش‌ها: `Admin`, `HR_Manager`, `Interviewer`, `Candidate` · ایمیل تکراری → `400` |
+| `POST /auth/login` | عمومی | خروجی: `access_token` (۱۵ دقیقه)، `refresh_token` (۷ روز؛ هم در بدنه هم کوکی `HttpOnly`+`Secure`+`SameSite=Strict`) · اشتباه → `401` |
+| `POST /auth/forgot-password` | عمومی | ارسال کد OTP شش‌رقمی به ایمیل (پاسخ همیشه یکسان، ضد User Enumeration) |
+| `POST /auth/reset-password` | عمومی | `{email, otp_code, new_password}` — OTP ده دقیقه‌ای و یک‌بارمصرف |
+| `GET /admin/stats` | `Admin` | آمار کلان پلتفرم (نمونه‌ی RBAC) |
 
-مسیرهای حساس با `Depends(require_roles(...))` محافظت می‌شوند:
-- بدون توکن یا با توکن نامعتبر/منقضی → کد `401`
-- با توکن معتبر ولی نقش غیرمجاز → کد `403`
+- **RBAC:** با `Depends(require_roles(...))` — بدون توکن/نامعتبر `401`، نقش غیرمجاز `403`. نشست کاربر ۵ دقیقه در Redis کش می‌شود.
+- **امنیت شبکه:** CORS فقط برای `FRONTEND_ORIGIN` · Rate Limit پنج درخواست در دقیقه برای هر IP روی مسیرهای auth (`429`) · پاکسازی تگ‌های HTML از ورودی‌ها (`app/core/sanitize.py`) · گذرواژه فقط به‌صورت هش Bcrypt.
+- کوکی `Secure` فقط روی Secure Context ذخیره می‌شود: `http://localhost:8000/docs` بله، `http://127.0.0.1:8000/docs` **خیر**.
 
-نمونه‌ی محافظت‌شده: `GET /api/v1/admin/stats` (فقط `Admin`). برای فراخوانی هر مسیر محافظت‌شده در Swagger، روی دکمه‌ی 🔒 **Authorize** بالای صفحه بزنید و `access_token` را وارد کنید (بدون کلمه‌ی `Bearer`).
+### آگهی‌های شغلی
 
-## پروتکل‌های امنیتی شبکه
+| مسیر | دسترسی | توضیح |
+|---|---|---|
+| `POST /jobs/` | `Admin`, `HR_Manager` | `{title, department, description, skills_required[], salary_range, required_seniority, required_education, location}` → `201` با `status: Active` و `created_by` |
+| `GET /jobs/` | عمومی | فیلتر اختیاری `status` و `department` |
+| `DELETE /jobs/{id}` | `Admin`, `HR_Manager` | حذف منطقی: فقط `status` → `Closed` |
 
-- **CORS**: فقط دامنه‌ی `FRONTEND_ORIGIN` (پیش‌فرض `http://localhost:5173`) اجازه‌ی دسترسی دارد.
-- **Rate Limiting**: مسیرهای `register` و `login` هرکدام حداکثر ۵ درخواست در دقیقه به ازای هر آی‌پی؛ بیشتر از آن → `429`.
-- **SameSite=Strict**: روی کوکی `refresh_token` تنظیم شده (دفاع CSRF).
-- **Sanitize (XSS)**: ورودی‌های متنی پیش از پردازش از تگ HTML پاک می‌شوند (`app/core/sanitize.py`).
+### بورد کانبان و ماشین وضعیت صلب
 
-## مدیریت آگهی‌های شغلی (Job Service)
-
-### ساخت آگهی جدید
-```
-POST /api/v1/jobs/
-```
-فقط نقش‌های `Admin` و `HR_Manager` (نیاز به `Authorize` با یک access_token معتبر). بدنه‌ی درخواست:
-```json
-{
-  "title": "Backend Python Developer",
-  "department": "Engineering",
-  "description": "توضیحات آگهی...",
-  "skills_required": ["Python", "FastAPI", "Docker"],
-  "salary_range": "40M-60M"
-}
-```
-- موفقیت: کد `201` و خروجی شامل `job_id`, `status: "Active"`, `created_by`
-- بدون توکن: کد `401`
-- با نقش غیرمجاز (مثلاً `Candidate`): کد `403`
-
-### دریافت لیست آگهی‌ها
-```
-GET /api/v1/jobs/
-```
-عمومی (بدون نیاز به توکن) — کد `200`. فیلترهای اختیاری: `?status=Active`، `?department=Engineering`
-
-### بستن یک آگهی (Soft Delete)
-```
-DELETE /api/v1/jobs/{job_id}
-```
-فقط `Admin` و `HR_Manager`. رکورد پاک نمی‌شود؛ فقط `status` به `Closed` تغییر می‌کند.
-
-⚠️ نکته‌ی فنی: چون هنوز مسیری برای «ساخت شرکت» در پروژه پیاده‌سازی نشده، آگهی‌ها فعلاً مستقیم به شرکت (`company_id`) وصل نیستند و به‌جایش به کاربر سازنده‌شان (`created_by`) وصل‌اند؛ این فیلد در پاسخ ساخت آگهی برگردانده می‌شود.
-
-## ماشین وضعیت صلب فرآیند استخدام (Application Status Service)
-
-بورد کانبان کارجویان با یک ماشین وضعیت صلب (Strict State Machine) کنترل می‌شود
-تا هیچ درخواستی نتواند از روی مراحل استاندارد «پرش» کند.
-
-### مسیر خطی مجاز
 ```
 Draft → Applied → Screening → Technical Interview → HR Interview → Offer → Accepted → Hired
-```
-از هر مرحله (به‌جز حالت‌های نهایی)، همیشه یک مسیر دوم هم مجاز است: انتقال به **Rejected**
-(رد شدن کارجو در هر نقطه از فرآیند). `Hired` و `Rejected` وضعیت‌های نهایی‌اند و از آن‌ها
-هیچ انتقال دیگری مجاز نیست.
-
-منطق کامل قوانین در `app/core/state_machine.py` تعریف شده است.
-
-### دریافت لیست درخواست‌های یک آگهی (برای بورد کانبان فرانت‌اند)
-```
-GET /api/v1/applications/?job_id={job_id}
-```
-فقط نقش‌های `Admin` و `HR_Manager`. هر آیتم شامل `application_id`, `candidate_id`,
-`candidate_name`, `current_status`, `score_ai`, `updated_at` است — دقیقاً همان اطلاعاتی
-که برای رندر یک «کارت» روی بورد کانبان لازم است.
-
-### جابه‌جایی وضعیت
-```
-PUT /api/v1/applications/{application_id}/status
-```
-فقط نقش‌های `Admin` و `HR_Manager` (نیاز به `Authorize` با یک access_token معتبر). بدنه‌ی درخواست:
-```json
-{
-  "current_status": "Screening",
-  "new_status": "Technical Interview"
-}
+                    (از هر مرحله‌ی غیرنهایی: → Rejected)
 ```
 
-- **موفقیت (پرش مجاز):** کد `200` و بدنه‌ی پاسخ شامل `application_id`, `previous_status`,
-  `new_status`, `updated_at`. یک ردیف جدید هم در جدول `status_history` ثبت می‌شود
-  (شامل `old_status`, `new_status`, `changed_by`, `changed_at`).
-- **پرش غیرمجاز** (مثلاً درخواست مستقیم از `Screening` به `Hired`، یا `current_status`
-  ارسالی با وضعیت واقعی رکورد در دیتابیس یکی نباشد): تراکنش کامل Rollback می‌شود و
-  کد `400` با پیام دقیق `"Business Logic Violation"` برگردانده می‌شود.
-- بدون توکن: کد `401`. با نقش غیرمجاز (مثلاً `Candidate` یا `Interviewer`): کد `403`.
-- درخواست با `application_id` ناموجود: کد `404`.
-
-## آپلود رزومه (Resume Upload Service)
-
-```
-POST /api/v1/resumes/upload
-```
-فقط نقش `Candidate`. بدنه به‌صورت `multipart/form-data`: `job_id` (شناسه‌ی آگهی) و
-`file` (فایل فیزیکی رزومه — فقط PDF یا DOCX، حداکثر ۱۰ مگابایت).
-
-فایل در فضای ذخیره‌سازی (`app/core/storage.py` — دیسک محلی برای توسعه یا هر
-Object Storage سازگار با S3 برای پروداکشن، بسته به `STORAGE_BACKEND` در `.env`)
-ذخیره می‌شود و آدرسش (`file_url`) در جدول `resumes` ثبت می‌گردد. هم‌زمان، در یک
-تراکنش واحد، یک ردیف جدید با وضعیت پیش‌فرض `Draft` در جدول `applications` ساخته
-می‌شود — این همان راهی است که یک درخواست واقعی (نه فقط دستی/seed) ساخته می‌شود.
-
-- موفقیت: کد `202 Accepted` با `application_id`, `status: "Draft"`, `message`.
-- فرمت غیرمجاز (نه PDF نه DOCX): کد `400`.
-- بدون توکن: `401` — نقش غیر از `Candidate`: `403` — `job_id` ناموجود: `404`.
-
-## کش و صف کارهای پس‌زمینه با Redis
-
-- **کش (Cache):** لایه‌ی سبک `app/core/cache.py` روی Redis، برای داده‌هایی که در
-  هر درخواست تکرار می‌شوند به کار رفته — مشخصاً نشست کاربر لاگین‌شده در
-  `get_current_user` (`app/core/deps.py`) با TTL پنج دقیقه‌ای کش می‌شود تا هر
-  درخواست محافظت‌شده، کاربر را دوباره از دیتابیس نخواند.
-- **صف کارها (Task Queue):** `app/core/queue.py` با کتابخانه‌ی RQ (Redis Queue).
-  کارهای پس‌زمینه (مثل `app/tasks/resume_processing.py`) به‌صورت ناهمگام
-  (`fire-and-forget`، بدون مسدود کردن پاسخ اصلی سرور) به صف اضافه می‌شوند.
-- در startup سرور یک PING به Redis زده می‌شود و نتیجه (موفق/ناموفق) در لاگ سرور
-  ثبت می‌گردد؛ در دسترس نبودن Redis باعث بالا نیامدن سرور نمی‌شود (فقط کش/صف
-  موقتاً غیرفعال می‌مانند).
-- برای اجرای Worker که کارهای صف را واقعاً پردازش می‌کند (باید هم‌زمان با سرور،
-  در یک ترمینال جدا، در حال اجرا باشد):
-  ```bash
-  # لینوکس / مک:
-  rq worker --url redis://localhost:6379/0 default
-
-  # ویندوز (RQ پیش‌فرض به SIGALRM نیاز دارد که در ویندوز وجود ندارد؛
-  # این اسکریپت جایگزین از Timer به‌جای سیگنال یونیکسی استفاده می‌کند):
-  python -m app.worker
-  ```
-
-## پورتال اختصاصی کارجو (Candidate Portal)
-
-مسیرهای زیر همه فقط برای نقش `Candidate` و همیشه روی «پروفایل/درخواست‌های خودِ
-کاربر لاگین‌شده» عمل می‌کنند (هیچ‌جا candidate_id از ورودی کاربر گرفته نمی‌شود).
-
-```
-GET  /api/v1/candidates/me                          مشاهده‌ی پروفایل (نام، تلفن، مهارت‌ها، ایمیل)
-PUT  /api/v1/candidates/me                            ویرایش پروفایل (Partial Update)
-GET  /api/v1/candidates/me/applications                 رهگیر وضعیت: لیست درخواست‌ها + عنوان آگهی + وضعیت فعلی
-GET  /api/v1/candidates/me/offers                        صندوق ورودی: فقط درخواست‌هایی با وضعیت Offer
-PUT  /api/v1/candidates/me/applications/{id}/respond       پاسخ به یک پیشنهاد: {"decision": "accept" | "reject"}
-```
-
-- اولین باری که یک کاربر Candidate به هر کدام از این مسیرها دسترسی پیدا کند، اگر
-  هنوز پروفایل نداشته باشد، یک پروفایل حداقلی برایش ساخته می‌شود (بنگرید
-  `app/core/candidate_utils.py` — همین تابع در روتر آپلود رزومه هم استفاده می‌شود).
-- `respond` فقط وقتی `current_status` درخواست دقیقاً `Offer` باشد کار می‌کند و
-  از همان ماشین وضعیت مرکزی (`app/core/state_machine.py`) عبور می‌کند —
-  `accept` به `Accepted` و `reject` به `Rejected` تبدیل می‌شود؛ هر دو مسیر مجاز
-  از `Offer` طبق ماشین وضعیت هستند، پس امکان پرش غیرمجاز از این طریق وجود ندارد.
-- تگ‌های مهارتی (`skills`) به‌صورت یک آرایه‌ی متنی ساده روی خودِ جدول `candidates`
-  ذخیره می‌شوند (نه از طریق جدول `skills` مرکزی که فعلاً فقط یک بانک استاندارد
-  خام است، بدون رابطه‌ی چندبه‌چند با کارجوها).
-
-## موتور استخراج متن رزومه (OCR Engine)
-
-مرحله‌ی اول خط لوله‌ی هوش مصنوعی: بلافاصله بعد از آپلود موفق رزومه، Worker
-(همان صفی که بخش «کش و صف کارها» بالا توضیح داده) فایل را دانلود، متن خامش را
-استخراج، و در ستون `raw_text` جدول `resumes` ذخیره می‌کند (`app/core/text_extraction.py`
-+ `app/tasks/resume_processing.py`).
-
-- **PDF:** ابتدا لایه‌ی متنی جاسازی‌شده با PyMuPDF (`fitz`) خوانده می‌شود. اگر این
-  متن به‌طرز مشکوکی کوتاه بود (نشانه‌ی رزومه‌ی اسکن‌شده/تصویری)، هر صفحه به
-  تصویر رندر شده و با موتور OCR واقعی **Tesseract** (از طریق `pytesseract`)
-  کاراکترهای متنی استخراج می‌شوند.
-- **DOCX:** مستقیم با `python-docx` خوانده می‌شود (پاراگراف‌ها + سلول‌های جدول).
-- فایل خراب، ناخوانا، یا رمزگذاری‌شده با گذرواژه → `UnreadableResumeFileError`
-  پرتاب می‌شود؛ Worker این خطا را با جزئیات لاگ می‌کند و بدون کرش کردن، فقط
-  پردازش همان رزومه را متوقف می‌کند (بقیه‌ی کارهای صف دست‌نخورده ادامه می‌یابند).
-- متن نهایی پیش از ذخیره یکپارچه‌سازی می‌شود (فاصله‌های نامتعارف/خط خالی اضافه
-  حذف می‌شوند) تا در دیتابیس بدون به‌هم‌ریختگی کاراکتری ثبت شود.
-
-⚠️ **پیش‌نیاز سیستمی (نه پکیج پایتون):** خودِ موتور Tesseract OCR باید جداگانه
-روی سیستم نصب شود (`pytesseract` فقط یک wrapper است که این باینری را صدا می‌زند).
-برای پشتیبانی از رزومه‌های فارسی، پکیج زبان فارسی Tesseract هم لازم است. اگر
-باینری در PATH سیستم نیست (مخصوصاً ویندوز)، مسیر کامل آن را در `TESSERACT_CMD_PATH`
-(در `.env`) بده.
-
-## پارسینگ متنی و بازشناسی موجودیت‌های نامدار (NER)
-
-مرحله‌ی دوم خط لوله: بلافاصله بعد از استخراج `raw_text` (مرحله‌ی OCR بالا)، همان
-Worker متن خام را به `app/core/resume_parser.py` می‌دهد و خروجی ساختاریافته را
-در ستون JSONB جدید `parsed_data` از جدول `resumes` ذخیره می‌کند. ساختار خروجی:
-
-```json
-{
-  "personal_info": { "name": "...", "email": "...", "phone": "..." },
-  "education": [ { "degree": "...", "university": "...", "gpa": 17.5 } ],
-  "work_experience": [ { "company": "...", "job_title": "...", "duration": "1398 - 1401" } ]
-}
-```
-
-**رویکرد ترکیبی (Hybrid):**
-- موجودیت‌های با الگوی ثابت (ایمیل، تلفن، معدل، بازه‌ی تاریخ) با Regex استخراج
-  می‌شوند — دقت این روش برای این نوع داده‌ها بالاتر از یک مدل NER عمومی است.
-- بخش‌های رزومه (تجربه/تحصیلات) با هدینگ‌های متداول فارسی/انگلیسی مرزبندی
-  می‌شوند، سپس هر بخش به بلوک‌های مجزا (هر بلوک = یک ردیف تجربه/تحصیل) شکسته
-  می‌شود.
-- نام شرکت/دانشگاه ابتدا با قاعده‌ی متنی فارسی («شرکت X» / «دانشگاه X») و در
-  نبود نتیجه، با موجودیت‌های ORG مدل NER کتابخانه‌ی **spaCy** استخراج می‌شود.
-- نام شخص هم به همین ترتیب: ابتدا موجودیت PERSON مدل spaCy روی چند خط ابتدایی
-  سند، و در نبودش، اولین خط غیرخالی متن (قرارداد رایج رزومه‌ها).
-
-⚠️ **محدودیت شناخته‌شده و صادقانه:** مدل NER پیش‌فرض (`en_core_web_sm`) برای
-زبان **انگلیسی** آموزش دیده؛ برای بخش‌های فارسی متن صرفاً یک لایه‌ی کمکی/جانبی
-است و استخراج فارسی عمدتاً به قواعد متنی (Regex + کلیدواژه) تکیه دارد. برای
-دقت بالاتر روی رزومه‌های کاملاً فارسی، جایگزینی با یک مدل NER فارسی
-تخصصی‌شده در آینده پیشنهاد می‌شود.
-
-⚠️ **پیش‌نیاز نصب (نه فقط pip):** بعد از `pip install -r requirements.txt`، مدل
-زبانی spaCy با این دستور جداگانه دانلود می‌شود:
-```bash
-python -m spacy download en_core_web_sm
-```
-بدون این مدل، ماژول کرش نمی‌کند — فقط بدون کمک NER (فقط با قواعد متنی) با دقت
-کمتر برای نام‌های آزاد ادامه می‌دهد؛ این وضعیت در لاگ Worker با یک `warning`
-مشخص می‌شود.
-
-## موتور استخراج مهارت‌ها و تحلیل سوابق کاری (Skill Engine)
-
-مرحله‌ی سوم خط لوله: بلافاصله بعد از مرحله‌ی NER، همان Worker خروجی را به
-`app/core/skill_engine.py` می‌دهد و نتیجه را در ستون JSONB جدید `skill_analysis`
-از جدول `resumes` ذخیره می‌کند. ساختار خروجی:
-
-```json
-{
-  "skills": ["Python", "FastAPI", "Django", "SQL", "PostgreSQL"],
-  "total_experience_years": 8.0,
-  "experience_entries": [
-    {
-      "company": "اسنپ", "job_title": "توسعه‌دهنده بک‌اند", "duration": "1396 - 1399",
-      "start_year": 1396, "end_year": 1399, "is_valid": true, "flag_reason": null
-    },
-    {
-      "company": "شرکت جعلی", "job_title": "مدیرعامل", "duration": "1400 - 1395",
-      "start_year": 1400, "end_year": 1395, "is_valid": false,
-      "flag_reason": "تاریخ پایان قبل از تاریخ شروع است (دوره‌ی زمانی متناقض)."
-    }
-  ]
-}
-```
-
-### گراف مهارت (`app/core/skill_graph.py`)
-یک دیکشنری از «مهارت اصلی» (گره ریشه) به لیست «مهارت‌های زیرمجموعه» (گره‌های
-فرزند) — مثلاً `FastAPI`/`Django`/`Flask` همه زیرشاخه‌ی `Python` هستند. متن
-رزومه برای تمام گره‌های این گراف اسکن می‌شود؛ اگر یک زیرشاخه پیدا شود، هم
-خودش و هم مهارت اصلی/گره والدش (که کارجو تصریح نکرده ولی منطقاً بلد است) به
-نتیجه اضافه می‌شوند. تطبیق با مرز کلمه (Word Boundary) انجام می‌شود تا مثلاً
-`java` به‌اشتباه داخل `javascript` تشخیص داده نشود.
-
-### تحلیل‌گر سوابق کاری (`app/core/experience_analyzer.py`)
-- بازه‌ی هر `duration` (مثل `"1398 - 1401"` یا `"1401 - تاکنون"`) به (سال
-  شروع، سال پایان) پارس می‌شود؛ تقویم شمسی/میلادی به‌صورت خودکار از روی
-  مقدار سال (کمتر یا بیشتر از ۱۵۰۰) تشخیص داده می‌شود.
-- **فیلتر صحت‌سنجی:** دوره‌هایی که تاریخ پایانشان قبل از شروع باشد (متناقض)،
-  در آینده باشد (نامعتبر)، یا بیش از ۴۰ سال طول بکشد (بزرگ‌نمایی‌شده)، فیلتر
-  می‌شوند و در محاسبه‌ی سابقه‌ی خالص شرکت داده نمی‌شوند — ولی همراه با
-  `flag_reason` مشخص، در خروجی باقی می‌مانند (برای شفافیت، نه حذف کامل).
-- **محاسبه‌ی سابقه‌ی خالص:** فقط دوره‌های معتبر با الگوریتم استاندارد ادغام
-  بازه‌های همپوشان (Merge Intervals) با هم ترکیب می‌شوند تا دو شغل هم‌زمان
-  (Overlap) دوبار حساب نشوند.
-
-⚠️ **محدودیت شناخته‌شده:** تبدیل تقویم شمسی↔میلادی با یک افست ساده‌شده
-(۶۲۱ سال) انجام می‌شود؛ برای سطح این تحلیل (رد کردن تاریخ‌های آینده و محاسبه‌ی
-اختلاف سال) دقت کافی است، ولی تبدیل دقیق تقویمی (با احتساب کبیسه) نیست.
-همچنین فرض شده همه‌ی تاریخ‌های یک رزومه‌ی واحد از یک تقویم واحد استفاده
-می‌کنند (تبدیل بین دو تقویم مختلف در یک رزومه پشتیبانی نمی‌شود).
-
-## موتور نمره‌دهی و رتبه‌بندی رزومه (Matching Score Engine)
-
-مرحله‌ی چهارم و نهایی خط لوله: بلافاصله بعد از مراحل NER و Skill Engine، همان
-Worker رزومه‌ی ساختاریافته را در برابر نیازمندی‌های همان آگهی شغلی که
-Application برایش ثبت شده قرار می‌دهد (`app/core/matching_engine.py`) و نمره‌ی
-نهایی (عددی صحیح بین ۰ تا ۱۰۰) را در ستون **`score_ai`** جدول `applications`
-ذخیره می‌کند.
-
-⚠️ **نکته‌ی نام‌گذاری:** در متن تسک این فیلد `ai_score` نامیده شده بود، اما
-پروژه از قبل (از اسپرینت ۳) دقیقاً همین فیلد را با نام `score_ai` دارد و در
-بورد کانبان HR، اسکیمای `GET /applications`، و فرانت‌اند سیم‌کشی شده. برای
-جلوگیری از شکستن این یکپارچگی‌های موجود، همان نام قبلی (`score_ai`) حفظ شد.
-
-### وزن‌دهی (طبق معیار پذیرش تسک)
-| بخش | وزن | ورودی |
+| مسیر | دسترسی | توضیح |
 |---|---|---|
-| تطابق مهارت‌های کلیدی/اجباری | ۵۰٪ | `job.skills_required` در برابر `resume.skill_analysis.skills` |
-| تطابق عنوان شغلی + ارشدیت | ۳۰٪ | عنوان آگهی + سطح ارشدیت در برابر عناوین شغلی/سابقه‌ی خالص کارجو |
-| فاکتورهای تکمیلی | ۲۰٪ | تحصیلات، موقعیت مکانی، کلمات کلیدی ثانویه‌ی توضیحات آگهی |
+| `GET /applications/?job_id=` | `Admin`, `HR_Manager` | کارت‌های بورد: نام کارجو، `score_ai`، وضعیت فعلی |
+| `PUT /applications/{id}/status` | `Admin`, `HR_Manager` | `{current_status, new_status}` — فقط حرکت به مرحله‌ی **بلافصل** بعدی یا `Rejected` |
 
-⚠️ **تصمیم طراحی مستند:** تقسیم داخلی وزن ۳۰٪ (بین عنوان شغلی و ارشدیت) و
-۲۰٪ (بین تحصیلات/موقعیت/کلمات ثانویه) در معیار پذیرش تسک عددی مشخص نشده بود؛
-تقسیم فعلی (۱۵٪+۱۵٪ برای بخش اول، ۸٪+۸٪+۴٪ برای بخش دوم) یک انتخاب صریح و
-قابل‌تغییر در ثابت‌های بالای `app/core/matching_engine.py` است.
+- هر پرش غیرمجاز (مثلاً `Screening → Hired`) یا ناهمخوانی `current_status` با دیتابیس: Rollback و `400 "Business Logic Violation"`. `Hired`/`Rejected` نهایی‌اند.
+- هر جابه‌جایی موفق یک ردیف در `status_history` ثبت می‌کند و در صورت نیاز ایمیل وضعیت را به صف می‌فرستد ([ماتریس محرک‌ها](#اطلاعرسانی-ایمیلی)). منطق کامل: `app/core/state_machine.py`.
 
-### فیلدهای جدید موردنیاز این موتور
-چون Job و Candidate قبلاً داده‌ی کافی برای بخش «ارشدیت»، «تحصیلات» و «موقعیت
-مکانی» نداشتند، این فیلدهای اختیاری اضافه شدند:
-- `jobs.required_seniority` (مثل `Junior`, `Mid-Level`, `Senior`, `Lead`)
-- `jobs.required_education` (مثل `کارشناسی`, `کارشناسی ارشد`)
-- `jobs.location`
-- `candidates.location` (از طریق `PUT /api/v1/candidates/me` هم قابل ویرایش است)
+### آپلود رزومه
 
-هر سه فیلد اختیاری‌اند — نبودشان روی هیچ‌کدام از دو طرف باعث جریمه نمی‌شود
-(امتیاز کامل آن بخش داده می‌شود، چون داده‌ی کافی برای قضاوت نیست).
+`POST /resumes/upload` — فقط `Candidate` · `multipart/form-data` با `job_id` و `file` (فقط PDF/DOCX، حداکثر ۱۰ مگابایت).
+فایل در فضای ذخیره‌سازی (`app/core/storage.py`) ذخیره و در یک تراکنش واحد، ردیف `resumes` و یک `application` با وضعیت `Draft` ساخته می‌شود → `202 Accepted`. سپس پردازش هوش مصنوعی رزومه به صف اضافه می‌شود ([خط لوله](#خط-لولهی-هوش-مصنوعی-رزومه)). فرمت غیرمجاز `400` · آگهی ناموجود `404`.
 
-### تست منطق تجاری (Unit Test)
-`tests/test_matching_engine.py` شامل ۸ تست است؛ مهم‌ترینش طبق معیار پذیرش
-تسک: `test_no_required_skill_match_deducts_exactly_fifty_percent` — تأیید
-می‌کند وقتی هیچ‌کدام از مهارت‌های کلیدی/اجباری آگهی در رزومه پیدا نشوند، سهم
-۵۰ درصدی این بخش دقیقاً صفر می‌شود.
+### پورتال کارجو
 
-## زیرسیستم اطلاع‌رسانی رویدادمحور (Notification Service)
+همه فقط `Candidate` و همیشه روی داده‌های **خودِ** کاربر لاگین‌شده (candidate_id هرگز از ورودی گرفته نمی‌شود):
 
-ارسال ایمیل کاملاً ناهمگام است و از همان زیرساخت صف Redis (بخش «کش و صف
-کارهای پس‌زمینه» بالا) استفاده می‌کند — پس هیچ ایمیلی هیچ‌وقت مستقیم داخل یک
-درخواست HTTP فرستاده نمی‌شود.
-
-- **`app/core/email_service.py`:** تنها لایه‌ای که واقعاً با SMTP صحبت
-  می‌کند (`smtplib` استاندارد پایتون، بدون وابستگی جانبی برای خودِ ارسال).
-  این ماژول همگام (Sync) است و همیشه باید فقط از داخل یک Task پس‌زمینه صدا
-  زده شود؛ از پیوست فایل (مثلاً PDF) هم پشتیبانی می‌کند.
-- **`app/tasks/notifications.py`:** کارهای پس‌زمینه‌ی واقعی
-  (`send_welcome_email_task`, `send_status_update_email_task`,
-  `send_job_offer_email_task`, `send_otp_email_task`) که توسط Worker
-  (`app/worker.py`) اجرا می‌شوند.
-- **`app/core/notification_service.py`:** نمای سطح بالا (Facade) که بقیه‌ی
-  اپلیکیشن (مثل روترها) با آن کار می‌کند — فقط یک رویداد را به صف اضافه
-  می‌کند، بدون این‌که خودش با جزئیات Task/Queue درگیر باشد.
-
-### محرک (Trigger): ثبت‌نام کاربر جدید
-بلافاصله بعد از موفقیت `POST /api/v1/auth/register`، یک ایمیل خوش‌آمدگویی/
-تأیید اصالت به صف اضافه می‌شود (`app/routers/auth.py`) — با همان الگوی
-`asyncio.create_task(...)` که در آپلود رزومه هم استفاده شده، تا پاسخ ثبت‌نام
-هیچ‌وقت معطل ارتباط با Redis یا ارسال واقعی ایمیل نماند.
-
-### پیکربندی SMTP
-متغیرهای محیطی مربوطه در `.env` (بنگرید `.env.example`): `SMTP_HOST`,
-`SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS`,
-`SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`. برای یک ایمیل تست واقعی بدون نیاز به
-یک اکانت ایمیل واقعی، هر سرویس SMTP تستی (مثل Mailtrap) یا یک SMTP Debug
-Server محلی کار می‌کند.
-
-## قالب‌های ایمیل و ماتریس محرک‌ها (Email Templates & Triggers)
-
-### قالب‌های HTML (`app/templates/emails/`)
-سه قالب، همه با یک Layout مشترک (`base.html`) که با Jinja2
-(`app/core/email_templates.py`) Render می‌شوند — چون autoescape فعال است،
-مقادیر متغیر (مثل نام کارجو) خودکار از نظر HTML امن می‌شوند:
-
-- **`status_update.html`:** اطلاع‌رسانی تغییر وضعیت عمومی (مثل ورود به
-  غربالگری یا مصاحبه). متغیرها: `candidate_name`, `job_title`,
-  `stage_label`, `stage_message`.
-- **`job_offer.html`:** نامه‌ی رسمی پیشنهاد همکاری، شامل دو دکمه‌ی تعاملی
-  «قبول/رد» که کارجو را به پورتال کارجو هدایت می‌کنند. متغیرها:
-  `candidate_name`, `job_title`, `company_name`, `accept_url`, `reject_url`.
-- **`otp_reset.html`:** کد یک‌بارمصرف بازیابی رمز عبور. متغیرها: `otp_code`,
-  `expires_in_minutes`.
-
-⚠️ **محدودیت شناخته‌شده:** دکمه‌های «قبول/رد» ایمیل پیشنهاد همکاری فعلاً به
-صفحه‌ی اصلی فرانت‌اند (`FRONTEND_ORIGIN`) لینک می‌شوند، نه مستقیم به تب
-«صندوق پیشنهادها» — چون فرانت‌اند فعلاً یک SPA بدون URL Routing است (تب‌ها
-فقط با state داخلی جابه‌جا می‌شوند). کارجو باید بعد از ورود، خودش به آن تب
-برود؛ افزودن Routing واقعی خارج از محدوده‌ی این تسک است.
-
-### نامه‌ی PDF پیشنهاد همکاری (`app/core/offer_letter.py`)
-با ReportLab ساخته می‌شود و به‌عنوان ضمیمه‌ی ایمیل پیشنهاد همکاری فرستاده
-می‌شود. ⚠️ محدودیت شناخته‌شده: محتوای PDF عمداً **انگلیسی** است — فونت‌های
-پیش‌فرض ReportLab از شکل‌دهی درست حروف فارسی/عربی (Reshape + BiDi) پشتیبانی
-نمی‌کنند و بدون کتابخانه‌های اضافی (`arabic-reshaper`, `python-bidi`) و یک
-فونت فارسی TTF، متن فارسی در PDF به‌هم‌ریخته نمایش داده می‌شود.
-
-### ماتریس محرک‌ها (Hooks در ماشین وضعیت صلب)
-`app/core/status_notifier.py` نقطه‌ی اتصال بین ماشین وضعیت
-(`app/core/state_machine.py`) و زیرسیستم اطلاع‌رسانی است. بعد از هر
-جابه‌جایی موفق وضعیت در بورد کانبان HR (`PUT /api/v1/applications/{id}/status`)،
-`trigger_status_change_email` به‌صورت fire-and-forget صدا زده می‌شود:
-
-| وضعیت جدید | ایمیل ارسالی |
+| مسیر | توضیح |
 |---|---|
-| `Screening`, `Technical Interview`, `HR Interview` | اطلاع‌رسانی تغییر وضعیت عمومی (`status_update.html`) |
-| `Offer` | نامه‌ی رسمی پیشنهاد همکاری + پیوست PDF (`job_offer.html`) |
-| `Rejected` | اطلاع‌رسانی عدم تأیید (`status_update.html`) |
-| `Draft`, `Applied`, `Accepted`, `Hired` | فعلاً ایمیلی تعریف نشده |
+| `GET` / `PUT /candidates/me` | مشاهده/ویرایش پروفایل (Partial Update): نام، تلفن، `location`، تگ‌های مهارتی |
+| `GET /candidates/me/applications` | رهگیر وضعیت: آگهی + مرحله‌ی فعلی هر درخواست |
+| `GET /candidates/me/offers` | صندوق پیشنهادها (درخواست‌های با وضعیت `Offer`) |
+| `PUT /candidates/me/applications/{id}/respond` | `{"decision": "accept" \| "reject"}` → `Accepted`/`Rejected` (از همان ماشین وضعیت) |
 
-⚠️ **تصمیم طراحی مستند:** این هوک عمداً فقط به مسیر HR (`applications.py`)
-وصل شده، نه به `PUT /candidates/me/applications/{id}/respond` (پاسخ خودِ
-کارجو به یک پیشنهاد) — چون قالب عمومی «Rejected» با لحن «متأسفانه رد شدید»
-برای حالتی که خودِ کارجو پیشنهاد را رد کرده معنای نادرستی می‌داد؛ ارسال
-ایمیل برای تصمیم خودِ کاربر هم منطقاً لازم نیست (او همین الان از تصمیم خودش
-باخبر است).
+اولین دسترسی یک Candidate بدون پروفایل، یک پروفایل حداقلی برایش می‌سازد (`app/core/candidate_utils.py`).
 
-### بازیابی رمز عبور با OTP
-دو مسیر جدید اضافه شدند:
+### جستجوی پیشرفته‌ی کارجویان
+
+`GET /candidates/search/?q=&skills=&skills=&min_experience_years=&min_ai_score=` — فقط `Admin`, `HR_Manager` · همه‌ی فیلترها اختیاری و با هم **AND** می‌شوند:
+
+- **`q`:** جستجوی تمام‌متن رزومه‌ها (ایندکس GIN، Case-Insensitive، فارسی/انگلیسی) با عملگرهای `AND`/`OR` — مثلاً `Python AND Django` یا `React OR Vue`؛ بین دو کلمه‌ی بدون عملگر، AND پیش‌فرض است. «Node.js» و «C++» درست جستجو می‌شوند.
+- **`skills`** (تکرارشونده): کارجو باید **همه‌ی** این مهارت‌ها را طبق موتور مهارت داشته باشد.
+- **`min_experience_years`:** حداقل سابقه‌ی خالص · **`min_ai_score`:** حداقل `score_ai` (۰ تا ۱۰۰؛ خارج از بازه → `422`).
+- هر ردیف شامل پروفایل خلاصه + `best_ai_score` و `best_experience_years`.
+
+<details>
+<summary>جزئیات فنی جستجو</summary>
+
+- پارسر AND/OR دستی است (`app/core/search_query.py`) چون `websearch_to_tsquery` پستگرس کلمه‌ی `and` را عملگر نمی‌شناسد.
+- پیش از `to_tsvector('simple', ...)` نویسه‌های `./+#@_-` به فاصله تبدیل می‌شوند (`resume_fts_tsvector_expression`)؛ وگرنه پارسر پستگرس «Node.js» را یک توکن واحد می‌دید. ایندکس فعلی: `ix_resumes_raw_text_fts_v2` (مایگریشن `f7b1e9a3c852`).
+- ایندکس‌های پشتیبان: GIN با `jsonb_path_ops` روی `resumes.skill_analysis` و ایندکس مرکب `(candidate_id, score_ai)` روی `applications` (مایگریشن `a4d8f0c2b716`).
+- `min_ai_score` یعنی «کارجویی که *حداقل در یکی* از درخواست‌هایش این نمره را گرفته» (نمره‌ی عمومیِ مستقل از آگهی وجود ندارد).
+- چون `candidates` ستون زمانی ندارد، صفحه‌بندی این مسیر روی `Candidate.id` است (پایدار، ولی بدون معنای زمانی).
+
+</details>
+
+### مصاحبه‌ها
+
+| مسیر | دسترسی | توضیح |
+|---|---|---|
+| `POST /interviews/` | `Admin`, `HR_Manager` | ساخت جلسه: `application_id`, `interviewer_id`, `scheduled_at`, `meeting_link` → `201` |
+| `GET /interviews/?application_id=&date=&status=` | مدیران + `Interviewer` | لیست (Interviewer فقط مصاحبه‌های خودش) · `date=YYYY-MM-DD` · `status=Pending\|Completed` |
+| `GET /interviews/{id}` | مدیران + مصاحبه‌کننده‌ی همان جلسه | جزئیات |
+| `PUT /interviews/{id}` | `Admin`, `HR_Manager` | تغییر زمان/مصاحبه‌کننده/لینک (یادآورها دوباره زمان‌بندی می‌شوند) |
+| `PUT /interviews/{id}/evaluation` | مصاحبه‌کننده‌ی همان جلسه یا مدیران | `{evaluation_scores, feedback_text}` → `status: Completed` |
+| `DELETE /interviews/{id}` | `Admin`, `HR_Manager` | لغو + حذف یادآورها |
+
+- `interviewer_id` باید نقش `Interviewer` یا `HR_Manager` داشته باشد، وگرنه `422`.
+- معیارهای مجاز نمره (۱ تا ۱۰): `technical_skill`, `problem_solving`, `communication`, `culture_fit`. `overall_score` را سرور (میانگین) حساب می‌کند.
+- **یادآور ۲۴ ساعته:** برای کارجو و مصاحبه‌کننده دقیقاً ۲۴ ساعت پیش از جلسه با **rq-scheduler** (اگر کمتر از ۲۴ ساعت مانده باشد، فوراً). شناسه‌ها در `interviews.reminder_job_ids` نگه‌داری می‌شوند تا با تغییر/لغو، یادآور قبلی cancel شود. نیازمند فرآیند `rqscheduler` در حال اجرا.
+
+### داشبورد تحلیلی
+
+فقط `Admin`, `HR_Manager` (بقیه `403`) · بدون کش، Real-time:
+
+- **`GET /analytics/funnel?job_id=`** — قیف استخدام: آرایه‌ی مرتب `{stage, count}` برای `Applied → … → Hired`. `count` **تجمعی** است (چند درخواست به این مرحله رسیده یا از آن گذشته، از روی `status_history`) تا قیف همیشه نزولی باشد؛ `Draft` و `Rejected` عمداً جزو مراحل نیستند.
+- **`GET /analytics/applications-trend?days=30&job_id=`** — تعداد درخواست‌های ثبت‌شده به تفکیک روز (`days` بین ۱ تا ۳۶۵)، با Zero-Filling روزهای خالی در بک‌اند. مبنا: ستون `applications.created_at` (مایگریشن `c39a7f1de204`؛ رکوردهای قدیمی از اولین ردیف `status_history` Backfill شدند).
+
+### اطلاع‌رسانی ایمیلی
+
+ارسال ایمیل کاملاً ناهمگام و از طریق صف Redis است — هیچ ایمیلی داخل یک درخواست HTTP فرستاده نمی‌شود.
+
+| رویداد | ایمیل |
+|---|---|
+| ثبت‌نام کاربر | خوش‌آمدگویی |
+| وضعیت → `Screening`, `Technical Interview`, `HR Interview` | تغییر وضعیت (`status_update.html`) |
+| وضعیت → `Offer` | نامه‌ی پیشنهاد همکاری با دکمه‌های قبول/رد + پیوست PDF (`job_offer.html`) |
+| وضعیت → `Rejected` (توسط HR) | عدم تأیید (`status_update.html`) |
+| `forgot-password` | کد OTP (`otp_reset.html`) |
+| ۲۴ ساعت پیش از مصاحبه | یادآور (`interview_reminder.html`) |
+
+<details>
+<summary>معماری و جزئیات</summary>
+
+- `app/core/email_service.py`: تنها لایه‌ی متصل به SMTP (`smtplib`، همگام، با پشتیبانی پیوست) — فقط از داخل Taskهای پس‌زمینه.
+- `app/tasks/notifications.py`: Taskهای ارسال که Worker اجرا می‌کند · `app/core/notification_service.py`: نمای سطح بالا برای روترها.
+- `app/core/status_notifier.py`: هوک ماشین وضعیت → ایمیل. عمداً فقط به مسیر HR وصل است، نه به `respond` کارجو (لحن «متأسفانه رد شدید» برای ردِ خودِ کارجو معنا ندارد و او از تصمیم خودش باخبر است).
+- قالب‌ها (`app/templates/emails/`) با Jinja2 و autoescape (امن در برابر HTML) و Layout مشترک `base.html`.
+- PDF پیشنهاد همکاری با ReportLab (`app/core/offer_letter.py`).
+
+</details>
+
+### اعلان‌های داخل سایت و مسیرهای عملیاتی
+
+| مسیر | دسترسی | توضیح |
+|---|---|---|
+| `GET /notifications/me` | هر کاربر لاگین‌شده | اعلان‌های خودِ کاربر (جدیدترین اول) + `unread_count` |
+| `PUT /notifications/{id}/read` · `PUT /notifications/read-all` | هر کاربر | علامت‌گذاری خوانده‌شده |
+| `POST /ops/alerts` | توکن `OPS_WEBHOOK_TOKEN` | وب‌هوک Alertmanager → اعلان برای همه‌ی اعضای تیم فنی |
+| `POST /ops/events` | توکن `OPS_WEBHOOK_TOKEN` | گزارش CI/CD (`{title, content, level, category}`) → اعلان برای تیم فنی |
+
+بدون تنظیم `OPS_WEBHOOK_TOKEN`، مسیرهای `/ops/*` با `503` کاملاً غیرفعال‌اند. در فرانت‌اند: داشبورد HR ← تب **«اعلان‌های فنی»** (به‌روزرسانی خودکار هر ۱۵ ثانیه + Toast فوری).
+
+### سایر
+
+- `GET /api/v1/health` — بررسی سلامت · `GET /metrics` — متریک‌های Prometheus (بیرون از `/api/v1`؛ در Production از بیرون بسته است).
+- **کش و صف (Redis):** نشست کاربر ۵ دقیقه کش می‌شود (`app/core/cache.py`)؛ کارهای سنگین با RQ (`app/core/queue.py`) به‌صورت fire-and-forget به صف می‌روند. قطعی Redis سرور را از کار نمی‌اندازد — فقط کش/صف موقتاً غیرفعال می‌مانند.
+
+---
+
+## خط لوله‌ی هوش مصنوعی رزومه
+
+بعد از هر آپلود موفق، Worker این چهار مرحله را در پس‌زمینه اجرا می‌کند (`app/tasks/resume_processing.py`). شکست هر مرحله فقط لاگ می‌شود و نتایج مراحل قبلی از بین نمی‌رود:
+
 ```
-POST /api/v1/auth/forgot-password   { "email": "..." }
-POST /api/v1/auth/reset-password    { "email": "...", "otp_code": "123456", "new_password": "..." }
-```
-کد OTP شش‌رقمی با `secrets` (نه `random` معمولی) تولید و در Redis با TTL ده
-دقیقه‌ای ذخیره می‌شود (همان لایه‌ی کش بخش «کش و صف کارها» بالا). پاسخ
-`forgot-password` همیشه یک پیام یکسان است (چه ایمیل وجود داشته باشد چه نه)
-تا این مسیر برای حدس زدن ایمیل‌های ثبت‌شده در سیستم قابل‌سوءاستفاده نباشد
-(User Enumeration). بعد از مصرف موفق، کد OTP بلافاصله از Redis حذف می‌شود
-تا یک‌بارمصرف بودنش تضمین شود.
-
-## سرویس مدیریت مصاحبه‌ها (Interview Service)
-
-```
-POST   /api/v1/interviews/                        ساخت جلسه‌ی مصاحبه‌ی جدید
-GET    /api/v1/interviews/{id}                       مشاهده‌ی جزئیات یک مصاحبه
-GET    /api/v1/interviews/?application_id=&date=&status=  لیست مصاحبه‌ها (هر سه فیلتر اختیاری)
-PUT    /api/v1/interviews/{id}                           ویرایش (زمان/مصاحبه‌کننده/لینک)
-PUT    /api/v1/interviews/{id}/evaluation                   ثبت ارزیابی نهایی و نمرات
-DELETE /api/v1/interviews/{id}                                لغو یک مصاحبه
+فایل رزومه ─► ① استخراج متن/OCR ─► ② پارسینگ و NER ─► ③ موتور مهارت ─► ④ نمره‌ی تطابق
+              resumes.raw_text      resumes.parsed_data   resumes.skill_analysis   applications.score_ai
 ```
 
-- **ساخت/ویرایش/لغو:** فقط `Admin` و `HR_Manager`.
-- **مشاهده (یک مصاحبه یا لیست):** `Admin`/`HR_Manager` بدون محدودیت (برای
-  «لیست مصاحبه‌های روزانه» در داشبورد)؛ `Interviewer` فقط مصاحبه‌های خودش را
-  می‌بیند — پارامتر `date=YYYY-MM-DD` برای فیلتر «مصاحبه‌های امروز» و
-  `status=Pending|Completed` برای فیلتر وضعیت فرم ارزیابی استفاده می‌شود.
-- **اعتبارسنجی تخصیص مصاحبه‌کننده:** اگر `interviewer_id` ارسالی به کاربری
-  اشاره کند که نقشش `Interviewer` یا `HR_Manager` نباشد، کد `422` برمی‌گردد
-  (طبق معیار پذیرش تسک).
-- موفقیت ساخت: کد `201` با جزئیات کامل مصاحبه.
+**① استخراج متن و OCR** (`app/core/text_extraction.py`)
+- PDF: ابتدا لایه‌ی متنی با PyMuPDF؛ اگر به‌طرز مشکوکی کوتاه بود (رزومه‌ی اسکن‌شده)، هر صفحه به تصویر رندر و با **Tesseract** (فارسی + انگلیسی) خوانده می‌شود. DOCX مستقیم با `python-docx` (پاراگراف‌ها + جدول‌ها).
+- فایل خراب/رمزدار → `UnreadableResumeFileError`: فقط همان رزومه متوقف می‌شود، Worker کرش نمی‌کند. متن نهایی پیش از ذخیره یکپارچه‌سازی می‌شود.
 
-### ثبت ارزیابی و نمرات (`PUT /interviews/{id}/evaluation`)
-فقط خودِ مصاحبه‌کننده‌ی تخصیص‌یافته (یا `Admin`/`HR_Manager` برای ثبت
-جایگزین). بدنه‌ی درخواست:
-```json
-{
-  "evaluation_scores": { "technical_skill": 8, "communication": 7 },
-  "feedback_text": "متن بازخورد کیفی مصاحبه‌کننده..."
-}
+**② پارسینگ و NER** (`app/core/resume_parser.py`) — خروجی: `personal_info` (نام، ایمیل، تلفن)، `education[]` (مدرک، دانشگاه، معدل)، `work_experience[]` (شرکت، عنوان، بازه‌ی زمانی).
+- رویکرد ترکیبی: موجودیت‌های الگودار (ایمیل، تلفن، معدل، تاریخ) با Regex؛ مرزبندی بخش‌ها با هدینگ‌های فارسی/انگلیسی؛ نام شرکت/دانشگاه و نام شخص با قواعد متنی («شرکت X»، «دانشگاه X») و در نبودشان با مدل NER **spaCy**.
+
+**③ موتور مهارت** (`app/core/skill_engine.py`) — خروجی: `skills[]`، `total_experience_years`، `experience_entries[]` (با `is_valid` و `flag_reason`).
+- **گراف مهارت** (`skill_graph.py`): زیرشاخه‌ها مهارت والد را هم اضافه می‌کنند (مثلاً FastAPI ← Python)؛ تطبیق با مرز کلمه (`java` داخل `javascript` تشخیص داده نمی‌شود).
+- **تحلیل سوابق** (`experience_analyzer.py`): تشخیص خودکار تقویم شمسی/میلادی؛ دوره‌های متناقض، آینده‌دار یا بیش از ۴۰ سال فیلتر (ولی با دلیل در خروجی) می‌شوند؛ سابقه‌ی خالص با ادغام بازه‌های همپوشان (Merge Intervals) — دو شغل هم‌زمان دوبار حساب نمی‌شوند.
+
+**④ نمره‌ی تطابق** (`app/core/matching_engine.py`) — عدد صحیح ۰ تا ۱۰۰ در `applications.score_ai`:
+
+| بخش | وزن | تقسیم داخلی |
+|---|---|---|
+| مهارت‌های کلیدی/اجباری آگهی | ۵۰٪ | — (مهارت والد هم تطبیق حساب می‌شود) |
+| عنوان شغلی + ارشدیت | ۳۰٪ | ۱۵٪ عنوان · ۱۵٪ سابقه نسبت به `required_seniority` |
+| فاکتورهای تکمیلی | ۲۰٪ | ۸٪ تحصیلات · ۸٪ موقعیت مکانی · ۴٪ کلمات کلیدی ثانویه‌ی توضیحات آگهی |
+
+تقسیم‌های داخلی انتخاب طراحی و قابل‌تغییر در ثابت‌های همان فایل‌اند. نبود داده (مثلاً `location` یا `required_education`) در هر دو طرف جریمه نمی‌شود. تست کلیدی: `tests/test_matching_engine.py::test_no_required_skill_match_deducts_exactly_fifty_percent`. (نام فیلد در تسک `ai_score` بود؛ برای حفظ یکپارچگی با بورد کانبان و فرانت‌اند، همان `score_ai` موجود حفظ شد.)
+
+---
+
+## زیرساخت: Docker، مانیتورینگ، CI/CD و استقرار
+
+### ایمیج‌ها و Compose
+
+- **بک‌اند (`Dockerfile`)** — پایه‌ی `python:3.11-slim`، دو مرحله: `builder` (ابزار کامپایل + نصب وابستگی‌ها در venv + مدل spaCy) و `production` (فقط venv + کد + Tesseract؛ بدون gcc/کش pip/تست/`.env`؛ کاربر غیر root؛ `PYTHONDONTWRITEBYTECODE=1`، `PYTHONUNBUFFERED=1`؛ پورت 8000 و Healthcheck). همین ایمیج با `command` متفاوت برای API، Worker، Scheduler و Migrate استفاده می‌شود.
+- **فرانت‌اند (`frontend/Dockerfile`)** — `node:22-alpine` برای build، مرحله‌ی نهایی فقط `nginx:1.27-alpine` (پورت 80؛ `/api` و `/media` را به بک‌اند پراکسی می‌کند).
+- **`docker-compose.yml`:** شبکه‌ی ایزوله‌ی `ats_network` (Bridge) — سرویس‌ها با **نام** هم را پیدا می‌کنند و PostgreSQL/Redis پورتی به بیرون باز نمی‌کنند · Volumeهای نام‌دار `postgres_data`، `redis_data` (با AOF)، `media_data`، `prometheus_data`، `grafana_data` · `depends_on` با `service_healthy`: بک‌اند فقط بعد از سالم شدن دیتابیس/Redis و اتمام `migrate` بالا می‌آید.
+
+### مانیتورینگ و هشدار
+
 ```
-معیارهای مجاز نمره‌دهی یک مجموعه‌ی ثابت است: `technical_skill`,
-`problem_solving`, `communication`, `culture_fit` — هرکدام بین ۱ تا ۱۰.
-`overall_score` توسط سرور به‌عنوان میانگین همین نمرات محاسبه می‌شود (نه
-چیزی که کلاینت مستقیم بفرستد) تا همیشه با نمرات واقعی هم‌خوان بماند. بعد از
-ثبت موفق، `status` مصاحبه از `Pending` به **`Completed`** تغییر می‌کند
-(طبق معیار پذیرش دوم تسک) و `evaluated_at` ثبت می‌شود.
+backend /metrics · node · postgres · redis exporters ─► Prometheus ─► قوانین هشدار ─► Alertmanager
+                                                            │                              │ POST /api/v1/ops/alerts
+                                                            ▼                              ▼
+                                                    Grafana (داشبورد زنده)      اعلان داخل سایت برای تیم فنی
+```
 
-### یادآور خودکار ۲۴ ساعته (`app/core/interview_scheduler.py`)
-بلافاصله بعد از ساخت (یا ویرایش زمان/مصاحبه‌کننده‌ی) یک مصاحبه، دو یادآور
-ایمیلی (یکی برای کارجو، یکی برای مصاحبه‌کننده) دقیقاً برای **۲۴ ساعت پیش از
-`scheduled_at`** با **rq-scheduler** زمان‌بندی می‌شوند — نه یک Cron/Polling
-جداگانه که هر چند دقیقه دیتابیس را چک کند. اگر فاصله‌ی زمان‌بندی کمتر از
-۲۴ ساعت باشد، یادآور فوراً ارسال می‌شود (نه در گذشته). شناسه‌ی این کارهای
-زمان‌بندی‌شده در ستون `interviews.reminder_job_ids` نگه‌داری می‌شود تا در
-صورت تغییر زمان یا لغو مصاحبه، یادآورهای قدیمی cancel شوند.
+- **متریک‌های بک‌اند** (`app/core/metrics.py`): `http_requests_total`، `http_request_duration_seconds`، `http_requests_in_progress`، `ats_rq_jobs{state}` (کارهای منتظر/در حال اجرا/ناموفق/زمان‌بندی‌شده)، `ats_rq_workers` + CPU/RAM پردازه. برچسب مسیر همیشه الگوی مسیر است (مثل `/api/v1/jobs/{job_id}`).
+- **داشبوردهای Grafana** (خودکار provision، پوشه‌ی «ATS Smart»): **سلامت سیستم** (CPU، RAM، دیسک، شبکه، کانکشن‌ها و تراکنش‌های PostgreSQL، Redis، صف) و **کارایی API** (RPS، Latency p50/p95/p99، نرخ خطای 5xx، پرترافیک‌ترین و کندترین مسیرها). منبع: `monitoring/grafana/generate_dashboards.py` (بعد از تغییر، اجرایش کنید).
 
-⚠️ **پیش‌نیاز اجرایی مهم:** علاوه بر Worker معمولی (`python -m app.worker`)،
-یک فرآیند دیگر هم باید هم‌زمان در حال اجرا باشد تا کارهای زمان‌بندی‌شده در
-لحظه‌ی موعودشان وارد صف اصلی شوند:
+| هشدار (`monitoring/prometheus/alerts.yml`) | شرط | شدت |
+|---|---|---|
+| `HostHighMemoryUsage` | RAM بالای **۸۵٪** (۱ دقیقه) | critical |
+| `ApiHighErrorRate` | نرخ خطای 5xx بالای **۵٪** (۱ دقیقه) | critical |
+| `BackendDown` · `PostgresDown` · `RedisDown` · `NoQueueWorkers` | سرویس در دسترس نیست / Worker فعالی نیست | critical |
+| `HostHighCpuUsage` · `ApiHighLatency` · `PostgresTooManyConnections` | CPU بالای ۸۵٪ (۵ دقیقه) · p95 بیش از ۱ ثانیه · کانکشن‌ها بالای ۸۰٪ | warning |
+| `QueueBacklog` · `QueueJobsFailing` · `HostLowDiskSpace` · `ExporterDown` | بیش از ۵۰ کار منتظر · بیش از ۵ شکست در ۱۵ دقیقه · دیسک زیر ۱۰٪ · Exporter قطع | warning |
+
+Alertmanager هر هشدار (و «برطرف شد») را با `OPS_WEBHOOK_TOKEN` به بک‌اند می‌فرستد؛ برای همه‌ی کاربران فعال با نقش‌های `OPS_ALERT_RECIPIENT_ROLES` اعلان ساخته می‌شود.
+
+### خط لوله‌ی CI/CD (`.github/workflows/ci-cd.yml`)
+
+```
+lint (Black + Flake8) ─► test (Pytest + مایگریشن روی PostgreSQL/Redis واقعی) ─┐
+frontend (TypeScript + Vite build) ────────────────────────────────────────┴─► build-and-push ─► deploy ─► report
+```
+
+- روی هر Push/PR به `develop`. شکست **هر** مرحله، مراحل بعدی را متوقف می‌کند — کد خراب به Docker Hub یا سرور نمی‌رسد.
+- `build-and-push` و `deploy` فقط روی Push به `develop`؛ ایمیج‌ها با تگ `sha-<commit>` (برای Rollback) و `develop`.
+- **گزارش:** Job Summary همان اجرا + اعلان در «اعلان‌های فنی» داخل سایت. تا وقتی Secrets انتشار/استقرار تنظیم نشده‌اند، آن مراحل با پیام توضیحی Skip می‌شوند.
+
+<details>
+<summary>GitHub Secrets لازم</summary>
+
+| Secret | توضیح |
+|---|---|
+| `DOCKERHUB_USERNAME` · `DOCKERHUB_TOKEN` | Docker Hub ← Account Settings ← Personal access tokens (Read & Write) |
+| `SSH_HOST` · `SSH_USER` · `SSH_PORT` (اختیاری، 22) | مشخصات سرور |
+| `SSH_PRIVATE_KEY` | کلید خصوصی استقرار (کلید عمومی در `~/.ssh/authorized_keys` سرور) |
+| `SSH_KNOWN_HOSTS` | خروجی `ssh-keyscan -p <port> <host>` (یک‌بار، از سیستم مطمئن) |
+| `DEPLOY_PATH` (اختیاری) | مسیر پروژه روی سرور؛ پیش‌فرض `/opt/ats-smart` |
+| `OPS_EVENTS_URL` · `OPS_WEBHOOK_TOKEN` | مثلاً `https://ats.example.com/api/v1/ops/events` · همان مقدار `.env` سرور |
+
+</details>
+
+### استقرار بدون قطعی (Zero-Downtime)
+
+**آماده‌سازی یک‌باره‌ی سرور** (Docker Engine + Compose نسخه‌ی 2.24.4 به بالا):
 ```bash
-rqscheduler --host localhost --port 6379
-```
-بدون این فرآیند، یادآورها هیچ‌وقت واقعاً اجرا نمی‌شوند (فقط در Redis منتظر می‌مانند).
-
-⚠️ **دو محدودیت شناخته‌شده و مستند:**
-- «ایجاد اتاق مجازی» فعلاً یعنی ثبت یک `meeting_link` از پیش‌ساخته توسط HR
-  (مثلاً یک لینک Google Meet/Zoom که خودش خارج از این سیستم ساخته می‌شود)،
-  نه یکپارچگی خودکار با یک API واقعی ویدئوکنفرانس.
-- چون جدول `users` فیلد نام ندارد (فقط `email`)، «نام مصاحبه‌کننده» در پاسخ
-  API و متن ایمیل یادآور فعلاً همان آدرس ایمیل مصاحبه‌کننده است.
-
-## موتور جستجوی پیشرفته‌ی متنی و فیلترینگ چندگانه‌ی کارجویان (HR)
-
-```
-GET /api/v1/candidates/search/?q=&skills=&skills=&min_experience_years=&min_ai_score=
+sudo mkdir -p /opt/ats-smart && sudo chown $USER /opt/ats-smart
+# فایل .env سرور بر اساس .env.example — حتماً: SECRET_KEY, POSTGRES_PASSWORD, OPS_WEBHOOK_TOKEN,
+# GRAFANA_ADMIN_PASSWORD, PUBLIC_BASE_URL=https://ats.example.com, ENVIRONMENT=production, SMTP_*
 ```
 
-فقط `Admin` و `HR_Manager` دسترسی دارند (طبق همان الگوی نقش‌های مدیریتی
-`app/routers/jobs.py`/`app/routers/applications.py`؛ برخلاف بقیه‌ی مسیرهای
-این فایل، این مسیر روی «پروفایل خودِ کاربر لاگین‌شده» عمل نمی‌کند و همه‌ی
-کارجویان پلتفرم را جست‌وجو می‌کند). تمام پارامترها اختیارند و **با هم AND**
-می‌شوند (نتیجه‌ی نهایی، تقاطع همه‌ی شروط ارسالی‌ست):
+از آن به بعد هر Push به `develop` (بعد از سبز شدن تست‌ها) خودکار مستقر می‌شود: CI فایل‌های زیرساخت را با SSH منتقل و `deploy/deploy.sh` را اجرا می‌کند.
 
-- **`q`** — جستجوی تمام‌متن روی `resumes.raw_text` (با ایندکس GIN
-  `to_tsvector('simple', ...)`، پس Case-Insensitive و فارسی/انگلیسی/مخلوط‌پذیر
-  است). از عملگرهای منطقی **`AND`/`OR`** پشتیبانی می‌کند — مثلاً
-  `q=Python AND Django` یا `q=React OR Vue` (پارسر در
-  `app/core/search_query.py`؛ بین دو کلمه‌ی متوالی بدون عملگر صریح هم AND
-  پیش‌فرض در نظر گرفته می‌شود).
-  پیش از تبدیل به tsvector، نویسه‌های پرکاربرد در نام فناوری‌ها
-  (`./+#@_-`) با `translate()` به فاصله تبدیل می‌شوند (بنگرید
-  `resume_fts_tsvector_expression`) — چون پارسر پیش‌فرض پستگرس چیزی مثل
-  «Node.js» یا «C++» را یک توکن ترکیبی واحد می‌بیند، نه دو کلمه‌ی جدا؛
-  بدون این نرمال‌سازی، جستجوی تک‌کلمه‌ای «Node» هیچ‌وقت با رزومه‌ای که فقط
-  «Node.js» نوشته مطابقت پیدا نمی‌کرد.
-- **`skills`** — قابل تکرار (`skills=Python&skills=Django`)؛ کارجو باید
-  طبق خروجی موتور مهارت (`resumes.skill_analysis->'skills'`) **همه‌ی**
-  این مهارت‌ها را داشته باشد (Case-Insensitive).
-- **`min_experience_years`** — حداقل سال‌های سابقه‌ی کاری خالص
-  (`resumes.skill_analysis->>'total_experience_years'`).
-- **`min_ai_score`** — حداقل `score_ai` در میان درخواست‌های این کارجو؛
-  فقط بین ۰ تا ۱۰۰ معتبر است — هر مقدار خارج از این بازه (مثلاً بالای ۱۰۰)
-  با محدودیت `ge`/`le` روی خودِ پارامتر Query، خودکار `422 Unprocessable
-  Entity` برمی‌گرداند (بدون نیاز به بررسی دستی در کد).
+1. در Production فقط `gateway` (Nginx) پورت عمومی دارد و در استقرار عادی جایگزین نمی‌شود (`deploy/docker-compose.prod.yml`).
+2. برای `backend_api` و `frontend`، نسخه‌ی جدید **کنار** نسخه‌ی فعلی بالا می‌آید و تا Healthcheck سبز نشود ترافیک نمی‌گیرد.
+3. Nginx نام سرویس‌ها را هر ۵ ثانیه از DNS داخلی Docker resolve می‌کند و با `proxy_next_upstream`، درخواستِ ردشده توسط کانتینر در حال خاموش‌شدن را بی‌صدا به کانتینر سالم می‌دهد.
+4. نسخه‌ی قبلی با SIGTERM خاموش می‌شود؛ درخواست‌های در حال اجرا تا ۳۰ ثانیه کامل می‌شوند.
+5. اگر نسخه‌ی جدید سالم نباشد: کانتینرهای جدید حذف، نسخه‌ی قبلی بدون وقفه ادامه می‌دهد و Pipeline قرمز می‌شود (Rollback خودکار).
 
-پاسخ، صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination، همان الگوی بقیه‌ی
-لیست‌های پروژه) است و هر ردیف شامل پروفایل خلاصه‌ی کارجو + `best_ai_score`
-و `best_experience_years` (بهترین مقدار موجود در میان رزومه‌ها/درخواست‌های
-همان کارجو) می‌باشد.
+- **مایگریشن‌ها** پیش از جایگزینی کد اجرا می‌شوند، پس باید با نسخه‌ی قبلی کد هم سازگار باشند (Expand/Contract): ستون جدید را ابتدا nullable/با پیش‌فرض اضافه کنید و حذف ستون‌های قدیمی را به انتشار بعدی موکول کنید.
+- دستورات دستی روی سرور: `./deploy/compose.sh ps` · `./deploy/compose.sh logs -f backend_api`
+- Grafana در Production: `https://<دامنه>/grafana/` · Prometheus/Alertmanager فقط از خود سرور (`127.0.0.1:9090` / `:9093`، مثلاً با SSH Tunnel).
 
-⚠️ **تصمیم مهندسی مستند:** چون جدول `candidates` ستون زمانی ندارد، صفحه‌بندی
-این مسیر (برخلاف بقیه‌ی مسیرهای پروژه) روی خودِ `Candidate.id` انجام می‌شود
-نه `created_at`/`updated_at` — ترتیب نمایش معنای زمانی ندارد ولی پایدار است.
-همچنین `min_ai_score` روی `applications.score_ai` (نمره‌ی مخصوص هر
-آگهی/رزومه) فیلتر می‌کند نه یک نمره‌ی عمومی مستقل از آگهی که در طراحی فعلی
-دیتابیس اصلاً وجود ندارد؛ یعنی این فیلتر یعنی «کارجویی که *حداقل در یکی* از
-درخواست‌هایش این نمره یا بالاتر را گرفته باشد».
+---
 
-ایندکس‌های پشتیبان این موتور (علاوه بر GIN اصلی `raw_text`، که به‌خاطر باگ
-توکنایزیشن بالا در مایگریشن `f7b1e9a3c852` با ایندکس `ix_resumes_raw_text_fts_v2`
-جایگزین شد): GIN با `jsonb_path_ops` روی `resumes.skill_analysis` و ایندکس
-مرکب `(candidate_id, score_ai)` روی `applications` — بنگرید مایگریشن
-`a4d8f0c2b716`.
-
-## API های تجمیعی داشبورد تحلیلی (Data Aggregation Analytics)
+## ساختار ریپو
 
 ```
-GET /api/v1/analytics/funnel?job_id=
-GET /api/v1/analytics/applications-trend?days=30&job_id=
+├── app/
+│   ├── main.py              # نقطه‌ی ورود (Middlewareها، روترها، /metrics، بررسی Redis در startup)
+│   ├── worker.py            # Worker صف RQ (سازگار با ویندوز)
+│   ├── routers/             # health, auth, admin, jobs, applications, resumes, candidates, interviews, analytics, notifications, ops
+│   ├── schemas/             # اسکیماهای Pydantic (یک فایل به‌ازای هر روتر + resume_parsing, skill_analysis)
+│   ├── models/              # ۱۴ جدول ORM: core (User, Company, Candidate, Job) · process (Application, Interview, Resume, Skill)
+│   │                        #   · security (Role, Permission, Notification, Log, Audit, StatusHistory)
+│   ├── core/                # منطق مشترک:
+│   │   ├── config · security · deps · limiter · sanitize          # تنظیمات، JWT/Bcrypt، RBAC، Rate Limit، XSS
+│   │   ├── state_machine · pagination · search_query · storage    # ماشین وضعیت، صفحه‌بندی نشانگر، جستجو، فایل
+│   │   ├── redis_client · cache · queue · metrics                 # Redis، کش، صف RQ، متریک‌های Prometheus
+│   │   ├── text_extraction · resume_parser · skill_graph · experience_analyzer · skill_engine · matching_engine
+│   │   ├── email_service · email_templates · offer_letter · notification_service · status_notifier
+│   │   └── interview_scheduler · candidate_utils · ops_notifier
+│   ├── tasks/               # کارهای Worker: resume_processing (خط لوله‌ی AI)، notifications (ایمیل‌ها)
+│   ├── templates/emails/    # قالب‌های HTML ایمیل
+│   └── db/session.py        # اتصال Async به دیتابیس
+├── alembic/                 # مایگریشن‌های دیتابیس
+├── tests/                   # تست‌ها (pagination, matching_engine, metrics, ops/notifications, health)
+├── frontend/                # فرانت‌اند React (+ Dockerfile و nginx.conf)
+├── monitoring/              # Prometheus (+ alerts.yml)، Alertmanager، Grafana (provisioning + داشبوردها)
+├── deploy/                  # docker-compose.prod.yml، deploy.sh، compose.sh، nginx/gateway.conf
+├── .github/workflows/       # ci-cd.yml
+├── Dockerfile · docker-compose.yml
+├── requirements.txt         # وابستگی‌های Production
+├── requirements-dev.txt     # + ابزارهای تست و Lint
+└── pyproject.toml · .flake8 # تنظیمات Black/Pytest و Flake8
 ```
 
-فقط `Admin` و `HR_Manager` («مدیر سازمان») دسترسی دارند؛ هر نقش دیگری (مثلاً
-`Candidate` یا `Interviewer`) با `403 Forbidden` مواجه می‌شود — کاملاً روی
-`dependencies=[Depends(require_roles(...))]` پیاده شده (بنگرید
-`app/routers/analytics.py`)، دقیقاً همان الگوی `app/routers/admin.py`.
-هر دو کوئری مستقیماً و بدون کش روی دیتابیس اجرا می‌شوند تا همیشه وضعیت
-Real-time را بازتاب دهند.
+---
 
-**`GET /analytics/funnel`** — تعداد کارجویان در هر مرحله از قیف استخدام
-(`Applied → Screening → Technical Interview → HR Interview → Offer →
-Accepted → Hired`؛ ترتیب و فهرست دقیق در
-`app/core/state_machine.py::FUNNEL_STAGES`). خروجی، آرایه‌ای مرتب از
-`{stage, count}` است — مستقیماً قابل مصرف در نمودار قیفی/میله‌ای. با
-پارامتر اختیاری `job_id` می‌توان قیف را به یک آگهی خاص محدود کرد.
+## محدودیت‌های شناخته‌شده
 
-⚠️ **تصمیم مهندسی مستند:** `count` هر مرحله یک شمارش **تجمعی** است — «چند
-درخواست تا این مرحله رسیده‌اند یا از آن گذشته‌اند» (از روی جدول
-`status_history`، نه `current_status` لحظه‌ای) — چون این تعریف استاندارد
-«قیف» در تحلیل محصول است و تضمین می‌کند اعداد همیشه یکنواخت نزولی باشند
-(دقیقاً به لطف قوانین ضدپرشِ ماشین وضعیت). Draft (هنوز واقعاً وارد قیف
-نشده) و Rejected (یک وضعیت نهایی موازی، نه یک مرحله‌ی خطی) عمداً از فهرست
-مراحل قیف کنار گذاشته شده‌اند.
-
-**`GET /analytics/applications-trend`** — سری زمانی تعداد درخواست‌های
-ثبت‌شده به تفکیک روز (پیش‌فرض ۳۰ روز گذشته، قابل تنظیم با `days`، بین ۱ تا
-۳۶۵)، با `DATE_TRUNC('day', ...)` پستگرس. روزهای بدون هیچ درخواستی هم با
-`count=0` در خروجی هست (Zero-Filling در بک‌اند) تا فرانت‌اند مجبور به
-پرکردن حفره‌های تاریخ نباشد.
-
-⚠️ **تصمیم مهندسی مستند:** جدول `applications` قبلاً هیچ ستون «زمان ثبت»ی
-نداشت (فقط `updated_at` که با هر جابه‌جایی روی بورد کانبان بازنویسی
-می‌شود). ستون `created_at` در مایگریشن `c39a7f1de204` اضافه شد؛ رکوردهای
-از قبل موجود با اولین ردیف `status_history`شان (یا در نبودش، `updated_at`)
-Backfill شدند.
-
-## ساختار کلی ریپو
-
-```
-ats-smart-backend/            # ریشه‌ی ریپو
-├── app/                       # بک‌اند
-│   ├── routers/                # اندپوینت‌ها (health, auth, admin, jobs, applications, resumes, candidates, interviews, analytics)
-│   ├── core/
-│   │   ├── config.py             # تنظیمات و متغیرهای محیطی
-│   │   ├── security.py            # هش کردن گذرواژه (Bcrypt) و صدور/رمزگشایی توکن‌های JWT
-│   │   ├── deps.py                # لایه‌ی RBAC: get_current_user (با کش Redis) و require_roles
-│   │   ├── limiter.py              # پیکربندی Rate Limiting
-│   │   ├── sanitize.py             # پاکسازی ورودی متنی در برابر XSS
-│   │   ├── state_machine.py        # ماشین وضعیت صلب بورد کانبان + قانون ضدپرش
-│   │   ├── storage.py               # لایه‌ی انتزاعی ذخیره‌سازی فایل (دیسک محلی / S3)
-│   │   ├── redis_client.py          # اتصال Async به Redis (برای کش)
-│   │   ├── cache.py                  # لایه‌ی سبک Cache روی Redis
-│   │   ├── queue.py                   # صف کارهای پس‌زمینه با RQ (Redis Queue)
-│   │   ├── candidate_utils.py          # یافتن/ساخت پروفایل کارجو (مشترک بین resumes و candidates)
-│   │   ├── search_query.py              # پارسر AND/OR جستجوی متنی -> عبارت to_tsquery پستگرس
-│   │   ├── text_extraction.py           # موتور استخراج متن رزومه + OCR (Tesseract/PyMuPDF)
-│   │   ├── resume_parser.py              # پارسینگ متنی و NER (spaCy + Regex)
-│   │   ├── skill_graph.py                 # گراف مهارت (Skill Ontology) + تطبیق زیرشاخه‌ها
-│   │   ├── experience_analyzer.py          # محاسبه‌ی سابقه‌ی خالص + فیلتر تقلب/تناقض تاریخ
-│   │   ├── skill_engine.py                  # موتور مهارت (ترکیب دو ماژول بالا)
-│   │   ├── matching_engine.py                # موتور نمره‌دهی و رتبه‌بندی (وزن‌دهی ۵۰/۳۰/۲۰)
-│   │   ├── email_service.py                   # اتصال واقعی به SMTP (smtplib) + پیوست فایل
-│   │   ├── notification_service.py             # نمای سطح بالا برای ثبت رویدادهای اطلاع‌رسانی
-│   │   ├── email_templates.py                    # موتور Render قالب‌های ایمیل (Jinja2)
-│   │   ├── offer_letter.py                        # تولید PDF نامه‌ی پیشنهاد همکاری (ReportLab)
-│   │   ├── status_notifier.py                      # هوک ماشین وضعیت -> اطلاع‌رسانی
-│   │   └── interview_scheduler.py                    # زمان‌بند یادآور مصاحبه (rq-scheduler)
-│   ├── templates/emails/                # قالب‌های HTML ایمیل (base, status_update, job_offer, otp_reset, interview_reminder)
-│   ├── tasks/
-│   │   ├── resume_processing.py       # کارهای پس‌زمینه‌ای که Worker اجرا می‌کند (خط لوله‌ی AI)
-│   │   └── notifications.py            # کارهای پس‌زمینه‌ی ارسال ایمیل (welcome, status, offer, OTP)
-│   ├── db/
-│   │   └── session.py             # اتصال async به دیتابیس
-│   ├── models/                  # مدل‌های ORM (SQLAlchemy) — 14 جدول طراحی دیتابیس
-│   │   ├── base.py
-│   │   ├── core.py               # User, Company, Candidate, Job
-│   │   ├── process.py            # Application (+ updated_at), Interview, Resume, Skill
-│   │   └── security.py           # Role, Permission, Notification, Log, Audit, StatusHistory
-│   ├── schemas/                  # اسکیمای Pydantic (auth.py, jobs.py, applications.py, resumes.py, resume_parsing.py, skill_analysis.py, candidates.py, candidate_search.py, interviews.py, analytics.py, health.py)
-│   ├── main.py                    # نقطه ورود برنامه (شامل lifespan: بررسی اتصال Redis در startup)
-│   └── worker.py                   # اجرای Worker صف کارها (سازگار با ویندوز)
-├── alembic/                    # مدیریت نسخه‌بندی دیتابیس
-├── tests/                       # تست‌های بک‌اند (شامل test_matching_engine.py)
-├── frontend/                    # فرانت‌اند (React + TypeScript + Tailwind)
-├── requirements.txt
-└── alembic.ini
-```
+- **NER فارسی:** مدل `en_core_web_sm` انگلیسی است؛ برای متن فارسی فقط نقش کمکی دارد و استخراج فارسی عمدتاً به Regex و کلیدواژه تکیه دارد. برای دقت بالاتر، یک مدل NER فارسی در آینده پیشنهاد می‌شود.
+- **تقویم:** تبدیل شمسی↔میلادی با افست ساده‌ی ۶۲۱ سال است (بدون کبیسه) و فرض شده هر رزومه فقط از یک تقویم استفاده می‌کند.
+- **شرکت‌ها:** هنوز مسیری برای «ساخت شرکت» نیست؛ آگهی‌ها به‌جای `company_id` به سازنده‌شان (`created_by`) وصل‌اند.
+- **مهارت‌ها:** تگ‌های مهارتی کارجو آرایه‌ای ساده روی `candidates` است؛ جدول `skills` فعلاً یک بانک خام بدون رابطه با کارجوهاست.
+- **مصاحبه:** «اتاق مجازی» یعنی ثبت یک `meeting_link` از پیش‌ساخته (بدون یکپارچگی با API ویدئوکنفرانس)؛ چون `users` فیلد نام ندارد، «نام مصاحبه‌کننده» همان ایمیل اوست.
+- **ایمیل پیشنهاد:** دکمه‌های قبول/رد به صفحه‌ی اصلی فرانت‌اند لینک می‌شوند (فرانت‌اند هنوز URL Routing ندارد)؛ محتوای PDF عمداً انگلیسی است (فونت‌های پیش‌فرض ReportLab حروف فارسی را درست شکل نمی‌دهند).
+- **فرانت‌اند:** صفحه‌ی ورود هنوز ساخته نشده؛ توکن فعلاً دستی (از Swagger) وارد می‌شود.
+- **هشدار BackendDown:** اگر خودِ بک‌اند از کار بیفتد، اعلان داخل سایت تا بالا آمدن دوباره‌ی آن تحویل نمی‌شود (Alertmanager تکرار می‌کند؛ در این مدت وضعیت در Grafana و Alertmanager دیده می‌شود).
+- **HTTPS:** گواهی TLS در این ریپو پیکربندی نشده؛ آن را جلوی `gateway` قرار دهید (کوکی `refresh_token` با پرچم `Secure` فقط روی HTTPS کار می‌کند).

@@ -108,11 +108,7 @@ def _extract_from_docx(file_bytes: bytes) -> str:
     paragraphs = [paragraph.text for paragraph in document.paragraphs if paragraph.text.strip()]
 
     table_cells_text = [
-        cell.text
-        for table in document.tables
-        for row in table.rows
-        for cell in row.cells
-        if cell.text.strip()
+        cell.text for table in document.tables for row in table.rows for cell in row.cells if cell.text.strip()
     ]
 
     combined_text = "\n".join([*paragraphs, *table_cells_text])

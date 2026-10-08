@@ -1,0 +1,17 @@
+# وابستگی‌های توسعه/CI: همه‌ی وابستگی‌های Production + ابزارهای تست و Lint.
+# نصب: pip install -r requirements-dev.txt
+-r requirements.txt
+
+# ---- Testing ----
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2
+# فقط برای tests/test_pagination.py: تست منطق Cursor Pagination روی یک
+# دیتابیس SQLite در حافظه، بدون نیاز به یک PostgreSQL واقعی در محیط CI.
+# هیچ‌جای کد Production از aiosqlite استفاده نمی‌کند (آن همچنان روی
+# asyncpg/PostgreSQL اجرا می‌شود).
+aiosqlite==0.22.1
+
+# ---- کیفیت کد (Linting/Formatting) — تنظیمات در pyproject.toml و .flake8 ----
+black==24.8.0
+flake8==7.1.1

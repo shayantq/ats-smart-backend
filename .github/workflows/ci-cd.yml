@@ -1,0 +1,366 @@
+# =============================================================================
+# خط لوله‌ی ادغام و استقرار مداوم (CI/CD) — ATS Smart
+#
+#   lint ──┐
+#          ├─► test ──┐
+#   frontend ─────────┴─► build-and-push ─► deploy ─► report
+#
+# - هر Push / Pull Request روی develop: بررسی کیفیت کد + تست‌ها + بیلد فرانت‌اند.
+# - فقط Push روی develop (بعد از سبز شدن همه‌ی مراحل قبل): ساخت ایمیج‌ها، ارسال به
+#   Docker Hub و استقرار بدون قطعی روی سرور Production.
+# - شکست هر مرحله، تمام مراحل بعدی را متوقف می‌کند (needs) — کد خراب هرگز به سرور نمی‌رسد.
+# - گزارش نهایی: Job Summary همین صفحه‌ی Actions + صندوق اعلان‌های داخل سایت تیم فنی.
+#
+# Secrets لازم (Settings → Secrets and variables → Actions) — بنگرید README:
+#   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+#   SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, SSH_KNOWN_HOSTS, (اختیاری) SSH_PORT, DEPLOY_PATH
+#   OPS_EVENTS_URL, OPS_WEBHOOK_TOKEN    (گزارش به اعلان‌های داخل سایت)
+# تا وقتی Secrets استقرار تنظیم نشده‌اند، مراحل build/deploy با یک پیام توضیحی رد
+# می‌شوند (Skip) و بقیه‌ی خط لوله (lint/test) عادی کار می‌کند.
+# =============================================================================
+
+name: CI/CD
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+# دو استقرار هم‌زمان روی یک سرور هرگز اجرا نشوند؛ اجرای قدیمی‌تر یک PR لغو می‌شود
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "22"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # گام ۱: بررسی کیفیت و استانداردهای نگارش کد
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (Black + Flake8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # فقط خود ابزارها (نه کل وابستگی‌ها) — نسخه‌ها هم‌خوان با requirements-dev.txt
+      - name: Install linters
+        run: pip install black==24.8.0 flake8==7.1.1
+
+      - name: Black (formatting)
+        run: black --check --diff .
+
+      - name: Flake8 (style & errors)
+        run: flake8
+
+  # ---------------------------------------------------------------------------
+  # گام ۲: تست‌های واحد و یکپارچه‌سازی روی PostgreSQL و Redis واقعی
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests (Pytest)
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ats
+          POSTGRES_PASSWORD: ats_ci_password
+          POSTGRES_DB: ats_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ats -d ats_ci"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://ats:ats_ci_password@localhost:5432/ats_ci
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-only-secret-key
+      ENVIRONMENT: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # تست یکپارچه‌سازی لایه‌ی دیتابیس: کل زنجیره‌ی مایگریشن‌ها روی یک PostgreSQL
+      # خالی اجرا می‌شود، سپس آخرین مایگریشن برگردانده و دوباره اعمال می‌شود
+      - name: Database migrations (upgrade → downgrade → upgrade)
+        run: |
+          alembic upgrade head
+          alembic downgrade -1
+          alembic upgrade head
+
+      - name: Pytest
+        run: pytest -v --junitxml=pytest-report.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest-report.xml
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # بیلد فرانت‌اند (TypeScript type-check + Vite build) — هم‌زمان با lint/test
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # آیا Secrets لازم برای انتشار/استقرار تنظیم شده‌اند؟
+  # ---------------------------------------------------------------------------
+  preflight:
+    name: Deploy preflight
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    outputs:
+      registry_ready: ${{ steps.check.outputs.registry_ready }}
+      server_ready: ${{ steps.check.outputs.server_ready }}
+    steps:
+      - id: check
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          registry_ready=false; server_ready=false
+          if [[ -n "$DOCKERHUB_USERNAME" && -n "$DOCKERHUB_TOKEN" ]]; then registry_ready=true; fi
+          if [[ "$registry_ready" == true && -n "$SSH_HOST" && -n "$SSH_USER" && -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]; then server_ready=true; fi
+          echo "registry_ready=$registry_ready" >> "$GITHUB_OUTPUT"
+          echo "server_ready=$server_ready" >> "$GITHUB_OUTPUT"
+          [[ "$registry_ready" == true ]] || echo "::notice::Secrets مربوط به Docker Hub تنظیم نشده‌اند — مراحل build/deploy رد می‌شوند."
+          [[ "$server_ready" == true ]] || echo "::notice::Secrets مربوط به سرور (SSH_*) تنظیم نشده‌اند — مرحله‌ی deploy رد می‌شود."
+
+  # ---------------------------------------------------------------------------
+  # گام ۳: ساخت ایمیج‌های جدید Docker و ارسال به Docker Hub
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    needs: [test, frontend, preflight]
+    if: needs.preflight.outputs.registry_ready == 'true'
+    outputs:
+      backend_image: ${{ steps.tags.outputs.backend_image }}
+      frontend_image: ${{ steps.tags.outputs.frontend_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # تگ تغییرناپذیر بر اساس commit (برای Rollback دقیق) + تگ متحرک develop
+      - id: tags
+        env:
+          NAMESPACE: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          echo "backend_image=${NAMESPACE}/ats-smart-backend:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=${NAMESPACE}/ats-smart-frontend:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "backend_latest=${NAMESPACE}/ats-smart-backend:develop" >> "$GITHUB_OUTPUT"
+          echo "frontend_latest=${NAMESPACE}/ats-smart-frontend:develop" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.backend_image }}
+            ${{ steps.tags.outputs.backend_latest }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.frontend_image }}
+            ${{ steps.tags.outputs.frontend_latest }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  # ---------------------------------------------------------------------------
+  # گام ۴: اتصال امن SSH به سرور و استقرار بدون قطعی (deploy/deploy.sh)
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: [build-and-push, preflight]
+    if: needs.preflight.outputs.server_ready == 'true'
+    environment: production
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/ats-smart' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # کلید خصوصی فقط در حافظه‌ی همین Runner موقت؛ known_hosts از قبل ثبت‌شده
+      # (نه ssh-keyscan در لحظه) تا امکان حمله‌ی Man-in-the-Middle وجود نداشته باشد
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host production
+            HostName ${SSH_HOST}
+            User ${SSH_USER}
+            Port ${SSH_PORT}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          EOF
+
+      # فقط فایل‌های زیرساخت (compose، اسکریپت‌های استقرار، پیکربندی مانیتورینگ) —
+      # خود برنامه به‌صورت ایمیج از Docker Hub کشیده می‌شود، نه کپی سورس
+      - name: Upload deployment files
+        run: |
+          tar czf - docker-compose.yml deploy monitoring \
+            | ssh production "mkdir -p '${DEPLOY_PATH}' && tar xzf - -C '${DEPLOY_PATH}'"
+
+      - name: Zero-downtime rollout
+        env:
+          BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.build-and-push.outputs.frontend_image }}
+        run: |
+          ssh production "cd '${DEPLOY_PATH}' && BACKEND_IMAGE='${BACKEND_IMAGE}' FRONTEND_IMAGE='${FRONTEND_IMAGE}' bash ./deploy/deploy.sh"
+
+  # ---------------------------------------------------------------------------
+  # گام ۵: گزارش موفقیت/شکست به تیم فنی
+  # ---------------------------------------------------------------------------
+  report:
+    name: Report
+    runs-on: ubuntu-latest
+    needs: [lint, test, frontend, preflight, build-and-push, deploy]
+    if: always()
+    steps:
+      - name: Summarize & notify
+        env:
+          OPS_EVENTS_URL: ${{ secrets.OPS_EVENTS_URL }}
+          OPS_WEBHOOK_TOKEN: ${{ secrets.OPS_WEBHOOK_TOKEN }}
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          BUILD: ${{ needs.build-and-push.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+          BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend_image }}
+          EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          icon() { case "$1" in success) echo "✅";; failure) echo "❌";; cancelled) echo "⏹️";; *) echo "⏭️";; esac; }
+
+          overall=success
+          for result in "$LINT" "$TEST" "$FRONTEND" "$BUILD" "$DEPLOY"; do
+            if [[ "$result" == failure || "$result" == cancelled ]]; then overall=failure; fi
+          done
+          short_sha="${GITHUB_SHA::7}"
+          first_line="$(printf '%s' "$COMMIT_MSG" | head -n1)"
+
+          # ۱) Job Summary — در صفحه‌ی همین اجرا در GitHub Actions نمایش داده می‌شود
+          {
+            echo "## $( [[ $overall == success ]] && echo '✅ خط لوله موفق بود' || echo '❌ خط لوله با شکست مواجه شد')"
+            echo ""
+            echo "| مرحله | نتیجه |"
+            echo "|---|---|"
+            echo "| Lint (Black + Flake8) | $(icon "$LINT") $LINT |"
+            echo "| Tests (Pytest) | $(icon "$TEST") $TEST |"
+            echo "| Frontend build | $(icon "$FRONTEND") $FRONTEND |"
+            echo "| Build & push images | $(icon "$BUILD") $BUILD |"
+            echo "| Deploy | $(icon "$DEPLOY") $DEPLOY |"
+            echo ""
+            echo "**برنچ:** \`$BRANCH\` · **Commit:** \`$short_sha\` · **توسط:** $ACTOR"
+            [[ -n "$BACKEND_IMAGE" ]] && echo "" && echo "**ایمیج:** \`$BACKEND_IMAGE\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # ۲) صندوق اعلان‌های داخل سایت (فقط برای Push روی برنچ اصلی، نه هر PR)
+          if [[ "$EVENT" != push ]]; then exit 0; fi
+          if [[ -z "$OPS_EVENTS_URL" || -z "$OPS_WEBHOOK_TOKEN" ]]; then
+            echo "::notice::OPS_EVENTS_URL/OPS_WEBHOOK_TOKEN تنظیم نشده‌اند — گزارش به اعلان‌های داخل سایت ارسال نشد."
+            exit 0
+          fi
+
+          if [[ $overall == success && "$DEPLOY" == success ]]; then
+            level=success; title="استقرار موفق نسخه‌ی $short_sha روی $BRANCH"
+          elif [[ $overall == success ]]; then
+            level=success; title="خط لوله‌ی CI روی $BRANCH موفق بود ($short_sha)"
+          else
+            level=failure; title="شکست خط لوله‌ی CI/CD روی $BRANCH ($short_sha) — کد جدید مستقر نشد"
+          fi
+          content="$(printf 'Commit: %s\nتوسط: %s\nLint: %s | Tests: %s | Frontend: %s | Build: %s | Deploy: %s\nجزئیات: %s' \
+            "$first_line" "$ACTOR" "$LINT" "$TEST" "$FRONTEND" "$BUILD" "$DEPLOY" "$RUN_URL")"
+
+          payload="$(jq -n --arg title "$title" --arg content "$content" --arg level "$level" \
+            '{title: $title, content: $content, level: $level, category: "deployment"}')"
+
+          # شکست ارسال گزارش، نتیجه‌ی خودِ خط لوله را تغییر نمی‌دهد (فقط هشدار)
+          curl -fsS --max-time 20 --retry 3 -X POST "$OPS_EVENTS_URL" \
+            -H "Authorization: Bearer $OPS_WEBHOOK_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            || echo "::warning::ارسال گزارش به اعلان‌های داخل سایت ناموفق بود."
+
+      # خودِ اجرای Report همیشه سبز است؛ ولی اگر مرحله‌ای شکست خورده، کل Workflow قرمز بماند
+      - name: Fail workflow if any stage failed
+        if: >-
+          contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

@@ -77,7 +77,8 @@ class InterviewEvaluationRequest(BaseModel):
     """
 
     evaluation_scores: dict[str, int] = Field(
-        description=f"نگاشت هر معیار (از میان {sorted(ALLOWED_EVALUATION_CRITERIA)}) به نمره‌ی {_MIN_SCORE} تا {_MAX_SCORE}"
+        description=f"نگاشت هر معیار (از میان {sorted(ALLOWED_EVALUATION_CRITERIA)}) "
+        f"به نمره‌ی {_MIN_SCORE} تا {_MAX_SCORE}"
     )
     feedback_text: str = Field(min_length=1, max_length=4000)
 

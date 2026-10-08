@@ -15,6 +15,7 @@ from sqlalchemy import select
 from app.core.matching_engine import calculate_matching_score
 from app.core.resume_parser import parse_resume_text
 from app.core.skill_engine import run_skill_engine
+from app.core.storage import resolve_local_media_path
 from app.core.text_extraction import UnreadableResumeFileError, extract_raw_text
 from app.db.session import AsyncSessionLocal
 from app.models import Application, Candidate, Job, Resume
@@ -145,9 +146,7 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
                     job_result = await db.execute(select(Job).where(Job.id == application.job_id))
                     job = job_result.scalar_one_or_none()
 
-                    candidate_result = await db.execute(
-                        select(Candidate).where(Candidate.id == resume.candidate_id)
-                    )
+                    candidate_result = await db.execute(select(Candidate).where(Candidate.id == resume.candidate_id))
                     candidate = candidate_result.scalar_one_or_none()
 
                     if job is None:
@@ -172,9 +171,7 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
                             job_description=job.description,
                             candidate_skills=skill_analysis_dict.get("skills", []),
                             candidate_job_titles=candidate_job_titles,
-                            candidate_total_experience_years=skill_analysis_dict.get(
-                                "total_experience_years", 0.0
-                            ),
+                            candidate_total_experience_years=skill_analysis_dict.get("total_experience_years", 0.0),
                             candidate_education_entries=parsed_data_dict.get("education", []),
                             candidate_location=candidate.location if candidate else None,
                         )
@@ -208,8 +205,7 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
 
     if skill_analysis_dict is not None:
         logger.info(
-            "موتور مهارت با موفقیت اجرا شد | application_id=%s | resume_id=%s | "
-            "تعداد_مهارت=%d | سابقه_خالص_سال=%s",
+            "موتور مهارت با موفقیت اجرا شد | application_id=%s | resume_id=%s | " "تعداد_مهارت=%d | سابقه_خالص_سال=%s",
             application_id,
             resume.id,
             len(skill_analysis_dict.get("skills", [])),
@@ -238,6 +234,14 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
 
 
 def _download_file(file_url: str) -> bytes:
-    """فایل رزومه را از آدرس ذخیره‌شده‌اش (دیسک محلی از طریق HTTP یا Object Storage) دانلود می‌کند."""
+    """
+    محتوای فایل رزومه را برمی‌گرداند: در ذخیره‌سازی محلی مستقیم از دیسک مشترک
+    (بدون وابستگی به بالا بودن سرور API — بنگرید resolve_local_media_path)، و در
+    غیر این صورت (Object Storage) با دانلود HTTP از آدرس ذخیره‌شده‌اش.
+    """
+    local_path = resolve_local_media_path(file_url)
+    if local_path is not None:
+        return local_path.read_bytes()
+
     with urllib.request.urlopen(file_url, timeout=_FILE_DOWNLOAD_TIMEOUT_SECONDS) as response:
         return response.read()
