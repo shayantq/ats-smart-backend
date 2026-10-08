@@ -1,0 +1,13 @@
+# پیکربندی ابزارهای کیفیت کد — همان تنظیماتی که خط لوله‌ی CI
+# (.github/workflows/ci-cd.yml) با آن‌ها کد را بررسی می‌کند. اجرای محلی:
+#   black app tests          (فرمت خودکار)
+#   flake8                   (بررسی استانداردهای نگارش؛ تنظیماتش در .flake8)
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+# مایگریشن‌ها را Alembic خودکار تولید کرده و هرگز بعد از اجرا ویرایش نمی‌شوند
+extend-exclude = "alembic/versions"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

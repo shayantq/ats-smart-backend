@@ -188,9 +188,7 @@ async def forgot_password(
     if user is not None:
         asyncio.create_task(_issue_and_send_password_reset_otp(user.email))
 
-    return ForgotPasswordResponse(
-        message="اگر این ایمیل در سیستم ثبت شده باشد، کد بازیابی برایش ارسال خواهد شد."
-    )
+    return ForgotPasswordResponse(message="اگر این ایمیل در سیستم ثبت شده باشد، کد بازیابی برایش ارسال خواهد شد.")
 
 
 @router.post(

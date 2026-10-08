@@ -1,0 +1,28 @@
+# فقط چیزهایی که Dockerfile بک‌اند واقعاً لازم دارد وارد context بیلد می‌شوند —
+# مخصوصاً .env (رازها) هرگز نباید داخل یک ایمیج قرار بگیرد.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.gitignore
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.coverage
+htmlcov
+.vscode
+.idea
+*.zip
+
+frontend
+media
+tests
+monitoring
+deploy
+docker-compose*.yml
+README.md

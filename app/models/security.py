@@ -1,16 +1,24 @@
 """
-جداول دسترسی، امنیت و تاریخچه‌ها (Security and Access Control Tables (ساب تسک سوم)): شامل جداولی که نقش‌ها، مجوزها، اعلان‌ها، لاگ‌ها و تاریخچه وضعیت‌ها را مدیریت می‌کنند.
+جداول دسترسی، امنیت و تاریخچه‌ها (Security and Access Control Tables (ساب تسک سوم)): شامل جداولی که
+نقش‌ها، مجوزها، اعلان‌ها، لاگ‌ها و تاریخچه وضعیت‌ها را مدیریت می‌کنند.
 Roles, Permissions, Notifications, Logs, Audit, StatusHistory
 """
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    # فقط برای type-checker/linter؛ در زمان اجرا SQLAlchemy نام‌های رشته‌ای
+    # relationship ها را خودش از روی registry مشترک Base پیدا می‌کند
+    from app.models.core import User
+    from app.models.process import Application
 
 
 class Role(Base):
@@ -41,6 +49,10 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # دسته‌ی اعلان برای فیلتر/آیکن در UI — مثلاً "alert" (هشدار مانیتورینگ) یا
+    # "deployment" (گزارش خط لوله‌ی CI/CD)؛ بنگرید app/routers/ops.py
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user: Mapped["User"] = relationship()
 
@@ -76,9 +88,7 @@ class StatusHistory(Base):
     __tablename__ = "status_history"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    application_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("applications.id"), nullable=False
-    )
+    application_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("applications.id"), nullable=False)
     old_status: Mapped[str] = mapped_column(String(50), nullable=True)
     new_status: Mapped[str] = mapped_column(String(50), nullable=False)
     changed_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)

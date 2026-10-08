@@ -267,9 +267,7 @@ async def respond_to_offer(
             detail="این درخواست در حال حاضر پیشنهاد شغلی فعالی برای پاسخ‌دادن ندارد.",
         )
 
-    new_status = (
-        ApplicationStatus.ACCEPTED.value if payload.decision == "accept" else ApplicationStatus.REJECTED.value
-    )
+    new_status = ApplicationStatus.ACCEPTED.value if payload.decision == "accept" else ApplicationStatus.REJECTED.value
 
     # بررسی دفاعی: طبق ماشین وضعیت، از Offer فقط Accepted/Rejected مجازند —
     # این شرط عملاً همیشه True است، ولی برای هم‌خوانی با گاردریل مرکزی نگه داشته شده.
@@ -290,11 +288,7 @@ async def respond_to_offer(
 
     await db.commit()
 
-    message = (
-        "پیشنهاد شغلی با موفقیت پذیرفته شد."
-        if payload.decision == "accept"
-        else "پیشنهاد شغلی رد شد."
-    )
+    message = "پیشنهاد شغلی با موفقیت پذیرفته شد." if payload.decision == "accept" else "پیشنهاد شغلی رد شد."
 
     return OfferResponseResult(application_id=application.id, new_status=new_status, message=message)
 
@@ -380,20 +374,17 @@ async def search_candidates(
         .scalar_subquery()
     )
 
-    query = (
-        select(
-            Candidate.id,
-            Candidate.first_name,
-            Candidate.last_name,
-            Candidate.phone,
-            Candidate.location,
-            Candidate.skills,
-            User.email,
-            best_ai_score_subquery.label("best_ai_score"),
-            best_experience_subquery.label("best_experience_years"),
-        )
-        .join(User, User.id == Candidate.user_id)
-    )
+    query = select(
+        Candidate.id,
+        Candidate.first_name,
+        Candidate.last_name,
+        Candidate.phone,
+        Candidate.location,
+        Candidate.skills,
+        User.email,
+        best_ai_score_subquery.label("best_ai_score"),
+        best_experience_subquery.label("best_experience_years"),
+    ).join(User, User.id == Candidate.user_id)
 
     # --- فیلتر ۱: جستجوی تمام‌متن (raw_text) با پشتیبانی از AND/OR ---
     # عبارت to_tsvector از app/core/search_query.py می‌آید (نه اینجا Inline

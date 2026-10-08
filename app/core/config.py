@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = "no-reply@ats-smart.local"
     SMTP_FROM_NAME: str = "ATS Smart"
 
+    # ---- عملیات و مانیتورینگ (DevOps) ----
+    # توکن مشترک (Bearer) که Alertmanager و خط لوله‌ی CI/CD با آن به مسیرهای
+    # /api/v1/ops/* پیام می‌فرستند. خالی = این مسیرها کاملاً غیرفعال (503) — تا
+    # هیچ‌وقت یک webhook بدون احراز هویت روی سرور باز نماند.
+    OPS_WEBHOOK_TOKEN: str = ""
+    # نقش‌هایی که «تیم فنی» حساب می‌شوند و هشدارهای سرور/گزارش‌های استقرار را
+    # در صندوق اعلان‌های داخل سایت دریافت می‌کنند (جداشده با کاما)
+    OPS_ALERT_RECIPIENT_ROLES: str = "Admin"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

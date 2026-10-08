@@ -32,9 +32,7 @@ class StorageBackend(ABC):
     """قرارداد مشترک همه‌ی بک‌اندهای ذخیره‌سازی فایل."""
 
     @abstractmethod
-    async def save_file(
-        self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str
-    ) -> str:
+    async def save_file(self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str) -> str:
         """فایل را ذخیره می‌کند و آدرس قابل‌دسترسی (file_url) آن را برمی‌گرداند."""
         raise NotImplementedError
 
@@ -50,14 +48,36 @@ class LocalStorageBackend(StorageBackend):
         self._root = Path(settings.MEDIA_ROOT) / "resumes"
         self._root.mkdir(parents=True, exist_ok=True)
 
-    async def save_file(
-        self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str
-    ) -> str:
+    async def save_file(self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str) -> str:
         object_key = _build_object_key(candidate_id, filename)
         destination = self._root / object_key
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
         return f"{settings.MEDIA_BASE_URL.rstrip('/')}/resumes/{object_key}"
+
+
+def resolve_local_media_path(file_url: str) -> Path | None:
+    """
+    اگر file_url متعلق به ذخیره‌سازی محلی (MEDIA_BASE_URL) باشد، مسیر فیزیکی فایل
+    روی دیسک را برمی‌گرداند؛ در غیر این صورت None.
+
+    کاربرد: Worker پردازش رزومه (app/tasks/resume_processing.py) به‌جای دانلود
+    HTTP از سرور API، فایل را مستقیم از دیسک مشترک می‌خواند — داخل Docker،
+    «localhost:8000» از دید کانتینر Worker به خودش اشاره می‌کند نه به بک‌اند،
+    ولی پوشه‌ی media بین دو کانتینر با یک Volume مشترک است (docker-compose.yml).
+
+    مسیر نهایی حتماً باید داخل MEDIA_ROOT بماند (دفاع در برابر Path Traversal
+    با ../ در یک file_url دستکاری‌شده).
+    """
+    base_url = settings.MEDIA_BASE_URL.rstrip("/") + "/"
+    if not file_url.startswith(base_url):
+        return None
+
+    media_root = Path(settings.MEDIA_ROOT).resolve()
+    candidate_path = (media_root / file_url[len(base_url) :]).resolve()
+    if not candidate_path.is_relative_to(media_root):
+        return None
+    return candidate_path
 
 
 class S3StorageBackend(StorageBackend):
@@ -84,9 +104,7 @@ class S3StorageBackend(StorageBackend):
             region_name=settings.S3_REGION,
         )
 
-    async def save_file(
-        self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str
-    ) -> str:
+    async def save_file(self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str) -> str:
         object_key = _build_object_key(candidate_id, filename)
         self._client.put_object(
             Bucket=self._bucket,

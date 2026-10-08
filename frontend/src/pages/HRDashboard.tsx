@@ -1,15 +1,19 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import KanbanBoard from "../components/KanbanBoard";
 import TodayInterviewsPanel from "../components/interview/TodayInterviewsPanel";
 import AnalyticsDashboard from "../components/analytics/AnalyticsDashboard";
+import NotificationsPanel from "../components/notifications/NotificationsPanel";
+import { useNotifications } from "../hooks/useNotifications";
+import { useToast } from "../context/ToastContext";
 import { getToken, setToken as saveToken } from "../services/tokenStorage";
 
-type HRTab = "kanban" | "interviews" | "analytics";
+type HRTab = "kanban" | "interviews" | "analytics" | "notifications";
 
 const TABS: { value: HRTab; label: string }[] = [
   { value: "kanban", label: "بورد کانبان" },
   { value: "interviews", label: "مصاحبه‌های امروز" },
   { value: "analytics", label: "داشبورد تحلیلی" },
+  { value: "notifications", label: "اعلان‌های فنی" },
 ];
 
 export default function HRDashboard() {
@@ -17,6 +21,22 @@ export default function HRDashboard() {
   const [jobIdInput, setJobIdInput] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [tokenInput, setTokenInput] = useState(getToken() ?? "");
+  const { showToast } = useToast();
+
+  // تعداد اعلان‌های خوانده‌نشده برای نشان (Badge) روی تب + Toast فوری برای اعلان جدید،
+  // حتی وقتی کاربر روی تب دیگری است
+  const { data: notificationsData } = useNotifications(Boolean(getToken()));
+  const unreadCount = notificationsData?.unread_count ?? 0;
+  const previousUnreadCount = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (notificationsData === undefined) return;
+    if (previousUnreadCount.current !== null && unreadCount > previousUnreadCount.current) {
+      const newest = notificationsData.items.find((item) => !item.is_read);
+      showToast(newest ? newest.title : "اعلان جدید سیستم", newest?.category === "alert" ? "error" : "success");
+    }
+    previousUnreadCount.current = unreadCount;
+  }, [notificationsData, unreadCount, showToast]);
 
   function handleLoadBoard() {
     saveToken(tokenInput.trim());
@@ -79,6 +99,11 @@ export default function HRDashboard() {
               }`}
             >
               {tab.label}
+              {tab.value === "notifications" && unreadCount > 0 && (
+                <span className="ms-1.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {unreadCount.toLocaleString("fa-IR")}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -86,6 +111,7 @@ export default function HRDashboard() {
         {activeTab === "kanban" && <KanbanBoard jobId={activeJobId} />}
         {activeTab === "interviews" && <TodayInterviewsPanel />}
         {activeTab === "analytics" && <AnalyticsDashboard jobId={activeJobId} />}
+        {activeTab === "notifications" && <NotificationsPanel />}
       </div>
     </div>
   );

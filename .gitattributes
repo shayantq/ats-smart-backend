@@ -1,0 +1,7 @@
+# اسکریپت‌ها و پیکربندی‌هایی که داخل کانتینرهای لینوکسی/سرور اجرا می‌شوند همیشه با
+# پایان خط LF ذخیره شوند (CRLF ویندوزی اسکریپت bash را روی سرور خراب می‌کند)
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

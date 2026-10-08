@@ -1,0 +1,142 @@
+# قوانین هشدار هوشمند — شروط بحرانی سرور
+#
+# هر هشدار وقتی شرطش به مدت `for` پیوسته برقرار بماند «Firing» می‌شود (تا یک
+# جهش لحظه‌ای هشدار کاذب نسازد) و Alertmanager آن را از طریق وب‌هوک به صندوق
+# اعلان‌های داخل سایت تیم فنی می‌فرستد (monitoring/alertmanager/alertmanager.yml).
+#
+# severity:  critical = اقدام فوری  |  warning = نیازمند بررسی
+
+groups:
+  # ---------------------------------------------------------------------------
+  - name: host
+    rules:
+      - alert: HostHighMemoryUsage
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "مصرف RAM سرور از ۸۵٪ عبور کرد"
+          description: "مصرف فعلی حافظه: {{ $value | printf \"%.1f\" }}٪"
+
+      - alert: HostHighCpuUsage
+        expr: (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "مصرف CPU سرور بیش از ۵ دقیقه بالای ۸۵٪ است"
+          description: "مصرف فعلی پردازنده: {{ $value | printf \"%.1f\" }}٪"
+
+      - alert: HostLowDiskSpace
+        expr: >-
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) * 100 < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "فضای خالی دیسک کمتر از ۱۰٪ است"
+          description: "فضای خالی {{ $labels.mountpoint }}: {{ $value | printf \"%.1f\" }}٪"
+
+  # ---------------------------------------------------------------------------
+  - name: api
+    rules:
+      - alert: ApiHighErrorRate
+        expr: >-
+          sum(rate(http_requests_total{job="backend_api",status=~"5.."}[2m]))
+          / sum(rate(http_requests_total{job="backend_api"}[2m])) * 100 > 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "نرخ خطاهای سرور (5xx) بالای ۵٪ است"
+          description: "نرخ فعلی خطا: {{ $value | printf \"%.2f\" }}٪ از کل درخواست‌ها"
+
+      - alert: ApiHighLatency
+        expr: >-
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="backend_api"}[5m]))) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "زمان پاسخ صدک ۹۵ بک‌اند بیش از ۱ ثانیه است"
+          description: "p95 فعلی: {{ $value | printf \"%.2f\" }} ثانیه"
+
+      # absent(...): وقتی هیچ کانتینر سالمی از بک‌اند Scrape نشود (نه فقط up==0)
+      - alert: BackendDown
+        expr: absent(up{job="backend_api"} == 1)
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "هیچ نمونه‌ی سالمی از بک‌اند در دسترس نیست"
+          description: "Prometheus نمی‌تواند هیچ کانتینر backend_api را Scrape کند."
+
+  # ---------------------------------------------------------------------------
+  - name: data-stores
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "پایگاه داده‌ی PostgreSQL در دسترس نیست"
+
+      - alert: PostgresTooManyConnections
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "تعداد کانکشن‌های فعال دیتابیس بالای ۸۰٪ ظرفیت است"
+          description: "استفاده‌ی فعلی: {{ $value | printf \"%.1f\" }}٪ از max_connections"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis (کش و صف کارها) در دسترس نیست"
+
+  # ---------------------------------------------------------------------------
+  # متریک‌های صف را هر نسخه‌ی بک‌اند گزارش می‌کند؛ max() از شمارش تکراری جلوگیری می‌کند
+  - name: task-queue
+    rules:
+      - alert: QueueBacklog
+        expr: max(ats_rq_jobs{state="queued"}) > 50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "بیش از ۵۰ کار در صف پردازش منتظر مانده‌اند"
+          description: "تعداد کارهای منتظر: {{ $value }} — Workerها کافی نیستند یا گیر کرده‌اند."
+
+      - alert: NoQueueWorkers
+        expr: max(ats_rq_workers) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "هیچ Worker فعالی برای پردازش صف (رزومه/ایمیل) وجود ندارد"
+
+      - alert: QueueJobsFailing
+        expr: max(delta(ats_rq_jobs{state="failed"}[15m])) > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "بیش از ۵ کار پس‌زمینه در ۱۵ دقیقه‌ی اخیر شکست خورده‌اند"
+
+  # ---------------------------------------------------------------------------
+  - name: monitoring-stack
+    rules:
+      - alert: ExporterDown
+        expr: up{job=~"node|postgres|redis"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "جمع‌آورنده‌ی متریک {{ $labels.job }} در دسترس نیست"

@@ -27,7 +27,8 @@ STATUS_NOTIFICATION_STAGES: dict[str, dict[str, str]] = {
     },
     "Technical Interview": {
         "label": "مصاحبه فنی",
-        "message": "شما به مرحله‌ی مصاحبه‌ی فنی راه یافته‌اید؛ به‌زودی برای هماهنگی زمان مصاحبه با شما تماس گرفته می‌شود.",
+        "message": "شما به مرحله‌ی مصاحبه‌ی فنی راه یافته‌اید؛ "
+        "به‌زودی برای هماهنگی زمان مصاحبه با شما تماس گرفته می‌شود.",
     },
     "HR Interview": {
         "label": "مصاحبه با کارشناس منابع انسانی",
@@ -35,7 +36,8 @@ STATUS_NOTIFICATION_STAGES: dict[str, dict[str, str]] = {
     },
     "Rejected": {
         "label": "عدم تأیید",
-        "message": "با سپاس از وقتی که برای این فرصت شغلی گذاشتید، متأسفانه در حال حاضر امکان ادامه‌ی همکاری وجود ندارد.",
+        "message": "با سپاس از وقتی که برای این فرصت شغلی گذاشتید، "
+        "متأسفانه در حال حاضر امکان ادامه‌ی همکاری وجود ندارد.",
     },
 }
 
@@ -102,9 +104,7 @@ def send_status_update_email_task(to_email: str, candidate_name: str, job_title:
         raise
 
 
-def send_job_offer_email_task(
-    to_email: str, candidate_name: str, job_title: str, company_name: str | None
-) -> None:
+def send_job_offer_email_task(to_email: str, candidate_name: str, job_title: str, company_name: str | None) -> None:
     """
     ایمیل رسمی پیشنهاد همکاری — محرک: تغییر وضعیت درخواست به «Offer» در
     بورد کانبان HR (معیار پذیرش اصلی این تسک).
@@ -123,9 +123,7 @@ def send_job_offer_email_task(
     )
     subject = f"پیشنهاد همکاری رسمی برای موقعیت «{job_title}»"
 
-    pdf_bytes = generate_offer_letter_pdf(
-        candidate_name=candidate_name, job_title=job_title, company_name=company_name
-    )
+    pdf_bytes = generate_offer_letter_pdf(candidate_name=candidate_name, job_title=job_title, company_name=company_name)
 
     try:
         send_email(

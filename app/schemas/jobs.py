@@ -25,8 +25,14 @@ class JobCreateRequest(BaseModel):
     location: Optional[str] = Field(default=None, max_length=100)
 
     @field_validator(
-        "title", "department", "description", "salary_range", "required_seniority",
-        "required_education", "location", mode="before",
+        "title",
+        "department",
+        "description",
+        "salary_range",
+        "required_seniority",
+        "required_education",
+        "location",
+        mode="before",
     )
     @classmethod
     def sanitize_text_fields(cls, value):

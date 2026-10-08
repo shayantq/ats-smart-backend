@@ -1,0 +1,51 @@
+# پیکربندی Prometheus — جمع‌آوری متریک‌های حیاتی سیستم ATS Smart
+# بعد از تغییر این فایل (بدون ری‌استارت):  curl -X POST http://localhost:9090/-/reload
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: ats-smart
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # بک‌اند FastAPI (app/core/metrics.py): RPS، Latency، نرخ خطا، صف RQ، CPU/RAM پردازه.
+  # کشف از طریق DNS داخلی Docker: هر کانتینر بک‌اند (حتی دو نسخه‌ی هم‌زمان حین
+  # استقرار بدون قطعی) جداگانه Scrape می‌شود.
+  - job_name: backend_api
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: ["backend_api"]
+        type: A
+        port: 8000
+        refresh_interval: 10s
+
+  # میزبان: CPU، RAM، دیسک، شبکه
+  - job_name: node
+    static_configs:
+      - targets: ["node_exporter:9100"]
+
+  # PostgreSQL: کانکشن‌های فعال، تراکنش‌ها، حجم دیتابیس
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres_exporter:9187"]
+
+  # Redis: حافظه، کلاینت‌ها، کلیدها
+  - job_name: redis
+    static_configs:
+      - targets: ["redis_exporter:9121"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

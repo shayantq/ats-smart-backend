@@ -48,10 +48,12 @@ _LINEAR_PATH: list[str] = [
 ]
 
 # وضعیت‌های نهایی: پس از رسیدن به این‌ها، پرونده بسته شده و دیگر قابل جابه‌جایی نیست
-TERMINAL_STATUSES: frozenset[str] = frozenset({
-    ApplicationStatus.HIRED.value,
-    ApplicationStatus.REJECTED.value,
-})
+TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {
+        ApplicationStatus.HIRED.value,
+        ApplicationStatus.REJECTED.value,
+    }
+)
 
 # مراحل «قیف استخدام» (Recruitment Funnel) برای داشبورد تحلیلی
 # (app/routers/analytics.py) — عمداً Draft و Rejected از این لیست کنار

@@ -1,17 +1,24 @@
 """
-جداول فرآیندی و مهارتی سیستم (Process and Skill Tables (ساب تسک دوم)): شامل جداولی که فرآیندهای اصلی سیستم را مدیریت می‌کنند و همچنین بانک اطلاعاتی مهارت‌های استاندارد بازار کار.
+جداول فرآیندی و مهارتی سیستم (Process and Skill Tables (ساب تسک دوم)): شامل جداولی که
+فرآیندهای اصلی سیستم را مدیریت می‌کنند و همچنین بانک اطلاعاتی مهارت‌های استاندارد بازار کار.
 Applications, Interviews, Resumes, Skills
 """
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    # فقط برای type-checker/linter؛ در زمان اجرا SQLAlchemy نام‌های رشته‌ای
+    # relationship ها را خودش از روی registry مشترک Base پیدا می‌کند
+    from app.models.core import Candidate, Job, User
+    from app.models.security import StatusHistory
 
 
 class Application(Base):
@@ -52,9 +59,7 @@ class Interview(Base):
     __tablename__ = "interviews"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    application_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("applications.id"), nullable=False
-    )
+    application_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("applications.id"), nullable=False)
     interviewer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     # timezone=True عمداً اضافه شد (قبلاً نبود) تا با بقیه‌ی ستون‌های زمانی پروژه
     # (مثل updated_at) هم‌خوان باشد و مقایسه‌ی «۲۴ ساعت پیش از الان» بدون خطای

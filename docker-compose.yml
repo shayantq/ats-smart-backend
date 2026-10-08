@@ -1,0 +1,281 @@
+# =============================================================================
+# ATS Smart — ارکستراسیون کامل سیستم با Docker Compose
+#
+#   docker compose up -d --build      راه‌اندازی کل اکوسیستم با یک دستور
+#   docker compose ps                 وضعیت همه‌ی کانتینرها
+#   docker compose down               توقف (داده‌ها در Volumeها باقی می‌مانند)
+#   docker compose down -v            توقف + حذف کامل داده‌ها (با احتیاط!)
+#
+# آدرس‌ها در محیط لوکال:
+#   http://localhost:8080   فرانت‌اند (Nginx؛ /api و /media را به بک‌اند پراکسی می‌کند)
+#   http://localhost:8000   بک‌اند مستقیم (Swagger: /docs ، متریک‌ها: /metrics)
+#   http://localhost:3000   Grafana       http://localhost:9090   Prometheus
+#   http://localhost:9093   Alertmanager
+#
+# پیکربندی Production (بدون پورت‌های مستقیم + Gateway برای استقرار بدون قطعی)
+# در deploy/docker-compose.prod.yml است — بنگرید README بخش «استقرار».
+#
+# متغیرهای ${...} از فایل .env کنار همین فایل خوانده می‌شوند (همه پیش‌فرض
+# توسعه‌ی امن دارند به‌جز موارد Production). بنگرید .env.example.
+# =============================================================================
+
+name: ats-smart
+
+# ---------------------------------------------------------------------------
+# تنظیمات مشترک سرویس‌هایی که از ایمیج بک‌اند ساخته می‌شوند
+# (API، Worker، Scheduler و اجرای مایگریشن — فقط command فرق دارد)
+# ---------------------------------------------------------------------------
+x-backend-common: &backend-common
+  image: ${BACKEND_IMAGE:-ats-smart-backend:local}
+  build:
+    context: .
+  init: true
+  restart: unless-stopped
+  # بقیه‌ی تنظیمات برنامه (SECRET_KEY، SMTP_* و ...) از همان .env پروژه
+  env_file:
+    - path: .env
+      required: false
+  # این مقادیر بر .env اولویت دارند: آدرس‌ها باید «نام سرویس‌ها»ی داخل شبکه‌ی
+  # Docker باشند، نه localhost (که داخل کانتینر به خودِ همان کانتینر اشاره می‌کند)
+  environment: &backend-environment
+    ENVIRONMENT: ${ENVIRONMENT:-development}
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ats}:${POSTGRES_PASSWORD:-ats_dev_password}@postgres_db:5432/${POSTGRES_DB:-smart_ats_db}
+    REDIS_URL: redis://redis_cache:6379/0
+    FRONTEND_ORIGIN: ${PUBLIC_BASE_URL:-http://localhost:8080}
+    MEDIA_ROOT: /app/media
+    MEDIA_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}/media
+    # Tesseract داخل ایمیج در PATH است؛ مسیر ویندوزی احتمالی .env نباید اینجا اعمال شود
+    TESSERACT_CMD_PATH: ""
+    OPS_WEBHOOK_TOKEN: ${OPS_WEBHOOK_TOKEN:-local-dev-ops-token}
+  volumes:
+    # پوشه‌ی رزومه‌ها بین API (ذخیره) و Worker (پردازش) مشترک است
+    - media_data:/app/media
+  networks:
+    - ats_network
+
+services:
+  # =========================================================================
+  # لایه‌ی داده
+  # =========================================================================
+  postgres_db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ats}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ats_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-smart_ats_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ats_network
+
+  redis_cache:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    # appendonly: صف کارها و یادآورهای زمان‌بندی‌شده‌ی مصاحبه با ری‌استارت از بین نروند
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ats_network
+
+  # =========================================================================
+  # لایه‌ی برنامه
+  # =========================================================================
+  # اجرای یک‌باره‌ی مایگریشن‌ها پیش از بالا آمدن API (و بعد خارج می‌شود)
+  migrate:
+    <<: *backend-common
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+
+  backend_api:
+    <<: *backend-common
+    ports:
+      - "8000:8000"
+    # stop_grace_period > --timeout-graceful-shutdown در Dockerfile: درخواست‌های در حال
+    # اجرا پیش از SIGKILL فرصت کامل‌شدن دارند (لازمه‌ی استقرار بدون قطعی)
+    stop_grace_period: 35s
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      redis_cache:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend-common
+    command: ["python", "-m", "app.worker"]
+    # SIGTERM = Warm Shutdown در RQ: کار در حال اجرا (مثلاً OCR یک رزومه) تمام می‌شود
+    stop_grace_period: 60s
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      redis_cache:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # یادآورهای مصاحبه (۲۴ ساعت پیش از جلسه) را در لحظه‌ی موعد وارد صف می‌کند
+  scheduler:
+    <<: *backend-common
+    command: ["rqscheduler", "--url", "redis://redis_cache:6379/0", "--interval", "30"]
+    healthcheck:
+      disable: true
+    depends_on:
+      redis_cache:
+        condition: service_healthy
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ats-smart-frontend:local}
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend_api
+    networks:
+      - ats_network
+
+  # =========================================================================
+  # مانیتورینگ و هشدار (Prometheus + Alertmanager + Grafana + Exporterها)
+  # پیکربندی‌ها در پوشه‌ی monitoring/
+  # =========================================================================
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      # امکان بارگذاری مجدد پیکربندی بدون ری‌استارت (POST /-/reload) — استفاده در deploy.sh
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - alertmanager
+    networks:
+      - ats_network
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    # توکن وب‌هوک از متغیر محیطی به یک فایل موقت نوشته می‌شود (Alertmanager خودش
+    # متغیر محیطی را داخل فایل پیکربندی جایگزین نمی‌کند؛ credentials_file را می‌خواند)
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        printf '%s' "$$OPS_WEBHOOK_TOKEN" > /tmp/ops_webhook_token &&
+        exec /bin/alertmanager
+        --config.file=/etc/alertmanager/alertmanager.yml
+        --storage.path=/alertmanager
+    environment:
+      OPS_WEBHOOK_TOKEN: ${OPS_WEBHOOK_TOKEN:-local-dev-ops-token}
+    volumes:
+      - ./monitoring/alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    networks:
+      - ats_network
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/ats-system-overview.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - ats_network
+
+  # متریک‌های سخت‌افزاری میزبان: CPU، RAM، دیسک، شبکه
+  node_exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    networks:
+      - ats_network
+
+  # متریک‌های PostgreSQL: کانکشن‌های فعال، تراکنش‌ها، حجم دیتابیس
+  postgres_exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-ats}:${POSTGRES_PASSWORD:-ats_dev_password}@postgres_db:5432/${POSTGRES_DB:-smart_ats_db}?sslmode=disable
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    networks:
+      - ats_network
+
+  # متریک‌های Redis: حافظه، کلاینت‌های متصل، کلیدها
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis_cache:6379
+    depends_on:
+      redis_cache:
+        condition: service_healthy
+    networks:
+      - ats_network
+
+# ---------------------------------------------------------------------------
+# Volumeهای نام‌دار: داده‌ها مستقل از چرخه‌ی عمر کانتینرها هستند و با
+# `docker compose down` (بدون -v) پاک نمی‌شوند
+# ---------------------------------------------------------------------------
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+
+# ---------------------------------------------------------------------------
+# شبکه‌ی داخلی ایزوله: کانتینرها با نام سرویس یکدیگر را پیدا می‌کنند و
+# PostgreSQL/Redis هیچ پورتی به بیرون از این شبکه باز نمی‌کنند
+# ---------------------------------------------------------------------------
+networks:
+  ats_network:
+    name: ats_network
+    driver: bridge
