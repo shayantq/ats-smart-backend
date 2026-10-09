@@ -5,23 +5,15 @@
 - هر پیام برای همه‌ی اعضای فعال تیم فنی (نقش Admin) — و فقط آن‌ها — اعلان می‌سازد.
 - صندوق اعلان‌ها (app/routers/notifications.py) فقط اعلان‌های خودِ کاربر را نشان می‌دهد.
 
-مثل tests/test_pagination.py روی SQLite در حافظه اجرا می‌شود؛ فقط دو جدول users و
-notifications ساخته می‌شوند (بقیه‌ی جدول‌ها نوع‌های مخصوص PostgreSQL مثل ARRAY/JSONB دارند).
+روی همان دیتابیس PostgreSQL موقت بقیه‌ی تست‌های یکپارچه‌سازی اجرا می‌شود (tests/integration/conftest.py).
 """
 
 import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core import deps
 from app.core.config import settings
-from app.core.security import create_access_token
-from app.db.session import get_db
-from app.main import app
-from app.models import Base, Notification, User
 from app.routers.ops import format_alert_message
 from app.schemas.ops import AlertmanagerAlert
+from tests.integration.conftest import auth_headers
 
 OPS_TOKEN = "test-ops-token"
 
@@ -41,64 +33,32 @@ ALERTMANAGER_PAYLOAD = {
 }
 
 
-@pytest_asyncio.fixture
-async def env(monkeypatch):
-    engine = create_async_engine("sqlite+aiosqlite://")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all, tables=[User.__table__, Notification.__table__])
+@pytest.fixture
+async def env(client, make_user, monkeypatch):
+    admin = await make_user(role="Admin", email="admin@example.com")
+    await make_user(role="Admin", email="admin2@example.com")
+    await make_user(role="Admin", email="old-admin@example.com", is_active=False)
+    candidate = await make_user(role="Candidate", email="candidate@example.com")
 
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async with session_factory() as session:
-        admin = User(email="admin@example.com", password_hash="x", role="Admin", is_active=True)
-        second_admin = User(email="admin2@example.com", password_hash="x", role="Admin", is_active=True)
-        inactive_admin = User(email="old-admin@example.com", password_hash="x", role="Admin", is_active=False)
-        candidate = User(email="candidate@example.com", password_hash="x", role="Candidate", is_active=True)
-        session.add_all([admin, second_admin, inactive_admin, candidate])
-        await session.commit()
-
-    async def override_get_db():
-        async with session_factory() as session:
-            yield session
-
-    async def no_cache_get(_key):
-        return None
-
-    async def no_cache_set(_key, _value, ttl_seconds):
-        return None
-
-    app.dependency_overrides[get_db] = override_get_db
-    # کش نشست کاربر (Redis) در این تست‌ها دخالتی ندارد — همیشه از دیتابیس خوانده شود
-    monkeypatch.setattr(deps, "get_cached_json", no_cache_get)
-    monkeypatch.setattr(deps, "set_cached_json", no_cache_set)
     monkeypatch.setattr(settings, "OPS_WEBHOOK_TOKEN", OPS_TOKEN)
     monkeypatch.setattr(settings, "OPS_ALERT_RECIPIENT_ROLES", "Admin")
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield {"client": client, "admin": admin, "candidate": candidate}
-
-    app.dependency_overrides.pop(get_db, None)
-    await engine.dispose()
+    return {"client": client, "admin": admin, "candidate": candidate}
 
 
 def _bearer(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _user_auth(user: User) -> dict:
-    access_token, _ = create_access_token(str(user.id))
-    return _bearer(access_token)
+def _user_auth(user) -> dict:
+    return auth_headers(user)
 
 
-@pytest.mark.asyncio
 async def test_ops_endpoints_are_disabled_when_token_not_configured(env, monkeypatch):
     monkeypatch.setattr(settings, "OPS_WEBHOOK_TOKEN", "")
     response = await env["client"].post("/api/v1/ops/events", json={"title": "x"}, headers=_bearer("anything"))
     assert response.status_code == 503
 
 
-@pytest.mark.asyncio
 async def test_ops_endpoints_reject_missing_or_wrong_token(env):
     client = env["client"]
     assert (await client.post("/api/v1/ops/alerts", json=ALERTMANAGER_PAYLOAD)).status_code == 401
@@ -106,7 +66,6 @@ async def test_ops_endpoints_reject_missing_or_wrong_token(env):
     assert response.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_alert_is_delivered_only_to_active_tech_team(env):
     client = env["client"]
 
@@ -128,7 +87,6 @@ async def test_alert_is_delivered_only_to_active_tech_team(env):
     assert candidate_inbox["unread_count"] == 0
 
 
-@pytest.mark.asyncio
 async def test_ci_event_report_and_mark_as_read(env):
     client = env["client"]
     admin_headers = _user_auth(env["admin"])
@@ -154,7 +112,6 @@ async def test_ci_event_report_and_mark_as_read(env):
     assert inbox["unread_count"] == 0
 
 
-@pytest.mark.asyncio
 async def test_user_cannot_mark_someone_elses_notification(env):
     client = env["client"]
     await client.post("/api/v1/ops/events", json={"title": "deploy ok"}, headers=_bearer(OPS_TOKEN))
@@ -165,7 +122,6 @@ async def test_user_cannot_mark_someone_elses_notification(env):
     assert response.status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_mark_all_read(env):
     client = env["client"]
     for title in ("one", "two", "three"):

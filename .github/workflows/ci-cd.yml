@@ -93,6 +93,8 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-only-secret-key
       ENVIRONMENT: ci
+      # تست‌های یکپارچه‌سازی در CI هرگز نباید بی‌صدا Skip شوند (بنگرید tests/integration/conftest.py)
+      TEST_DB_REQUIRED: "1"
     steps:
       - uses: actions/checkout@v5
 
@@ -115,15 +117,18 @@ jobs:
           alembic downgrade -1
           alembic upgrade head
 
-      - name: Pytest
-        run: pytest -v --junitxml=pytest-report.xml
+      # تست‌های واحد + یکپارچه‌سازی (هرکدام روی یک دیتابیس موقت جدا که در پایان حذف می‌شود)
+      - name: Pytest (unit + integration) with coverage
+        run: pytest -v --junitxml=pytest-report.xml --cov --cov-report=term --cov-report=xml
 
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: pytest-report
-          path: pytest-report.xml
+          path: |
+            pytest-report.xml
+            coverage.xml
           retention-days: 14
 
   # ---------------------------------------------------------------------------

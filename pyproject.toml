@@ -11,3 +11,24 @@ extend-exclude = "alembic/versions"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# تست‌های async بدون نیاز به دکوراتور @pytest.mark.asyncio روی هرکدام اجرا می‌شوند
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# هر تست بر اساس پوشه‌اش خودکار برچسب می‌خورد (tests/conftest.py):
+#   pytest -m unit           فقط تست‌های واحد (بدون هیچ وابستگی بیرونی)
+#   pytest -m integration    فقط تست‌های یکپارچه‌سازی (نیازمند PostgreSQL)
+markers = [
+    "unit: تست واحد — منطق ایزوله، بدون دیتابیس/شبکه",
+    "integration: تست یکپارچه‌سازی — API + یک دیتابیس PostgreSQL موقت و جدا",
+]
+addopts = "--strict-markers"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/worker.py"]
+# SQLAlchemy async از greenlet استفاده می‌کند؛ بدون این، خطوط بعد از await در روترها شمرده نمی‌شوند
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

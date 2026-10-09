@@ -75,12 +75,21 @@ rqscheduler --host localhost --port 6379        # زمان‌بند یادآور
 ## تست و کیفیت کد
 
 ```bash
-pytest           # تست‌های واحد و یکپارچه‌سازی (بدون نیاز به PostgreSQL واقعی؛ از SQLite در حافظه استفاده می‌کنند)
-black app tests  # فرمت خودکار (تنظیمات: pyproject.toml — line-length 120)
-flake8           # استانداردهای نگارش (تنظیمات: .flake8)
+pytest                    # همه‌ی تست‌ها (واحد + یکپارچه‌سازی)
+pytest -m unit            # فقط تست‌های واحد — بدون هیچ وابستگی بیرونی
+pytest -m integration     # فقط تست‌های یکپارچه‌سازی — نیازمند PostgreSQL
+pytest --cov              # همراه با گزارش پوشش کد
+black app tests && flake8 # فرمت و استانداردهای نگارش (تنظیمات: pyproject.toml و .flake8)
 ```
 
-همین بررسی‌ها در خط لوله‌ی CI هم اجرا می‌شوند.
+| لایه | مسیر | چه چیزی را می‌سنجد |
+|---|---|---|
+| **واحد** | `tests/unit/` | توابع ایزوله: موتور نمره‌دهی، سن کارجو (`ValueError` برای سن منفی)، ماشین وضعیت، پارسر جستجو، گراف مهارت و تحلیل سابقه، پارسر رزومه، امنیت (Bcrypt/JWT/XSS)، صفحه‌بندی |
+| **یکپارچه‌سازی** | `tests/integration/` | درخواست HTTP واقعی (HTTPX AsyncClient) به API و بررسی مستقیم جداول: آگهی‌ها، احراز هویت و بازیابی رمز، کانبان و قیف تحلیلی، پورتال کارجو، آپلود رزومه، جستجوی متنی، مصاحبه‌ها، اعلان‌ها، متریک‌ها |
+
+**دیتابیس تست موقت و جدا** (`tests/integration/conftest.py`): در شروع، یک دیتابیس جدید با نام یکتا (مثلاً `smart_ats_db_test_1a2b3c4d`) روی همان سرور `DATABASE_URL` (یا `TEST_DATABASE_URL`) ساخته و کل مایگریشن‌های واقعی روی آن اجرا می‌شود — دیتابیس اصلی توسعه هرگز دست نمی‌خورد. هر تست داخل یک تراکنش اجرا می‌شود که در پایانش Rollback می‌شود (هر تست با جداول خالی شروع می‌شود) و در پایان کل دیتابیس موقت حذف می‌شود. Redis، ایمیل و صف در این تست‌ها با جایگزین‌های حافظه‌ای عوض می‌شوند. اگر PostgreSQL در دسترس نباشد این تست‌ها Skip می‌شوند — مگر با `TEST_DB_REQUIRED=1` (مثل CI) که Fail می‌شوند.
+
+همین بررسی‌ها (به‌علاوه‌ی گزارش پوشش کد) در خط لوله‌ی CI اجرا می‌شوند.
 
 ---
 
@@ -379,7 +388,7 @@ sudo mkdir -p /opt/ats-smart && sudo chown $USER /opt/ats-smart
 │   ├── templates/emails/    # قالب‌های HTML ایمیل
 │   └── db/session.py        # اتصال Async به دیتابیس
 ├── alembic/                 # مایگریشن‌های دیتابیس
-├── tests/                   # تست‌ها (pagination, matching_engine, metrics, ops/notifications, health)
+├── tests/                   # unit/ (تست‌های واحد) · integration/ (API + دیتابیس موقت)
 ├── frontend/                # فرانت‌اند React (+ Dockerfile و nginx.conf)
 ├── monitoring/              # Prometheus (+ alerts.yml)، Alertmanager، Grafana (provisioning + داشبوردها)
 ├── deploy/                  # docker-compose.prod.yml، deploy.sh، compose.sh، nginx/gateway.conf

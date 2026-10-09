@@ -15,3 +15,5 @@ media/
 
 # فایل نسخه‌ی منتشرشده روی سرور (deploy/deploy.sh می‌نویسد)
 deploy/release.env*
+coverage.xml
+pytest-report.xml
