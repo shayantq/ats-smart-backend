@@ -25,6 +25,7 @@ export default function ApplicationCard({
   return (
     <div
       draggable
+      data-testid="application-card"
       onDragStart={(event) => onDragStart(event, application)}
       onDragEnd={onDragEnd}
       className={`cursor-grab select-none rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-opacity active:cursor-grabbing ${

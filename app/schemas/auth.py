@@ -116,3 +116,14 @@ class ResetPasswordRequest(BaseModel):
 
 class ResetPasswordResponse(BaseModel):
     message: str
+
+
+class CurrentUserResponse(BaseModel):
+    """
+    اطلاعات کاربر لاگین‌شده (GET /api/v1/auth/me) — فرانت‌اند بعد از ورود با آن تصمیم
+    می‌گیرد کاربر را به کدام پورتال (داشبورد HR یا پورتال کارجو) هدایت کند.
+    """
+
+    user_id: uuid.UUID
+    email: EmailStr
+    role: str

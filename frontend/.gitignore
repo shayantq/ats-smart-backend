@@ -19,3 +19,9 @@ dist-ssr/
 # Logs
 *.log
 npm-debug.log*
+
+# Tests (Jest / Playwright)
+coverage/
+playwright-report/
+test-results/
+e2e/.auth/

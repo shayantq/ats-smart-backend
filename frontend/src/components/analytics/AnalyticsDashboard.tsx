@@ -81,7 +81,7 @@ export default function AnalyticsDashboard({ jobId }: AnalyticsDashboardProps) {
           </div>
 
           {funnelQuery.isLoading && <ChartSkeleton heightClass="h-80" />}
-          {funnelQuery.isError && <ErrorState message="خطا در دریافت داده‌ی قیف استخدام. توکن دسترسی (Admin/HR_Manager) را بررسی کنید." />}
+          {funnelQuery.isError && <ErrorState message="خطا در دریافت داده‌ی قیف استخدام. این بخش فقط برای Admin/HR_Manager است؛ دسترسی یا اتصال به سرور را بررسی کنید." />}
           {funnelQuery.data && <RecruitmentFunnelChart stages={funnelQuery.data.stages} />}
         </section>
 
@@ -108,7 +108,7 @@ export default function AnalyticsDashboard({ jobId }: AnalyticsDashboardProps) {
           </div>
 
           {trendQuery.isLoading && <ChartSkeleton heightClass="h-72" />}
-          {trendQuery.isError && <ErrorState message="خطا در دریافت داده‌ی سری زمانی. توکن دسترسی (Admin/HR_Manager) را بررسی کنید." />}
+          {trendQuery.isError && <ErrorState message="خطا در دریافت داده‌ی سری زمانی. این بخش فقط برای Admin/HR_Manager است؛ دسترسی یا اتصال به سرور را بررسی کنید." />}
           {trendQuery.data && <ApplicationsTrendChart series={trendQuery.data.series} />}
         </section>
       </div>

@@ -25,6 +25,9 @@ export default function KanbanColumn({
 
   return (
     <div
+      role="region"
+      aria-label={label}
+      data-testid={`kanban-column-${status}`}
       onDragOver={(event) => {
         event.preventDefault();
         setIsOver(true);
@@ -41,7 +44,10 @@ export default function KanbanColumn({
     >
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-bold text-slate-700">{label}</h3>
-        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
+        <span
+          data-testid="column-count"
+          className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600"
+        >
           {applications.length}
         </span>
       </div>

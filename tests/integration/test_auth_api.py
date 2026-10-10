@@ -108,3 +108,13 @@ async def test_forgot_password_for_unknown_email_gives_same_response(client, enq
     assert response.status_code == 200  # همان پاسخ همیشگی — جلوگیری از User Enumeration
     await asyncio.sleep(0.05)
     assert enqueued_tasks == []
+
+
+async def test_me_returns_current_user_role(client, make_user):
+    user = await make_user(role="HR_Manager")
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers(user))
+
+    assert response.status_code == 200
+    assert response.json() == {"user_id": str(user.id), "email": user.email, "role": "HR_Manager"}
+    assert (await client.get("/api/v1/auth/me")).status_code == 401
