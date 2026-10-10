@@ -44,7 +44,7 @@ export default function TodayInterviewsPanel() {
 
       {isError && (
         <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
-          خطا در دریافت لیست مصاحبه‌ها. توکن دسترسی را بررسی کن.
+          خطا در دریافت لیست مصاحبه‌ها. اتصال به سرور را بررسی کن.
         </p>
       )}
 

@@ -55,7 +55,7 @@ export default function ProfileTab() {
   if (isError) {
     return (
       <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
-        خطا در دریافت پروفایل. توکن دسترسی را بررسی کن.
+        خطا در دریافت پروفایل. اتصال به سرور را بررسی کن.
       </p>
     );
   }

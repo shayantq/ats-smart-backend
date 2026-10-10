@@ -90,7 +90,7 @@ export default function NotificationsPanel() {
 
       {isError && (
         <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
-          خطا در دریافت اعلان‌ها. توکن دسترسی را بررسی کن.
+          خطا در دریافت اعلان‌ها. اتصال به سرور را بررسی کن.
         </p>
       )}
 

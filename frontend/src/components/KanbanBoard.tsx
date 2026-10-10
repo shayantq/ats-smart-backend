@@ -103,7 +103,7 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
   if (!jobId) {
     return (
       <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
-        برای مشاهده‌ی بورد، ابتدا شناسه‌ی یک آگهی شغلی را وارد کنید.
+        برای مشاهده‌ی بورد، ابتدا یک آگهی شغلی انتخاب کنید.
       </p>
     );
   }
@@ -115,13 +115,13 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
   if (isError) {
     return (
       <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
-        خطا در دریافت لیست درخواست‌ها. توکن دسترسی، شناسه‌ی آگهی و روشن بودن سرور بک‌اند را بررسی کنید.
+        خطا در دریافت لیست درخواست‌ها. اتصال به سرور را بررسی کنید.
       </p>
     );
   }
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
+    <div data-testid="kanban-board" className="flex gap-4 overflow-x-auto pb-4">
       {STATUS_COLUMNS.map((column) => (
         <KanbanColumn
           key={column.value}

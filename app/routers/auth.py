@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import delete_cached, get_cached_json, set_cached_json
 from app.core.config import settings
+from app.core.deps import get_current_user
 from app.core.limiter import limiter
 from app.core.notification_service import notify_new_user_registered
 from app.core.queue import enqueue_task
@@ -20,6 +21,7 @@ from app.core.security import create_access_token, create_refresh_token, hash_pa
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import (
+    CurrentUserResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
@@ -145,6 +147,18 @@ async def login_user(
         token_type="bearer",
         expires_in=expires_in,
     )
+
+
+@router.get(
+    "/me",
+    response_model=CurrentUserResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Auth"],
+    summary="اطلاعات کاربر لاگین‌شده (شناسه، ایمیل، نقش)",
+)
+async def get_me(current_user: User = Depends(get_current_user)) -> CurrentUserResponse:
+    """فقط با access_token معتبر؛ بدون توکن یا با توکن نامعتبر/منقضی → 401."""
+    return CurrentUserResponse(user_id=current_user.id, email=current_user.email, role=current_user.role)
 
 
 def _generate_otp_code() -> str:

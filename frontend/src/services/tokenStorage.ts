@@ -1,9 +1,7 @@
 /**
- * ذخیره‌ی موقت access_token در localStorage.
- *
- * ⚠️ این یک راه‌حل موقت است تا زمانی که صفحه‌ی ورود (Login) واقعی در فرانت‌اند
- * ساخته شود. فعلاً کارشناس HR باید access_token را از Swagger بک‌اند کپی و در
- * فرم بالای داشبورد وارد کند (بنگرید HRDashboard.tsx).
+ * نگه‌داری access_token کاربر لاگین‌شده در localStorage (بنگرید pages/LoginPage.tsx).
+ * عمر توکن کوتاه است (پیش‌فرض ۱۵ دقیقه)؛ بعد از انقضا، اولین درخواست با 401 رد می‌شود و
+ * کاربر خودکار به صفحه‌ی ورود برمی‌گردد (بنگرید UNAUTHORIZED_EVENT در apiClient.ts).
  */
 
 const TOKEN_STORAGE_KEY = "ats_smart_access_token";

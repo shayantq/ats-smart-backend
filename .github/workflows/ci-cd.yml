@@ -1,9 +1,8 @@
 # =============================================================================
 # خط لوله‌ی ادغام و استقرار مداوم (CI/CD) — ATS Smart
 #
-#   lint ──┐
-#          ├─► test ──┐
-#   frontend ─────────┴─► build-and-push ─► deploy ─► report
+#   lint ─► test ──────┐
+#   frontend (Jest) ───┴─► e2e (Playwright) ─► build-and-push ─► deploy ─► report
 #
 # - هر Push / Pull Request روی develop: بررسی کیفیت کد + تست‌ها + بیلد فرانت‌اند.
 # - فقط Push روی develop (بعد از سبز شدن همه‌ی مراحل قبل): ساخت ایمیج‌ها، ارسال به
@@ -150,7 +149,60 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - run: npm ci --no-audit --no-fund
+      # تست‌های رندر کامپوننت‌های React (Jest + Testing Library)
+      - run: npm test -- --ci
       - run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # تست E2E: شبیه‌سازی کاربر واقعی در مرورگر روی کل سیستم (فرانت → بک → دیتابیس)
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: [test, frontend]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start full stack (docker compose)
+        run: |
+          docker compose up -d --build backend_api frontend
+          for attempt in $(seq 1 60); do
+            curl -fsS http://localhost:8080/api/v1/health && exit 0
+            sleep 5
+          done
+          echo "::error::سیستم در زمان مقرر بالا نیامد" && exit 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Playwright
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run E2E scenarios
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 14
+
+      - name: Backend logs on failure
+        if: failure()
+        run: docker compose logs --tail 200 backend_api frontend
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v
 
   # ---------------------------------------------------------------------------
   # آیا Secrets لازم برای انتشار/استقرار تنظیم شده‌اند؟
@@ -186,7 +238,7 @@ jobs:
   build-and-push:
     name: Build & push images
     runs-on: ubuntu-latest
-    needs: [test, frontend, preflight]
+    needs: [test, frontend, e2e, preflight]
     if: needs.preflight.outputs.registry_ready == 'true'
     outputs:
       backend_image: ${{ steps.tags.outputs.backend_image }}
@@ -293,7 +345,7 @@ jobs:
   report:
     name: Report
     runs-on: ubuntu-latest
-    needs: [lint, test, frontend, preflight, build-and-push, deploy]
+    needs: [lint, test, frontend, e2e, preflight, build-and-push, deploy]
     if: always()
     steps:
       - name: Summarize & notify
@@ -303,6 +355,7 @@ jobs:
           LINT: ${{ needs.lint.result }}
           TEST: ${{ needs.test.result }}
           FRONTEND: ${{ needs.frontend.result }}
+          E2E: ${{ needs.e2e.result }}
           BUILD: ${{ needs.build-and-push.result }}
           DEPLOY: ${{ needs.deploy.result }}
           BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend_image }}
@@ -315,7 +368,7 @@ jobs:
           icon() { case "$1" in success) echo "✅";; failure) echo "❌";; cancelled) echo "⏹️";; *) echo "⏭️";; esac; }
 
           overall=success
-          for result in "$LINT" "$TEST" "$FRONTEND" "$BUILD" "$DEPLOY"; do
+          for result in "$LINT" "$TEST" "$FRONTEND" "$E2E" "$BUILD" "$DEPLOY"; do
             if [[ "$result" == failure || "$result" == cancelled ]]; then overall=failure; fi
           done
           short_sha="${GITHUB_SHA::7}"
@@ -329,7 +382,8 @@ jobs:
             echo "|---|---|"
             echo "| Lint (Black + Flake8) | $(icon "$LINT") $LINT |"
             echo "| Tests (Pytest) | $(icon "$TEST") $TEST |"
-            echo "| Frontend build | $(icon "$FRONTEND") $FRONTEND |"
+            echo "| Frontend (Jest + build) | $(icon "$FRONTEND") $FRONTEND |"
+            echo "| E2E (Playwright) | $(icon "$E2E") $E2E |"
             echo "| Build & push images | $(icon "$BUILD") $BUILD |"
             echo "| Deploy | $(icon "$DEPLOY") $DEPLOY |"
             echo ""
@@ -351,8 +405,8 @@ jobs:
           else
             level=failure; title="شکست خط لوله‌ی CI/CD روی $BRANCH ($short_sha) — کد جدید مستقر نشد"
           fi
-          content="$(printf 'Commit: %s\nتوسط: %s\nLint: %s | Tests: %s | Frontend: %s | Build: %s | Deploy: %s\nجزئیات: %s' \
-            "$first_line" "$ACTOR" "$LINT" "$TEST" "$FRONTEND" "$BUILD" "$DEPLOY" "$RUN_URL")"
+          content="$(printf 'Commit: %s\nتوسط: %s\nLint: %s | Tests: %s | Frontend: %s | E2E: %s | Build: %s | Deploy: %s\nجزئیات: %s' \
+            "$first_line" "$ACTOR" "$LINT" "$TEST" "$FRONTEND" "$E2E" "$BUILD" "$DEPLOY" "$RUN_URL")"
 
           payload="$(jq -n --arg title "$title" --arg content "$content" --arg level "$level" \
             '{title: $title, content: $content, level: $level, category: "deployment"}')"

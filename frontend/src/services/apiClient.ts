@@ -1,9 +1,22 @@
 /**
  * کلاینت سبک برای صحبت با بک‌اند (بدون وابستگی به axios یا کتابخانه‌ی جانبی).
- * توکن دسترسی را از localStorage می‌خواند (بنگرید tokenStorage.ts).
+ * توکن دسترسی کاربر لاگین‌شده را از localStorage می‌خواند (بنگرید tokenStorage.ts).
  */
 
-import { getToken } from "./tokenStorage";
+import { clearToken, getToken } from "./tokenStorage";
+
+/**
+ * وقتی سرور یک درخواست احرازشده را با 401 رد کند (توکن منقضی/نامعتبر)، توکن پاک و این
+ * رویداد روی window پخش می‌شود؛ App.tsx با شنیدنش کاربر را به صفحه‌ی ورود برمی‌گرداند.
+ */
+export const UNAUTHORIZED_EVENT = "ats:unauthorized";
+
+function handleUnauthorized(response: Response, usedAuth: boolean): void {
+  if (response.status === 401 && usedAuth && getToken()) {
+    clearToken();
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+}
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -64,6 +77,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     headers: finalHeaders,
   });
 
+  handleUnauthorized(response, auth);
   return parseResponse<T>(response);
 }
 
@@ -139,5 +153,6 @@ export async function apiUploadFile<T>(path: string, formData: FormData): Promis
     body: formData,
   });
 
+  handleUnauthorized(response, true);
   return parseResponse<T>(response);
 }

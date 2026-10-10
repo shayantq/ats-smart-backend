@@ -1,41 +1,82 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ToastProvider } from "./context/ToastContext";
 import HRDashboard from "./pages/HRDashboard";
 import CandidatePortal from "./pages/CandidatePortal";
+import LoginPage from "./pages/LoginPage";
+import { UNAUTHORIZED_EVENT } from "./services/apiClient";
+import { fetchCurrentUser } from "./services/authApi";
+import { clearToken, getToken } from "./services/tokenStorage";
+import { useAppDispatch, useAppSelector } from "./store/hooks";
+import { clearUser, setUser } from "./store/slices/authSlice";
 
-type PortalView = "candidate" | "hr";
+const ROLE_LABELS: Record<string, string> = {
+  Admin: "مدیر سیستم",
+  HR_Manager: "کارشناس منابع انسانی",
+  Interviewer: "مصاحبه‌کننده",
+  Candidate: "کارجو",
+};
 
 function App() {
-  const [activeView, setActiveView] = useState<PortalView>("candidate");
+  const dispatch = useAppDispatch();
+  const queryClient = useQueryClient();
+  const user = useAppSelector((state) => state.auth.user);
+  // اگر از قبل توکنی ذخیره شده، پیش از تصمیم‌گیری بین «صفحه‌ی ورود» و «پورتال» اعتبارش سنجیده می‌شود
+  const [isRestoringSession, setIsRestoringSession] = useState(() => Boolean(getToken()));
+
+  useEffect(() => {
+    if (!isRestoringSession) return;
+    fetchCurrentUser()
+      .then((currentUser) => dispatch(setUser(currentUser)))
+      .catch(() => clearToken())
+      .finally(() => setIsRestoringSession(false));
+  }, [isRestoringSession, dispatch]);
+
+  // توکن منقضی/نامعتبر در هر درخواستی → بازگشت به صفحه‌ی ورود
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      dispatch(clearUser());
+      queryClient.clear();
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
+  }, [dispatch, queryClient]);
+
+  function handleLogout() {
+    clearToken();
+    dispatch(clearUser());
+    queryClient.clear(); // داده‌های کش‌شده‌ی کاربر قبلی برای کاربر بعدی نمی‌ماند
+  }
+
+  if (isRestoringSession) {
+    return <p className="p-6 text-center text-sm text-slate-500">در حال بارگذاری...</p>;
+  }
 
   return (
     <ToastProvider>
-      {/* سوییچر موقت بین دو پورتال — تا زمانی که صفحه‌ی ورود واقعی (Login) و
-          مسیریابی بر اساس نقش کاربر ساخته شود */}
-      <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl gap-1 px-4 pt-2 sm:px-6">
-          <button
-            onClick={() => setActiveView("candidate")}
-            className={`rounded-t-lg px-4 py-2 text-sm font-semibold transition-colors ${
-              activeView === "candidate"
-                ? "bg-slate-100 text-slate-900"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            پورتال کارجو
-          </button>
-          <button
-            onClick={() => setActiveView("hr")}
-            className={`rounded-t-lg px-4 py-2 text-sm font-semibold transition-colors ${
-              activeView === "hr" ? "bg-slate-100 text-slate-900" : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            داشبورد HR
-          </button>
-        </div>
-      </div>
-
-      {activeView === "candidate" ? <CandidatePortal /> : <HRDashboard />}
+      {user === null ? (
+        <LoginPage />
+      ) : (
+        <>
+          <header className="border-b border-slate-200 bg-white">
+            <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
+              <span className="text-sm font-bold text-slate-800">ATS Smart</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500">
+                  <span dir="ltr">{user.email}</span> · {ROLE_LABELS[user.role] ?? user.role}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  خروج
+                </button>
+              </div>
+            </div>
+          </header>
+          {user.role === "Candidate" ? <CandidatePortal /> : <HRDashboard />}
+        </>
+      )}
     </ToastProvider>
   );
 }
