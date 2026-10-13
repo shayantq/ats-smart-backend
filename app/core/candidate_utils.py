@@ -1,0 +1,53 @@
+"""
+تابع مشترک «یافتن یا ساخت پروفایل کارجو».
+
+هم روتر آپلود رزومه (app/routers/resumes.py) و هم روتر پورتال کارجو
+(app/routers/candidates.py) لازم دارند که پروفایل Candidate متناظر با
+کاربر لاگین‌شده را داشته باشند؛ برای جلوگیری از تکرار کد، این تابع در
+یک‌جا نگه‌داری می‌شود.
+"""
+
+from datetime import date
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Candidate, User
+
+
+def calculate_candidate_age(birth_date: date, today: date | None = None) -> int:
+    """
+    سن کامل (تمام‌شده) کارجو را از روی تاریخ تولد محاسبه می‌کند — یعنی اگر
+    تولدِ امسالش هنوز نرسیده باشد، یک سال کمتر حساب می‌شود.
+
+    اگر نتیجه منفی باشد (تاریخ تولد در آینده — یعنی ورودی نامعتبر)، ValueError
+    پرتاب می‌شود تا یک سن نامعتبر هرگز بی‌صدا وارد منطق تجاری نشود.
+    `today` فقط برای تست‌پذیری (Deterministic بودن) قابل تزریق است.
+    """
+    today = today or date.today()
+    had_birthday_this_year = (today.month, today.day) >= (birth_date.month, birth_date.day)
+    age = today.year - birth_date.year - (0 if had_birthday_this_year else 1)
+    if age < 0:
+        raise ValueError(f"سن کارجو نمی‌تواند منفی باشد (تاریخ تولد {birth_date.isoformat()} در آینده است).")
+    return age
+
+
+async def get_or_create_candidate_profile(db: AsyncSession, user: User) -> Candidate:
+    """
+    چون هنوز فرآیند «تکمیل اجباری پروفایل بعد از ثبت‌نام» در پروژه پیاده‌سازی
+    نشده، اولین باری که یک کاربر با نقش Candidate به هر مسیر مربوط به
+    پروفایل/رزومه‌اش دسترسی پیدا می‌کند، یک پروفایل حداقلی برایش ساخته می‌شود
+    (بعداً از طریق PUT /api/v1/candidates/me قابل تکمیل/ویرایش است).
+    """
+    result = await db.execute(select(Candidate).where(Candidate.user_id == user.id))
+    candidate = result.scalar_one_or_none()
+    if candidate is not None:
+        return candidate
+
+    placeholder_name = user.email.split("@")[0]
+    candidate = Candidate(user_id=user.id, first_name=placeholder_name, last_name="")
+    db.add(candidate)
+    # commit همین‌جا و فقط در صورت ساخت: مسیرهای فقط‌خواندنی (مثل GET /candidates/me) دیگر نیازی
+    # به commit جداگانه ندارند — یافته‌ی تست بار: یک رفت‌وبرگشت اضافه به دیتابیس در هر درخواست
+    await db.commit()
+    return candidate

@@ -1,0 +1,38 @@
+# =============================================================================
+# اسکن امنیتی OWASP ZAP روی سیستم در حال اجرا (محیط تست) — بنگرید README بخش «تست امنیت».
+#
+#   $env:ZAP_TOKEN = (Get-Content security/zap_token.py -Raw | docker compose exec -T backend_api python -)
+#   docker compose -f docker-compose.yml -f security/docker-compose.zap.yml run --rm zap_api_scan
+#   docker compose -f docker-compose.yml -f security/docker-compose.zap.yml run --rm zap_baseline_scan
+#
+# گزارش‌ها (HTML/JSON/Markdown) در security/reports نوشته می‌شوند.
+# =============================================================================
+
+x-zap: &zap
+  image: ghcr.io/zaproxy/zaproxy:stable
+  user: root
+  volumes:
+    - ./security/reports:/zap/wrk:rw
+  networks:
+    - ats_network
+  profiles: ["security"]
+
+services:
+  # اسکن کامل API (Passive + Active) از روی OpenAPI بک‌اند؛ درخواست‌ها با -O از مسیر واقعی کاربر
+  # یعنی Nginx فرانت‌اند ارسال می‌شوند. توکن Admin برای پوشش مسیرهای محافظت‌شده.
+  zap_api_scan:
+    <<: *zap
+    environment:
+      ZAP_AUTH_HEADER: Authorization
+      ZAP_AUTH_HEADER_VALUE: "Bearer ${ZAP_TOKEN:-}"
+      ZAP_AUTH_HEADER_SITE: frontend
+    command: >-
+      zap-api-scan.py -t http://backend_api:8000/openapi.json -f openapi -O http://frontend
+      -r zap-api-report.html -J zap-api-report.json -w zap-api-report.md -I
+
+  # اسکن پایه (Passive) خودِ سایت: هدرهای امنیتی، کوکی‌ها، افشای اطلاعات
+  zap_baseline_scan:
+    <<: *zap
+    command: >-
+      zap-baseline.py -t http://frontend -j
+      -r zap-frontend-report.html -J zap-frontend-report.json -w zap-frontend-report.md -I

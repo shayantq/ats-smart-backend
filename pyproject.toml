@@ -1,0 +1,34 @@
+# پیکربندی ابزارهای کیفیت کد — همان تنظیماتی که خط لوله‌ی CI
+# (.github/workflows/ci-cd.yml) با آن‌ها کد را بررسی می‌کند. اجرای محلی:
+#   black app tests          (فرمت خودکار)
+#   flake8                   (بررسی استانداردهای نگارش؛ تنظیماتش در .flake8)
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+# مایگریشن‌ها را Alembic خودکار تولید کرده و هرگز بعد از اجرا ویرایش نمی‌شوند
+extend-exclude = "alembic/versions"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# تست‌های async بدون نیاز به دکوراتور @pytest.mark.asyncio روی هرکدام اجرا می‌شوند
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# هر تست بر اساس پوشه‌اش خودکار برچسب می‌خورد (tests/conftest.py):
+#   pytest -m unit           فقط تست‌های واحد (بدون هیچ وابستگی بیرونی)
+#   pytest -m integration    فقط تست‌های یکپارچه‌سازی (نیازمند PostgreSQL)
+markers = [
+    "unit: تست واحد — منطق ایزوله، بدون دیتابیس/شبکه",
+    "integration: تست یکپارچه‌سازی — API + یک دیتابیس PostgreSQL موقت و جدا",
+]
+addopts = "--strict-markers"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/worker.py"]
+# SQLAlchemy async از greenlet استفاده می‌کند؛ بدون این، خطوط بعد از await در روترها شمرده نمی‌شوند
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

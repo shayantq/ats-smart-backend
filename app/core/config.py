@@ -10,13 +10,60 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "ATS Smart"
     API_V1_PREFIX: str = "/api/v1"
     ENVIRONMENT: str = "development"
+    # نسخه‌ی منتشرشده (sha کامیت؛ هنگام بیلد ایمیج با --build-arg APP_VERSION) — در /health
+    APP_VERSION: str = "dev"
 
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/smart_ats_db"
     REDIS_URL: str = "redis://localhost:6379/0"
+    # ظرفیت Connection Pool دیتابیس در «هر» پردازه‌ی بک‌اند. سقف کل اتصال‌ها =
+    # (POOL_SIZE + MAX_OVERFLOW) × تعداد کانتینرهای بک‌اند — باید زیر max_connections پستگرس بماند
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 10
 
     SECRET_KEY: str = "changeme-in-env-file"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # دامنه‌ی رسمی فرانت‌اند که اجازه‌ی صحبت با این API را دارد (برای CORS)
+    FRONTEND_ORIGIN: str = "http://localhost:5173"
+
+    # ---- ذخیره‌سازی فایل رزومه (Resume Storage) ----
+    # "local": ذخیره روی دیسک سرور (پیش‌فرض توسعه) — "s3": هر Object Storage سازگار با S3
+    # (AWS S3، Liara Object Storage، ArvanCloud Object Storage، MinIO و ...)
+    STORAGE_BACKEND: str = "local"
+    MEDIA_ROOT: str = "media"
+    MEDIA_BASE_URL: str = "http://localhost:8000/media"
+
+    S3_ENDPOINT_URL: str = ""  # برای AWS خالی بگذارید؛ برای S3-Compatible آدرس endpoint را وارد کنید
+    S3_BUCKET_NAME: str = ""
+    S3_ACCESS_KEY: str = ""
+    S3_SECRET_KEY: str = ""
+    S3_REGION: str = "us-east-1"
+    S3_PUBLIC_BASE_URL: str = ""  # اگر bucket دامنه‌ی عمومی یا CDN اختصاصی دارد
+
+    # ---- موتور استخراج متن رزومه (OCR Engine) ----
+    # زبان‌های Tesseract برای OCR رزومه‌های اسکن‌شده/تصویری (فارسی+انگلیسی به‌صورت پیش‌فرض)
+    OCR_LANGUAGES: str = "fas+eng"
+    # اگر باینری tesseract در PATH سیستم نبود، مسیر کامل exe را اینجا بده (مخصوصاً روی ویندوز)
+    TESSERACT_CMD_PATH: str = ""
+
+    # ---- سرویس ایمیل (SMTP) — برای زیرسیستم اطلاع‌رسانی رویدادمحور (Notification Service) ----
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    SMTP_FROM_EMAIL: str = "no-reply@ats-smart.local"
+    SMTP_FROM_NAME: str = "ATS Smart"
+
+    # ---- عملیات و مانیتورینگ (DevOps) ----
+    # توکن مشترک (Bearer) که Alertmanager و خط لوله‌ی CI/CD با آن به مسیرهای
+    # /api/v1/ops/* پیام می‌فرستند. خالی = این مسیرها کاملاً غیرفعال (503) — تا
+    # هیچ‌وقت یک webhook بدون احراز هویت روی سرور باز نماند.
+    OPS_WEBHOOK_TOKEN: str = ""
+    # نقش‌هایی که «تیم فنی» حساب می‌شوند و هشدارهای سرور/گزارش‌های استقرار را
+    # در صندوق اعلان‌های داخل سایت دریافت می‌کنند (جداشده با کاما)
+    OPS_ALERT_RECIPIENT_ROLES: str = "Admin"
 
     model_config = SettingsConfigDict(
         env_file=".env",

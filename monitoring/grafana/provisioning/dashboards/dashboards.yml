@@ -1,0 +1,14 @@
+# بارگذاری خودکار داشبوردهای پوشه‌ی monitoring/grafana/dashboards (تولیدشده با
+# generate_dashboards.py) در پوشه‌ی «ATS Smart» داخل Grafana.
+apiVersion: 1
+
+providers:
+  - name: ats-smart
+    folder: ATS Smart
+    type: file
+    disableDeletion: true
+    # تغییرات UI ذخیره نمی‌شوند؛ منبع حقیقت همین فایل‌های داخل Git است
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

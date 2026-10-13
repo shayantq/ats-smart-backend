@@ -10,3 +10,17 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+*.zip
+media/
+
+# فایل نسخه‌ی منتشرشده روی سرور (deploy/deploy.sh می‌نویسد)
+deploy/release.env*
+coverage.xml
+pytest-report.xml
+
+# کلیدهای رمزنگاری بک‌آپ (کلید خصوصی هرگز نباید وارد گیت شود)
+backup/secrets/
+
+# خروجی تست‌های بار و امنیت
+loadtest/reports/
+security/reports/

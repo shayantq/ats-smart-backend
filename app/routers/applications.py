@@ -1,0 +1,198 @@
+"""
+میکروسرویس بورد کانبان فرآیند استخدام (Application Status Service):
+- GET /api/v1/applications/               لیست درخواست‌های یک آگهی خاص (برای رندر کارت‌ها روی بورد)
+- PUT /api/v1/applications/{id}/status/   جابه‌جایی وضعیت یک درخواست، طبق
+  ماشین وضعیت صلب (Strict State Machine) تعریف‌شده در app/core/state_machine.py.
+
+فقط نقش‌های Admin و HR_Manager اجازه‌ی مشاهده و جابه‌جایی وضعیت را دارند.
+"""
+
+import asyncio
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.deps import get_current_user, require_roles
+from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
+from app.core.state_machine import is_transition_allowed
+from app.core.status_notifier import trigger_status_change_email
+from app.db.session import get_db
+from app.models import Application, Candidate, StatusHistory, User
+from app.schemas.applications import (
+    ApplicationListItem,
+    ApplicationListResponse,
+    ApplicationStatusUpdateRequest,
+    ApplicationStatusUpdateResponse,
+)
+
+router = APIRouter()
+
+# طبق معیار پذیرش تسک، فقط مدیر سازمان (Admin) و کارشناس HR اجازه‌ی
+# جابه‌جایی وضعیت درخواست‌ها روی بورد کانبان را دارند.
+APPLICATION_MANAGER_ROLES = ("Admin", "HR_Manager")
+
+
+@router.get(
+    "/",
+    response_model=ApplicationListResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Applications"],
+    summary="دریافت لیست درخواست‌های یک آگهی شغلی خاص (برای بورد کانبان)",
+    dependencies=[Depends(require_roles(*APPLICATION_MANAGER_ROLES))],
+)
+async def list_applications(
+    job_id: uuid.UUID = Query(..., description="شناسه‌ی آگهی شغلی موردنظر"),
+    db: AsyncSession = Depends(get_db),
+    page: CursorParams = Depends(cursor_params),
+) -> ApplicationListResponse:
+    """
+    لیست درخواست‌های یک آگهی شغلی خاص را برمی‌گرداند — دقیقاً همان داده‌ای
+    که بورد کانبان فرانت‌اند (HR Dashboard) برای رندر کردن ستون‌ها و کارت‌های
+    کارجو مصرف می‌کند (نام کارجو + امتیاز هوش مصنوعی + وضعیت فعلی).
+    فقط Admin و HR_Manager دسترسی دارند.
+
+    صفحه‌بندی مبتنی بر نشانگر (Cursor Pagination): جدیدترین تغییر وضعیت اول
+    (updated_at DESC) — بنگرید app/core/pagination.py و مایگریشن مربوط به
+    ایندکس مرکب (job_id, updated_at, id) روی جدول applications که همزمان
+    فیلتر job_id و همین ترتیب صفحه‌بندی را در یک اسکن ایندکس پوشش می‌دهد.
+    """
+    query = (
+        select(
+            Application.id,
+            Application.candidate_id,
+            Application.current_status,
+            Application.score_ai,
+            Application.updated_at,
+            Candidate.first_name,
+            Candidate.last_name,
+        )
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .where(Application.job_id == job_id)
+    )
+
+    cursor_page = await paginate_by_cursor(
+        db,
+        query,
+        sort_column=Application.updated_at,
+        id_column=Application.id,
+        params=page,
+        descending=True,
+    )
+
+    items = [
+        ApplicationListItem(
+            application_id=row.id,
+            candidate_id=row.candidate_id,
+            candidate_name=f"{row.first_name} {row.last_name}",
+            current_status=row.current_status,
+            score_ai=row.score_ai,
+            updated_at=row.updated_at,
+        )
+        for row in cursor_page.items
+    ]
+
+    return ApplicationListResponse(
+        items=items,
+        next_cursor=cursor_page.next_cursor,
+        previous_cursor=cursor_page.previous_cursor,
+        has_next=cursor_page.has_next,
+        has_previous=cursor_page.has_previous,
+    )
+
+
+@router.put(
+    "/{application_id}/status",
+    response_model=ApplicationStatusUpdateResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Applications"],
+    summary="جابه‌جایی وضعیت یک درخواست روی بورد کانبان (ماشین وضعیت صلب)",
+    dependencies=[Depends(require_roles(*APPLICATION_MANAGER_ROLES))],
+)
+async def update_application_status(
+    application_id: uuid.UUID,
+    payload: ApplicationStatusUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApplicationStatusUpdateResponse:
+    """
+    جابه‌جایی وضعیت یک درخواست، فقط اگر طبق قوانین ماشین وضعیت صلب مجاز باشد.
+
+    ترتیب بررسی:
+    ۱. اگر درخواست (Application) با این id وجود نداشته باشد -> 404.
+    ۲. اگر current_status ارسالی توسط کلاینت با وضعیت واقعی رکورد در
+       دیتابیس یکی نباشد (یعنی داده‌ی بورد کانبان کلاینت قدیمی/ناهماهنگ است)
+       -> تراکنش Rollback و خطای 400 با پیام دقیق "Business Logic Violation".
+    ۳. اگر current_status -> new_status طبق app/core/state_machine.py
+       یک پرش غیرمجاز باشد (مثلاً Screening -> Hired) -> تراکنش Rollback
+       و همان خطای 400 "Business Logic Violation".
+    ۴. در غیر این صورت: current_status رکورد آپدیت می‌شود، updated_at
+       به‌صورت خودکار توسط دیتابیس به‌روزرسانی می‌شود، و یک ردیف جدید
+       در جدول StatusHistory با وضعیت قبلی/جدید و شناسه‌ی کاربر ثبت‌کننده
+       درج می‌شود -> 200 OK.
+    ۵. بلافاصله بعد از commit موفق، هوک اطلاع‌رسانی (app/core/status_notifier.py)
+       به‌صورت fire-and-forget صدا زده می‌شود تا در صورت لزوم، ایمیل متناظر
+       وضعیت جدید (مثلاً پیشنهاد همکاری برای Offer) به صف Redis اضافه شود.
+    """
+    result = await db.execute(select(Application).where(Application.id == application_id))
+    application = result.scalar_one_or_none()
+
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="درخواست موردنظر یافت نشد.",
+        )
+
+    requested_current = payload.current_status.value
+    requested_new = payload.new_status.value
+
+    # قدم ۱: وضعیت فعلی ارسالی باید دقیقاً با وضعیت واقعی رکورد یکی باشد
+    if application.current_status != requested_current:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Business Logic Violation",
+        )
+
+    # قدم ۲: قانون ضدپرش (Anti-Skipping Rule) — هسته‌ی ماشین وضعیت صلب
+    if not is_transition_allowed(requested_current, requested_new):
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Business Logic Violation",
+        )
+
+    previous_status = application.current_status
+    application.current_status = requested_new
+    db.add(application)
+
+    # ثبت لاگ تغییر وضعیت در StatusHistory بلافاصله پس از یک جابه‌جایی مجاز
+    history_entry = StatusHistory(
+        application_id=application.id,
+        old_status=previous_status,
+        new_status=requested_new,
+        changed_by=current_user.id,
+    )
+    db.add(history_entry)
+
+    await db.commit()
+    await db.refresh(application)
+
+    # هوک ماشین وضعیت -> زیرسیستم اطلاع‌رسانی: اگر وضعیت جدید نیاز به ایمیل
+    # داشته باشد (مثلاً Offer یا ورود به مرحله‌ی غربالگری/مصاحبه)، fire-and-forget
+    # اضافه می‌شود تا این پاسخ HTTP هیچ‌وقت معطل آن نماند.
+    asyncio.create_task(
+        trigger_status_change_email(
+            candidate_id=application.candidate_id,
+            job_id=application.job_id,
+            new_status=application.current_status,
+        )
+    )
+
+    return ApplicationStatusUpdateResponse(
+        application_id=application.id,
+        previous_status=previous_status,
+        new_status=application.current_status,
+        updated_at=application.updated_at,
+    )
