@@ -118,4 +118,6 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
 
 # یک پردازه‌ی uvicorn در هر کانتینر (مقیاس‌پذیری = تعداد کانتینرها؛ بنگرید
 # app/core/metrics.py). روی SIGTERM درخواست‌های در حال اجرا تا ۳۰ ثانیه تمام می‌شوند.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--timeout-graceful-shutdown", "30"]
+# --no-access-log: هر درخواست همین حالا در لاگ Nginx (با زمان پاسخ) ثبت می‌شود؛ لاگ تکراری uvicorn
+# زیر بار بالا CPU قابل‌توجهی هدر می‌داد (یافته‌ی تست بار).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--timeout-graceful-shutdown", "30", "--no-access-log"]

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from jose import jwt
 from passlib.context import CryptContext
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 
@@ -24,6 +25,31 @@ def hash_password(plain_password: str) -> str:
 def verify_password(plain_password: str, password_hash: str) -> bool:
     """گذرواژه‌ی وارد شده توسط کاربر (مثلاً هنگام لاگین) را با هش ذخیره‌شده مقایسه می‌کند."""
     return pwd_context.verify(plain_password, password_hash)
+
+
+# ⚠️ Bcrypt عمداً کند است (~۲۰۰ میلی‌ثانیه CPU در هر بار، با ۱۲ دور). صدا زدنش مستقیم داخل یک
+# endpoint از نوع async، کل Event Loop سرور را در همان مدت برای همه‌ی کاربران قفل می‌کند (یافته‌ی
+# تست بار). نسخه‌های async زیر آن را در Thread Pool اجرا می‌کنند؛ چون کتابخانه‌ی bcrypt قفل GIL را
+# آزاد می‌کند، چند هش هم‌زمان واقعاً موازی روی هسته‌های مختلف CPU انجام می‌شوند.
+async def hash_password_async(plain_password: str) -> str:
+    return await run_in_threadpool(hash_password, plain_password)
+
+
+async def verify_password_async(plain_password: str, password_hash: str) -> bool:
+    return await run_in_threadpool(verify_password, plain_password, password_hash)
+
+
+# هش یک گذرواژه‌ی تصادفی، فقط برای «ورود با ایمیل ناموجود»: تا زمان پاسخ با حالت «رمز اشتباه»
+# یکسان باشد و مهاجم نتواند از روی تفاوت زمان، ایمیل‌های ثبت‌شده را حدس بزند (Timing Attack)
+_DUMMY_PASSWORD_HASH = pwd_context.hash("timing-attack-equalizer")
+
+
+async def verify_login_password_async(plain_password: str, password_hash: str | None) -> bool:
+    """مثل verify_password_async، ولی اگر کاربر وجود نداشته باشد هم همان مقدار کار را انجام می‌دهد."""
+    if password_hash is None:
+        await verify_password_async(plain_password, _DUMMY_PASSWORD_HASH)
+        return False
+    return await verify_password_async(plain_password, password_hash)
 
 
 def _create_token(subject: str, expires_delta: timedelta, token_type: str) -> tuple[str, int]:

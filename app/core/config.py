@@ -13,6 +13,10 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/smart_ats_db"
     REDIS_URL: str = "redis://localhost:6379/0"
+    # ظرفیت Connection Pool دیتابیس در «هر» پردازه‌ی بک‌اند. سقف کل اتصال‌ها =
+    # (POOL_SIZE + MAX_OVERFLOW) × تعداد کانتینرهای بک‌اند — باید زیر max_connections پستگرس بماند
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 10
 
     SECRET_KEY: str = "changeme-in-env-file"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15

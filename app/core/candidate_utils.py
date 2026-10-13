@@ -47,5 +47,7 @@ async def get_or_create_candidate_profile(db: AsyncSession, user: User) -> Candi
     placeholder_name = user.email.split("@")[0]
     candidate = Candidate(user_id=user.id, first_name=placeholder_name, last_name="")
     db.add(candidate)
-    await db.flush()
+    # commit همین‌جا و فقط در صورت ساخت: مسیرهای فقط‌خواندنی (مثل GET /candidates/me) دیگر نیازی
+    # به commit جداگانه ندارند — یافته‌ی تست بار: یک رفت‌وبرگشت اضافه به دیتابیس در هر درخواست
+    await db.commit()
     return candidate

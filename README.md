@@ -16,6 +16,7 @@
 - [متغیرهای محیطی](#متغیرهای-محیطی)
 - [API و امکانات](#api-و-امکانات)
 - [خط لوله‌ی هوش مصنوعی رزومه](#خط-لولهی-هوش-مصنوعی-رزومه)
+- [تست بار و امنیت](#تست-بار-و-امنیت)
 - [زیرساخت: Docker، مانیتورینگ، CI/CD و استقرار](#زیرساخت-docker-مانیتورینگ-cicd-و-استقرار)
 - [ساختار ریپو](#ساختار-ریپو)
 - [محدودیت‌های شناخته‌شده](#محدودیتهای-شناختهشده)
@@ -292,6 +293,41 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 
 ---
 
+## تست بار و امنیت
+
+### تست بار (Locust) — `loadtest/`
+
+```bash
+# ۱) محیط تست بار: ۶ نسخه‌ی بک‌اند پشت Nginx + Locust توزیع‌شده (۱ Master + ۴ Worker)
+docker compose -f docker-compose.yml -f loadtest/docker-compose.loadtest.yml up -d --scale backend_api=6 --scale locust_worker=4
+# ۲) ساخت ۵۰۰۰ حساب کارجو + یک آگهی (PowerShell: Get-Content loadtest/seed_loadtest_data.py -Raw | docker compose exec -T backend_api python - seed 5000)
+docker compose exec -T backend_api python - seed 5000 < loadtest/seed_loadtest_data.py
+# ۳) http://localhost:8089 → شروع (پیش‌فرض: ۵۰۰۰ کاربر، ۲۵ کاربر جدید در ثانیه) — هم‌زمان Grafana «کارایی API»
+# ۴) پاک‌سازی داده‌ها و بازگشت به محیط عادی
+docker compose exec -T backend_api python - cleanup < loadtest/seed_loadtest_data.py
+docker compose up -d --scale backend_api=1 --remove-orphans
+```
+
+- سناریو: هر کاربر مجازی با حساب یکتای خودش وارد می‌شود، یک رزومه‌ی PDF آپلود می‌کند و بعد آگهی‌ها/رهگیر/پروفایل را مرور می‌کند. فاصله‌ی بین کلیک‌ها با `LOADTEST_MIN_WAIT`/`LOADTEST_MAX_WAIT` (پیش‌فرض ۵ تا ۱۵ ثانیه).
+- Rate Limit واقعی روشن می‌ماند — هر کاربر مجازی IP جدا دارد (`FORWARDED_ALLOW_IPS` فقط در همین محیط تست).
+- پایان اجرا یک خط `[ACCEPTANCE PASS/FAIL]` (صدک ۹۵ زیر ۲ ثانیه و صفر 502/504) چاپ می‌کند.
+- **نتایج و یافته‌ها:** [`loadtest/RESULTS.md`](loadtest/RESULTS.md) — در اوج ۵۰۰۰ کاربر: صدک ۹۵ = ۱۰۰ms، صفر خطا.
+
+### تست امنیت (OWASP ZAP) — `security/`
+
+```bash
+# توکن Admin مخصوص اسکن (۳ ساعته) — PowerShell: $env:ZAP_TOKEN = (Get-Content security/zap_token.py -Raw | docker compose exec -T backend_api python -)
+export ZAP_TOKEN=$(docker compose exec -T backend_api python - < security/zap_token.py)
+docker compose -f docker-compose.yml -f security/docker-compose.zap.yml run --rm zap_api_scan       # اسکن کامل API (Active)
+docker compose -f docker-compose.yml -f security/docker-compose.zap.yml run --rm zap_baseline_scan  # اسکن پایه‌ی سایت
+```
+
+- اسکن API از روی OpenAPI بک‌اند همه‌ی مسیرها را (با توکن Admin) پیدا و به آن‌ها حمله‌ی آزمایشی می‌فرستد؛ درخواست‌ها مثل کاربر واقعی از Nginx عبور می‌کنند.
+- گزارش‌ها (HTML/JSON/Markdown) در `security/reports/`. **نتایج:** [`security/RESULTS.md`](security/RESULTS.md).
+- اسکن فعال داده‌ی آزمایشی می‌سازد — فقط روی محیط تست اجرا شود.
+
+---
+
 ## زیرساخت: Docker، مانیتورینگ، CI/CD و استقرار
 
 ### ایمیج‌ها و Compose
@@ -394,7 +430,9 @@ sudo mkdir -p /opt/ats-smart && sudo chown $USER /opt/ats-smart
 ├── tests/                   # unit/ (تست‌های واحد) · integration/ (API + دیتابیس موقت)
 ├── frontend/                # فرانت‌اند React (+ Dockerfile و nginx.conf)
 ├── monitoring/              # Prometheus (+ alerts.yml)، Alertmanager، Grafana (provisioning + داشبوردها)
-├── deploy/                  # docker-compose.prod.yml، deploy.sh، compose.sh، nginx/gateway.conf
+├── deploy/                  # docker-compose.prod.yml، deploy.sh، compose.sh، nginx/ (gateway + nginx.conf)
+├── loadtest/                # Locust: locustfile، داده‌ی تست، compose محیط تست بار، RESULTS.md
+├── security/                # OWASP ZAP: compose اسکن، توکن اسکنر، RESULTS.md
 ├── .github/workflows/       # ci-cd.yml
 ├── Dockerfile · docker-compose.yml
 ├── requirements.txt         # وابستگی‌های Production

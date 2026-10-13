@@ -209,10 +209,13 @@ async def paginate_by_cursor(
             fetch_query = fetch_query.where(tuple_(sort_column, id_column) > boundary)
 
     order_by_cols = (sort_column.desc(), id_column.desc()) if fetch_descending else (sort_column.asc(), id_column.asc())
-    fetch_query = fetch_query.order_by(*order_by_cols).limit(limit)
+    # یک ردیف بیشتر از limit خوانده می‌شود: وجودش یعنی در «جهت fetch» صفحه‌ی دیگری هست — بدون کوئری جدا
+    fetch_query = fetch_query.order_by(*order_by_cols).limit(limit + 1)
 
     result = await db.execute(fetch_query)
     items = [_unwrap_row(row) for row in result.all()]
+    has_more_in_fetch_direction = len(items) > limit
+    items = items[:limit]
 
     if direction == "prev":
         items.reverse()  # برگرداندن به همان ترتیب نمایش عادی (descending/ascending اصلی)
@@ -222,26 +225,24 @@ async def paginate_by_cursor(
 
     first_item = items[0]
     last_item = items[-1]
-
-    # آیا فراتر از آخرین آیتم این صفحه (در جهت نمایش) رکورد دیگری هست؟
     next_boundary = (_extract(last_item, sort_column), _extract(last_item, id_column))
-    next_probe = query
-    next_probe = (
-        next_probe.where(tuple_(sort_column, id_column) < next_boundary)
-        if descending
-        else next_probe.where(tuple_(sort_column, id_column) > next_boundary)
-    )
-    has_next = (await db.execute(next_probe.limit(1))).first() is not None
-
-    # آیا پیش از اولین آیتم این صفحه (در جهت نمایش) رکورد دیگری هست؟
     prev_boundary = (_extract(first_item, sort_column), _extract(first_item, id_column))
-    prev_probe = query
-    prev_probe = (
-        prev_probe.where(tuple_(sort_column, id_column) > prev_boundary)
-        if descending
-        else prev_probe.where(tuple_(sort_column, id_column) < prev_boundary)
-    )
-    has_previous = (await db.execute(prev_probe.limit(1))).first() is not None
+
+    async def exists_beyond(boundary: tuple, after: bool) -> bool:
+        """آیا رکوردی بعد (after=True) یا قبل از boundary (در ترتیب نمایش) وجود دارد؟"""
+        go_lower = descending if after else not descending
+        condition = tuple_(sort_column, id_column) < boundary if go_lower else tuple_(sort_column, id_column) > boundary
+        return (await db.execute(query.where(condition).limit(1))).first() is not None
+
+    # یافته‌ی تست بار: قبلاً هر صفحه ۳ کوئری داشت (صفحه + دو کوئری بررسی صفحه‌ی بعد/قبل). حالا
+    # جهت fetch از همان ردیف اضافه معلوم است و «صفحه‌ی قبل» در اولین صفحه (بدون cursor) قطعاً وجود
+    # ندارد — پس رایج‌ترین درخواست (صفحه‌ی اول) فقط ۱ کوئری می‌زند، با نتیجه‌ای دقیقاً یکسان.
+    if direction == "next":
+        has_next = has_more_in_fetch_direction
+        has_previous = params.cursor is not None and await exists_beyond(prev_boundary, after=False)
+    else:
+        has_previous = has_more_in_fetch_direction
+        has_next = await exists_beyond(next_boundary, after=True)
 
     next_cursor = encode_cursor(*next_boundary) if has_next else None
     previous_cursor = encode_cursor(*prev_boundary) if has_previous else None
