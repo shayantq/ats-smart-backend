@@ -16,6 +16,7 @@ BASE_URL="${BASE_URL%/}"
 EXPECTED_VERSION="${2:-}"
 PROMETHEUS_URL="${PROMETHEUS_URL:-}"
 LB_REQUESTS="${LB_REQUESTS:-90}"
+PY="$(command -v python3 || command -v python)"
 
 failures=0
 pass() { printf '  \033[1;32m✔\033[0m %s\n' "$*"; }
@@ -86,21 +87,25 @@ fetch /grafana/api/health
 
 if [[ -n "${PROMETHEUS_URL}" ]]; then
     step "۶. توزیع بار (Load Balancing) بین نسخه‌های بک‌اند"
-    for _ in $(seq 1 "${LB_REQUESTS}"); do
-        curl -s -o /dev/null --max-time 10 "${BASE_URL}/api/v1/health/ready" &
-    done
-    wait
-    echo "  ${LB_REQUESTS} درخواست هم‌زمان فرستاده شد؛ انتظار برای Scrape بعدی Prometheus..."
-    sleep 20
+    # نسخه‌های تازه‌مستقرشده تا کشف (DNS SD) و Scrape شدن توسط Prometheus حدود ۲۵ ثانیه زمان می‌خواهند
     query='sum by (instance) (increase(http_requests_total{route="/api/v1/health/ready"}[1m]))'
-    result="$(curl -s --max-time 10 -G "${PROMETHEUS_URL}/api/v1/query" --data-urlencode "query=${query}")"
-    distribution="$(grep -o '"instance":"[^"]*"},"value":\[[^,]*,"[^"]*"' <<< "${result}" \
-        | sed 's/"instance":"\([^"]*\)"},"value":\[[^,]*,"\([^"]*\)"/\1 \2/')"
     active=0
+    for attempt in 1 2 3 4 5 6; do
+        for _ in $(seq 1 "${LB_REQUESTS}"); do
+            curl -s -o /dev/null --max-time 10 "${BASE_URL}/api/v1/health/ready" &
+        done
+        wait
+        echo "  تلاش ${attempt}: ${LB_REQUESTS} درخواست هم‌زمان؛ انتظار برای Scrape بعدی Prometheus..."
+        sleep 20
+        result="$(curl -s --max-time 10 -G "${PROMETHEUS_URL}/api/v1/query" --data-urlencode "query=${query}")"
+        distribution="$("${PY}" -c 'import json, sys; [print(r["metric"].get("instance", "?"), r["value"][1]) for r in json.load(sys.stdin)["data"]["result"]]' <<< "${result}" 2>/dev/null)"
+        active="$(awk '$2 > 0' <<< "${distribution}" | grep -c . || true)"
+        (( active >= 2 )) && break
+    done
     while read -r instance value; do
         [[ -z "${instance}" ]] && continue
-        printf '    نسخه‌ی بک‌اند %-20s ≈ %.0f درخواست\n' "${instance}" "${value}"
-        awk "BEGIN { exit !(${value} > 0) }" && active=$((active + 1))
+        printf '    نسخه‌ی بک‌اند %-20s ≈ %.0f درخواست
+' "${instance}" "${value}"
     done <<< "${distribution}"
     (( active >= 2 )) && pass "بار بین ${active} نسخه‌ی بک‌اند پخش شد" \
         || fail "بار فقط به ${active} نسخه رسید (انتظار حداقل ۲)"
