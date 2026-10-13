@@ -17,7 +17,7 @@ from app.core.resume_parser import parse_resume_text
 from app.core.skill_engine import run_skill_engine
 from app.core.storage import resolve_local_media_path
 from app.core.text_extraction import UnreadableResumeFileError, extract_raw_text
-from app.db.session import AsyncSessionLocal
+from app.db.session import worker_session_factory
 from app.models import Application, Candidate, Job, Resume
 
 logger = logging.getLogger("ats_smart.tasks.resume")
@@ -30,12 +30,17 @@ def process_resume_task(application_id: str, file_url: str) -> None:
     نقطه‌ی ورود Worker. تابع همگام (Sync) است چون RQ داخلی sync عمل می‌کند؛
     خودِ منطق اصلی async است (چون از همان AsyncSession مشترک پروژه استفاده
     می‌کند)، پس با asyncio.run() یک event loop مستقل برای اجرای این Job
-    ساخته می‌شود.
+    ساخته می‌شود — و اتصال دیتابیس هم مخصوص همین loop (بنگرید worker_session_factory).
     """
-    asyncio.run(_process_resume_async(application_id, file_url))
+    asyncio.run(_run_job(application_id, file_url))
 
 
-async def _process_resume_async(application_id: str, file_url: str) -> None:
+async def _run_job(application_id: str, file_url: str) -> None:
+    async with worker_session_factory() as session_factory:
+        await _process_resume_async(application_id, file_url, session_factory)
+
+
+async def _process_resume_async(application_id: str, file_url: str, session_factory) -> None:
     """
     مرحله ۱: دانلود فایل رزومه از فضای ذخیره‌سازی، استخراج متن خام آن (مستقیم
     یا از طریق OCR — بنگرید app/core/text_extraction.py)، و ذخیره در raw_text.
@@ -111,7 +116,7 @@ async def _process_resume_async(application_id: str, file_url: str) -> None:
             error,
         )
 
-    async with AsyncSessionLocal() as db:
+    async with session_factory() as db:
         result = await db.execute(select(Resume).where(Resume.file_url == file_url))
         resume = result.scalar_one_or_none()
 

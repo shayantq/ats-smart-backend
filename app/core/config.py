@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "ATS Smart"
     API_V1_PREFIX: str = "/api/v1"
     ENVIRONMENT: str = "development"
+    # نسخه‌ی منتشرشده (sha کامیت؛ هنگام بیلد ایمیج با --build-arg APP_VERSION) — در /health
+    APP_VERSION: str = "dev"
 
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/smart_ats_db"
     REDIS_URL: str = "redis://localhost:6379/0"

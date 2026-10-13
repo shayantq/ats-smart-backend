@@ -29,7 +29,6 @@ cd "${PROJECT_DIR}"
 : "${BACKEND_IMAGE:?BACKEND_IMAGE تنظیم نشده است}"
 : "${FRONTEND_IMAGE:?FRONTEND_IMAGE تنظیم نشده است}"
 
-PROJECT_NAME="ats-smart"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-180}"
 RELEASE_ENV="deploy/release.env"
 CANDIDATE_RELEASE_ENV="deploy/release.env.next"
@@ -52,6 +51,11 @@ EOF
 compose() {
     RELEASE_ENV_FILE="${CANDIDATE_RELEASE_ENV}" bash ./deploy/compose.sh "$@"
 }
+
+# نام پروژه‌ی Compose (پیش‌فرض ats-smart؛ با COMPOSE_PROJECT_NAME در .env قابل تغییر — مثلاً وقتی
+# محیط Production کنار محیط Staging روی یک ماشین اجرا می‌شود)
+PROJECT_NAME="$(compose config 2>/dev/null | sed -n 's/^name: //p' | head -n 1)"
+[[ -n "${PROJECT_NAME}" ]] || fail "پیکربندی Compose نامعتبر است: ./deploy/compose.sh config"
 
 # شناسه‌ی کانتینرهای در حال اجرای یک سرویس
 service_containers() {
@@ -84,7 +88,7 @@ rolling_update() {
     old_count="$(grep -c . <<< "${old_ids}" || true)"
 
     if (( old_count == 0 )); then
-        log "${service}: نسخه‌ی قبلی وجود ندارد (اولین استقرار) — راه‌اندازی مستقیم"
+        log "${service}: نسخه‌ی قبلی وجود ندارد (اولین استقرار) — راه‌اندازی مستقیم (تعداد نسخه‌ها: scale در compose)"
         compose up -d --no-deps --no-build "${service}"
         for container_id in $(service_containers "${service}"); do
             wait_until_healthy "${container_id}" || fail "${service} سالم بالا نیامد. لاگ: ./deploy/compose.sh logs ${service}"
@@ -136,6 +140,12 @@ compose up -d --no-deps --no-build --wait postgres_db redis_cache
 compose run --rm --no-deps migrate
 
 log "۳/۵ Rolling Update بک‌اند و فرانت‌اند"
+# پیکربندی جدید Gateway (توزیع بار، Timeoutها) باید «پیش از» جابه‌جایی نسخه‌ها فعال باشد —
+# reload بدون قطع اتصال‌های جاری انجام می‌شود (worker های قدیمی nginx کارشان را تمام می‌کنند)
+if [[ -n "$(service_containers gateway)" ]]; then
+    compose exec -T gateway nginx -t > /dev/null 2>&1 || fail "پیکربندی جدید Gateway نامعتبر است (nginx -t)"
+    compose exec -T gateway nginx -s reload > /dev/null
+fi
 rolling_update backend_api
 rolling_update frontend
 
@@ -145,7 +155,11 @@ compose up -d --no-deps --no-build worker scheduler
 log "۵/۵ مانیتورینگ و Gateway"
 compose up -d --no-deps --no-build \
     prometheus alertmanager grafana node_exporter postgres_exporter redis_exporter gateway
-# ایمیج کوچک ابزار بک‌آپ روی خود سرور ساخته می‌شود (backup/Dockerfile)؛ کار در حال اجرا با قفل محافظت می‌شود
+# ایمیج کوچک ابزار بک‌آپ روی خود سرور ساخته می‌شود (backup/Dockerfile)؛ کار در حال اجرا با قفل محافظت می‌شود.
+# شبیه‌ساز Offsite فقط اگر پروفایل local-offsite فعال باشد (محیط بدون Offsite واقعی)
+if compose config --services | grep -qx offsite_storage; then
+    compose up -d --no-deps --build offsite_storage
+fi
 compose up -d --no-deps --build backup
 # پیکربندی‌های mount‌شده (prometheus.yml، alerts.yml، gateway.conf ...) بدون ری‌استارت بارگذاری مجدد می‌شوند
 compose kill -s HUP prometheus alertmanager > /dev/null 2>&1 || true
@@ -153,8 +167,11 @@ compose exec -T gateway nginx -s reload > /dev/null 2>&1 || true
 
 mv "${CANDIDATE_RELEASE_ENV}" "${RELEASE_ENV}"
 
-# ایمیج‌های بلااستفاده‌ی قدیمی‌تر از ۷ روز (نسخه‌های اخیر برای Rollback دستی می‌مانند)
-docker image prune -af --filter "until=168h" > /dev/null || true
+# ایمیج‌های بلااستفاده‌ی قدیمی‌تر از ۷ روز (نسخه‌های اخیر برای Rollback دستی می‌مانند).
+# PRUNE_IMAGES=0 روی ماشینی که پروژه‌های دیگری هم دارد (مثلاً Runner محلی)
+if [[ "${PRUNE_IMAGES:-1}" == "1" ]]; then
+    docker image prune -af --filter "until=168h" > /dev/null || true
+fi
 
 log "✅ استقرار با موفقیت انجام شد"
 compose ps

@@ -107,6 +107,10 @@ COPY alembic ./alembic
 COPY app ./app
 RUN mkdir -p /app/media && chown app:app /app/media
 
+# نسخه‌ی منتشرشده (sha کامیت) — آخرین لایه تا تغییرش کش لایه‌های قبلی را باطل نکند
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 USER app
 
 EXPOSE 8000

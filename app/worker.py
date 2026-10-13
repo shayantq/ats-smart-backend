@@ -15,6 +15,7 @@ threading.Timer به‌جای سیگنال یونیکسی) استفاده می�
 """
 
 import logging
+import sys
 
 from redis import Redis
 from rq import SimpleWorker
@@ -34,7 +35,9 @@ class WindowsCompatibleWorker(SimpleWorker):
 def main() -> None:
     redis_connection = Redis.from_url(settings.REDIS_URL)
     worker = WindowsCompatibleWorker(["default"], connection=redis_connection)
-    worker.work()
+    # with_scheduler: تلاش مجدد کارهای ناموفق با فاصله‌ی زمانی (Retry در app/core/queue.py) — زمان‌بند
+    # داخلی RQ پردازه‌ی جدا می‌سازد که روی ویندوز (توسعه‌ی محلی بدون Docker) پشتیبانی نمی‌شود
+    worker.work(with_scheduler=sys.platform != "win32")
 
 
 if __name__ == "__main__":

@@ -21,8 +21,10 @@ services:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD را در .env سرور تنظیم کنید}
 
+  # چند نسخه‌ی هم‌زمان پشت Nginx = توزیع بار (Load Balancing) + تحمل خرابی یک کانتینر
   backend_api:
     ports: !reset []
+    scale: ${BACKEND_REPLICAS:-3}
     environment:
       ENVIRONMENT: production
       # درخواست‌ها فقط از Nginx داخلی می‌رسند (پورت بک‌اند بیرون باز نیست)، پس
@@ -44,15 +46,16 @@ services:
 
   frontend:
     ports: !reset []
+    scale: ${FRONTEND_REPLICAS:-2}
 
   prometheus:
     # فقط از خودِ سرور (مثلاً با SSH Tunnel) — نه از اینترنت
     ports: !override
-      - "127.0.0.1:9090:9090"
+      - "${PROMETHEUS_BIND:-127.0.0.1:9090}:9090"
 
   alertmanager:
     ports: !override
-      - "127.0.0.1:9093:9093"
+      - "${ALERTMANAGER_BIND:-127.0.0.1:9093}:9093"
     environment:
       OPS_WEBHOOK_TOKEN: ${OPS_WEBHOOK_TOKEN:?OPS_WEBHOOK_TOKEN را در .env سرور تنظیم کنید}
 
@@ -72,9 +75,8 @@ services:
       RCLONE_CONFIG_OFFSITE_TYPE: ${OFFSITE_TYPE:-s3}
       RCLONE_CONFIG_OFFSITE_HOST: ${OFFSITE_SFTP_HOST:-}
       OFFSITE_SFTP_PASSWORD: ${OFFSITE_SFTP_PASSWORD:-}
-    networks: !override
-      - ats_network
 
+  # شبیه‌ساز Offsite فقط وقتی Offsite واقعی در دسترس نیست (COMPOSE_PROFILES=local-offsite در .env)
   offsite_storage:
     profiles: ["local-offsite"]
 
