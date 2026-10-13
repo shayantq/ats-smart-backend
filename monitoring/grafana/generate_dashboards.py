@@ -337,8 +337,17 @@ api_performance = dashboard(
             unit="reqps",
             x=0,
             y=14,
-            w=24,
             h=9,
+        ),
+        timeseries(
+            "توزیع بار بین نسخه‌های بک‌اند (Load Balancing)",
+            [('sum by (instance) (rate(http_requests_total{job="backend_api"}[1m]))', "{{instance}}")],
+            unit="reqps",
+            x=12,
+            y=14,
+            h=9,
+            description="هر خط یک کانتینر بک‌اند پشت Nginx؛ خطوط هم‌سطح = پخش یکنواخت بار. حین استقرار، "
+            "نسخه‌های جدید کنار قبلی‌ها ظاهر می‌شوند و قدیمی‌ها بدون افت ترافیک کنار می‌روند.",
         ),
         row("زمان پاسخ (Latency)", 23),
         timeseries(

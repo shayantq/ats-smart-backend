@@ -417,11 +417,12 @@ Alertmanager هر هشدار (و «برطرف شد») را با `OPS_WEBHOOK_TOK
 
 ```
 lint (Black + Flake8) ─► test (Pytest + مایگریشن روی PostgreSQL/Redis واقعی) ─┐
-frontend (Jest + TypeScript + Vite build) ─────────────────────────────────┴─► e2e (Playwright روی کل سیستم) ─► build-and-push ─► deploy ─► report
+frontend (Jest + TypeScript + Vite build) ─────────────────────────────────┴─► e2e (Playwright روی کل سیستم)
+      ─► build-and-push ─► deploy (SSH)  یا  deploy-self-hosted (Runner روی سرور) ─► Sanity Check روی دامنه ─► report
 ```
 
-- روی هر Push/PR به `develop`. شکست **هر** مرحله، مراحل بعدی را متوقف می‌کند — کد خراب به Docker Hub یا سرور نمی‌رسد.
-- `build-and-push` و `deploy` فقط روی Push به `develop`؛ ایمیج‌ها با تگ `sha-<commit>` (برای Rollback) و `develop`.
+- **مدل برنچ‌ها:** `develop` = Staging (هر Push/PR: همه‌ی تست‌ها) · `main` = Production (Merge روی `main` = استقرار). شکست **هر** مرحله، مراحل بعدی را متوقف می‌کند — کد خراب به سرور نمی‌رسد.
+- ایمیج‌ها با تگ `sha-<commit>` (برای Rollback) ساخته می‌شوند و همین تگ در `/api/v1/health` (فیلد `version`) دیده می‌شود — Sanity Check بررسی می‌کند نسخه‌ی روی دامنه دقیقاً همان کامیت Merge‌شده باشد.
 - **گزارش:** Job Summary همان اجرا + اعلان در «اعلان‌های فنی» داخل سایت. تا وقتی Secrets انتشار/استقرار تنظیم نشده‌اند، آن مراحل با پیام توضیحی Skip می‌شوند.
 
 <details>
@@ -447,7 +448,25 @@ sudo mkdir -p /opt/ats-smart && sudo chown $USER /opt/ats-smart
 # GRAFANA_ADMIN_PASSWORD, PUBLIC_BASE_URL=https://ats.example.com, ENVIRONMENT=production, SMTP_*
 ```
 
-از آن به بعد هر Push به `develop` (بعد از سبز شدن تست‌ها) خودکار مستقر می‌شود: CI فایل‌های زیرساخت را با SSH منتقل و `deploy/deploy.sh` را اجرا می‌کند.
+از آن به بعد هر Merge روی `main` (بعد از سبز شدن تست‌ها) خودکار مستقر می‌شود: CI فایل‌های زیرساخت را منتقل و `deploy/deploy.sh` را اجرا می‌کند.
+
+**سرور بدون دسترسی SSH از بیرون (یا Production محلی):** یک GitHub Runner خودمیزبان روی خود سرور با برچسب `ats-production` (Settings ← Actions ← Runners ← New self-hosted runner) و متغیرهای مخزن (Settings ← Secrets and variables ← Actions ← Variables):
+
+| متغیر | مثال |
+|---|---|
+| `PRODUCTION_RUNNER` | `self-hosted` |
+| `DEPLOY_PATH` | `/opt/ats-smart` یا `C:/ats-production` (پوشه‌ای که `.env` سرور در آن است) |
+| `PRODUCTION_URL` | `https://ats.example.com` |
+| `PRODUCTION_PROMETHEUS_URL` (اختیاری) | `http://127.0.0.1:9090` — برای بررسی توزیع بار در Sanity Check |
+
+Job `deploy-self-hosted` ایمیج‌ها را از همان کامیت روی سرور می‌سازد، **حین استقرار ترافیک کاربر واقعی را شبیه‌سازی می‌کند** (`deploy/traffic_probe.py`: ۲۰ کاربر هم‌زمان؛ حتی یک درخواست ناموفق = شکست) و بعد Sanity Check را روی دامنه اجرا و نتیجه را به اعلان‌های داخل سایت تیم فنی می‌فرستد.
+
+**ابزارهای انتشار:**
+```bash
+bash deploy/staging_check.sh                                   # پیش از Merge: کانتینرها، هشدارها، 5xx، صف ناموفق، لاگ خطا در Staging
+bash deploy/sanity_check.sh https://ats.example.com sha-1a2b3c4 # پس از استقرار: دامنه، هدرهای امنیتی، API، دیتابیس/Redis، توزیع بار
+python deploy/traffic_probe.py --url https://ats.example.com    # پایش زنده‌ی ترافیک (Ctrl+C یا --duration)
+```
 
 1. در Production فقط `gateway` (Nginx) پورت عمومی دارد و در استقرار عادی جایگزین نمی‌شود (`deploy/docker-compose.prod.yml`).
 2. برای `backend_api` و `frontend`، نسخه‌ی جدید **کنار** نسخه‌ی فعلی بالا می‌آید و تا Healthcheck سبز نشود ترافیک نمی‌گیرد.

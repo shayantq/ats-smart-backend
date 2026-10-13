@@ -389,9 +389,10 @@ volumes:
 # ---------------------------------------------------------------------------
 networks:
   ats_network:
-    name: ats_network
+    # نام قابل تغییر: محیط Production می‌تواند کنار محیط توسعه/Staging روی یک ماشین اجرا شود
+    name: ${ATS_NETWORK_NAME:-ats_network}
     driver: bridge
   # شبکه‌ی جدای مسیر بک‌آپ: سرور Offsite از هیچ سرویس دیگری (API، دیتابیس، ...) در دسترس نیست
   offsite_network:
-    name: ats_offsite_network
+    name: ${ATS_OFFSITE_NETWORK_NAME:-ats_offsite_network}
     driver: bridge

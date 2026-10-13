@@ -12,12 +12,18 @@ import logging
 from typing import Any, Callable
 
 from redis import Redis
-from rq import Queue
+from rq import Queue, Retry
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 
 logger = logging.getLogger("ats_smart.queue")
+
+# کارهای ارسال ایمیل به یک سرویس بیرونی (SMTP) وابسته‌اند و خطاهای گذرا دارند — محدودیت نرخ ارسال،
+# قطعی لحظه‌ای شبکه. یافته‌ی بازبینی Staging: چند ایمیل OTP با خطای «Too many emails per second»
+# برای همیشه از دست رفتند. این کارها خودکار با فاصله‌ی ۳۰ ثانیه، ۲ دقیقه و ۱۰ دقیقه دوباره اجرا می‌شوند.
+TRANSIENT_FAILURE_RETRY = Retry(max=3, interval=[30, 120, 600])
+_RETRY_BY_DEFAULT_MODULES = {"app.tasks.notifications"}
 
 _redis_sync_client: Redis | None = None
 _task_queue: Queue | None = None
@@ -53,6 +59,8 @@ async def enqueue_task(func: Callable, *args: Any, **kwargs: Any) -> str | None:
     اگر Redis در دسترس نبود، خطا فقط لاگ می‌شود و None برگردانده می‌شود —
     شکست یک کار جانبی/پس‌زمینه نباید کل درخواست اصلی کاربر را fail کند.
     """
+    if "retry" not in kwargs and getattr(func, "__module__", "") in _RETRY_BY_DEFAULT_MODULES:
+        kwargs["retry"] = TRANSIENT_FAILURE_RETRY
     try:
         job = await run_in_threadpool(get_task_queue().enqueue, func, *args, **kwargs)
         logger.info("کار جدید با موفقیت به صف Redis اضافه شد: job_id=%s", job.id)
