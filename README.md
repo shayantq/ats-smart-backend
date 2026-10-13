@@ -17,6 +17,7 @@
 - [API و امکانات](#api-و-امکانات)
 - [خط لوله‌ی هوش مصنوعی رزومه](#خط-لولهی-هوش-مصنوعی-رزومه)
 - [تست بار و امنیت](#تست-بار-و-امنیت)
+- [پشتیبان‌گیری و بازیابی فاجعه (DR)](#پشتیبانگیری-و-بازیابی-فاجعه-dr)
 - [زیرساخت: Docker، مانیتورینگ، CI/CD و استقرار](#زیرساخت-docker-مانیتورینگ-cicd-و-استقرار)
 - [ساختار ریپو](#ساختار-ریپو)
 - [محدودیت‌های شناخته‌شده](#محدودیتهای-شناختهشده)
@@ -328,6 +329,60 @@ docker compose -f docker-compose.yml -f security/docker-compose.zap.yml run --rm
 
 ---
 
+## پشتیبان‌گیری و بازیابی فاجعه (DR)
+
+کد و پیکربندی: پوشه‌ی `backup/` · سرویس‌های `backup` (زمان‌بندی خودکار)، `backup_restore` (فقط با دستور) و `offsite_storage` (شبیه‌ساز Offsite، فقط لوکال).
+
+```
+PostgreSQL ──(archive_command: هر سگمنت WAL)──► wal_archive ─┐
+     │                                                       ├─► backup: zstd ─► age (کلید عمومی) ─► rclone ─► Offsite
+     └──(pg_basebackup / pg_dump)───────────────────────────┘                                          │
+media/resumes ──(tar)──────────────────────────────────────────┘                     backup_restore (کلید خصوصی) ◄─┘
+```
+
+| زمان (وقت تهران) | دستور | محتوا | نگهداری |
+|---|---|---|---|
+| هر شب ۰۲:۰۰ | `ats-backup full` | `pg_basebackup` (فیزیکی، پایه‌ی بازیابی لحظه‌ای) + `pg_dump` (منطقی) | روزانه **۳۰ روز** + اولین بک‌آپ هر ماه تا **۱ سال** |
+| هر ساعت | `ats-backup wal` | سگمنت‌های WAL (بک‌آپ افزایشی) — بیشترین هدررفت داده = **۱ ساعت** | **۲ روز** |
+| جمعه ۰۳:۰۰ | `ats-backup resumes` | فایل‌های رزومه (`media/resumes`) | مثل بک‌آپ کامل |
+
+- **رمزنگاری در لحظه‌ی تولید:** خروجی هر ابزار مستقیماً از `zstd` و `age` عبور می‌کند (`producer | zstd | age`)؛ نسخه‌ی رمزنگاری‌نشده هرگز روی دیسک نوشته نمی‌شود. سرور فقط **کلید عمومی** را دارد — حتی نفوذ کامل به سرور هم بک‌آپ‌ها را قابل‌خواندن نمی‌کند. کلید خصوصی فقط هنگام بازیابی و جدا از سرور استفاده می‌شود.
+- **Offsite:** با rclone (S3، SFTP، Google Drive، ...). در Production پیش‌فرض S3 است (`OFFSITE_*` در `.env`)؛ در لوکال سرویس `offsite_storage` یک SFTP روی Volume و شبکه‌ی جدای خودش است.
+- **سیاست نگهداری** (`backup/retention.py`، تست: `tests/unit/test_backup_retention.py`) پس از هر بک‌آپ خودکار اجرا می‌شود و فایل‌های قدیمی را از Offsite حذف می‌کند. جدیدترین بک‌آپ کامل و WAL های بعد از آن هرگز حذف نمی‌شوند. پیش‌نمایش: `docker compose exec backup ats-backup retention --dry-run`
+- **هشدار** (`alerts.yml`، گروه `backup`): `BackupWalStale` (۲ ساعت بدون بک‌آپ افزایشی)، `BackupFullStale` (۲۶ ساعت)، `BackupResumesStale` (۸ روز)، `BackupNeverSucceeded` — مثل بقیه‌ی هشدارها به اعلان‌های داخل سایت تیم فنی.
+
+**راه‌اندازی یک‌باره‌ی کلیدها** (روی سیستم مدیر، نه سرور):
+```bash
+docker run --rm --entrypoint age-keygen ats-smart-backup:local > age-identity.txt   # کلید خصوصی — در جای امن نگه دارید
+grep 'public key' age-identity.txt                                                 # کلید عمومی: age1...
+# لوکال: کلید عمومی → backup/secrets/public/age-recipient.txt و کلید خصوصی → backup/secrets/private/age-identity.txt
+# سرور:  فقط کلید عمومی → BACKUP_AGE_RECIPIENT در .env  (پوشه‌ی backup/secrets/ در .gitignore است)
+```
+
+**دستورها:**
+```bash
+docker compose logs -f backup                               # گزارش اجرای بک‌آپ‌های زمان‌بندی‌شده
+docker compose exec backup ats-backup full                  # اجرای دستی (wal / resumes / retention / list هم هست)
+docker compose run --rm backup_restore list                 # فهرست بک‌آپ‌های Offsite
+docker compose run --rm backup_restore drill                # تمرین بازیابی: بازیابی کامل از Offsite در یک نمونه‌ی جدید
+bash backup/dr_drill.sh                                     # تمرین کامل با اثبات معیارها (نشانگرهای A/B/C)
+```
+
+**نتیجه‌ی آخرین تمرین (`dr_drill.sh`):** همه‌ی فایل‌های Offsite با سرآیند `age-encryption.org/v1` و بدون کلید خصوصی غیرقابل‌خواندن · بازیابی در یک PostgreSQL کاملاً جدید فقط از روی Offsite: نشانگر A (پیش از بک‌آپ کامل) و B (فقط در WAL ساعتی) بازیابی شدند و C (پس از آخرین بک‌آپ ساعتی) نه — یعنی هدررفت حداکثر به اندازه‌ی بازه‌ی بک‌آپ ساعتی · زمان بازیابی (RTO) دیتابیس فعلی: ~۵ ثانیه · فایل رزومه با SHA-256 یکسان بازیابی شد. (اگر تمرین دقیقاً سر ساعت اجرا شود، بک‌آپ ساعتی خودکار ممکن است C را هم منتقل کند.)
+
+**بازیابی واقعی پس از فاجعه** (سرور جدید، فقط با Offsite و کلید خصوصی):
+```bash
+docker compose stop backend_api worker scheduler backup postgres_db
+docker compose rm -f postgres_db && docker volume rm ats-smart_postgres_data   # فقط اگر داده‌ی فعلی خراب/از دست رفته است
+docker volume create ats-smart_postgres_data
+# آخرین لحظه‌ی موجود، یا یک زمان مشخص: --target-time 2026-10-13T10:30:00+03:30
+docker compose run --rm -v ats-smart_postgres_data:/restore/pgdata backup_restore restore-pitr
+docker compose up -d
+```
+`restore-pitr` آخرین بک‌آپ کامل پیش از زمان هدف را دریافت، WAL های بعد از آن را یکی‌یکی از Offsite رمزگشایی و اعمال می‌کند، دیتابیس را Promote می‌کند و یک پوشه‌ی داده‌ی آماده تحویل می‌دهد. فایل‌های رزومه: `rclone cat offsite:ats-backups/resumes/<stamp>.tar.zst.age | age -d -i <کلید> | zstd -d | tar -x -C <media>`.
+
+---
+
 ## زیرساخت: Docker، مانیتورینگ، CI/CD و استقرار
 
 ### ایمیج‌ها و Compose
@@ -433,6 +488,7 @@ sudo mkdir -p /opt/ats-smart && sudo chown $USER /opt/ats-smart
 ├── deploy/                  # docker-compose.prod.yml، deploy.sh، compose.sh، nginx/ (gateway + nginx.conf)
 ├── loadtest/                # Locust: locustfile، داده‌ی تست، compose محیط تست بار، RESULTS.md
 ├── security/                # OWASP ZAP: compose اسکن، توکن اسکنر، RESULTS.md
+├── backup/                  # بک‌آپ و DR: ats_backup.py (CLI)، retention.py، Dockerfile، crontab، dr_drill.sh
 ├── .github/workflows/       # ci-cd.yml
 ├── Dockerfile · docker-compose.yml
 ├── requirements.txt         # وابستگی‌های Production

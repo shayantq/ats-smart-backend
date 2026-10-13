@@ -325,11 +325,11 @@ jobs:
             ServerAliveInterval 30
           EOF
 
-      # فقط فایل‌های زیرساخت (compose، اسکریپت‌های استقرار، پیکربندی مانیتورینگ) —
+      # فقط فایل‌های زیرساخت (compose، اسکریپت‌های استقرار، پیکربندی مانیتورینگ، ابزار بک‌آپ) —
       # خود برنامه به‌صورت ایمیج از Docker Hub کشیده می‌شود، نه کپی سورس
       - name: Upload deployment files
         run: |
-          tar czf - docker-compose.yml deploy monitoring \
+          tar czf - docker-compose.yml deploy monitoring backup \
             | ssh production "mkdir -p '${DEPLOY_PATH}' && tar xzf - -C '${DEPLOY_PATH}'"
 
       - name: Zero-downtime rollout

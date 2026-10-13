@@ -15,7 +15,17 @@
 
 services:
   postgres_db:
-    command: ["postgres", "-c", "max_connections=300"]
+    # همان تنظیمات آرشیو WAL و pg_hba فایل اصلی (docker-compose.yml) + max_connections بیشتر
+    command:
+      - postgres
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=cp %p /wal_archive/%f.tmp && mv /wal_archive/%f.tmp /wal_archive/%f
+      - -c
+      - max_connections=300
 
   backend_api:
     ports: !reset []

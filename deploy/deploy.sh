@@ -145,6 +145,8 @@ compose up -d --no-deps --no-build worker scheduler
 log "۵/۵ مانیتورینگ و Gateway"
 compose up -d --no-deps --no-build \
     prometheus alertmanager grafana node_exporter postgres_exporter redis_exporter gateway
+# ایمیج کوچک ابزار بک‌آپ روی خود سرور ساخته می‌شود (backup/Dockerfile)؛ کار در حال اجرا با قفل محافظت می‌شود
+compose up -d --no-deps --build backup
 # پیکربندی‌های mount‌شده (prometheus.yml، alerts.yml، gateway.conf ...) بدون ری‌استارت بارگذاری مجدد می‌شوند
 compose kill -s HUP prometheus alertmanager > /dev/null 2>&1 || true
 compose exec -T gateway nginx -s reload > /dev/null 2>&1 || true

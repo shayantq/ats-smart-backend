@@ -1,0 +1,8 @@
+# زمان‌بندی پشتیبان‌گیری (busybox crond، به وقت Asia/Tehran)
+# دقیقه ساعت روزِماه ماه روزِهفته   دستور
+# بک‌آپ کامل شبانه (pg_basebackup + pg_dump) — ساعت ۰۲:۰۰
+0 2 * * *   . /etc/ats-backup.env; ats-backup full >> /proc/1/fd/1 2>&1
+# بک‌آپ افزایشی (WAL) — هر ساعت؛ بیشترین هدررفت داده در فاجعه = ۱ ساعت
+0 * * * *   . /etc/ats-backup.env; ats-backup wal >> /proc/1/fd/1 2>&1
+# بک‌آپ فایل‌های رزومه — هفتگی، جمعه ساعت ۰۳:۰۰
+0 3 * * 5   . /etc/ats-backup.env; ats-backup resumes >> /proc/1/fd/1 2>&1
