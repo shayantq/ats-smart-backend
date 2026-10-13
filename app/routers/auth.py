@@ -17,7 +17,12 @@ from app.core.deps import get_current_user
 from app.core.limiter import limiter
 from app.core.notification_service import notify_new_user_registered
 from app.core.queue import enqueue_task
-from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    hash_password_async,
+    verify_login_password_async,
+)
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import (
@@ -71,7 +76,7 @@ async def register_user(
 
     new_user = User(
         email=payload.email,
-        password_hash=hash_password(payload.password),
+        password_hash=await hash_password_async(payload.password),
         role=payload.role.value,
     )
 
@@ -121,7 +126,8 @@ async def login_user(
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
 
-    if user is None or not verify_password(payload.password, user.password_hash):
+    # Bcrypt در Thread Pool (بدون قفل کردن سرور) و با زمان یکسان برای ایمیل ناموجود — بنگرید security.py
+    if not await verify_login_password_async(payload.password, user.password_hash if user else None):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="ایمیل یا گذرواژه نادرست است.",
@@ -244,7 +250,7 @@ async def reset_password(
             detail="کد بازیابی نامعتبر یا منقضی‌شده است.",
         )
 
-    user.password_hash = hash_password(payload.new_password)
+    user.password_hash = await hash_password_async(payload.new_password)
     db.add(user)
     await db.commit()
 

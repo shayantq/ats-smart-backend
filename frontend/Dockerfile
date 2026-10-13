@@ -36,7 +36,10 @@ ENV BACKEND_UPSTREAM=backend_api:8000 \
     NGINX_RESOLVER=127.0.0.11
 
 RUN rm -f /etc/nginx/conf.d/default.conf
+# ظرفیت اتصال‌های هم‌زمان بالاتر از پیش‌فرض (بنگرید nginx.main.conf)
+COPY nginx.main.conf /etc/nginx/nginx.conf
 COPY nginx.conf /etc/nginx/templates/default.conf.template
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

@@ -63,7 +63,6 @@ async def get_my_profile(
     current_user: User = Depends(get_current_user),
 ) -> CandidateProfileResponse:
     candidate = await get_or_create_candidate_profile(db, current_user)
-    await db.commit()
 
     return CandidateProfileResponse(
         id=candidate.id,
@@ -130,7 +129,6 @@ async def list_my_applications(
     و هم ترتیب صفحه‌بندی را پوشش می‌دهد.
     """
     candidate = await get_or_create_candidate_profile(db, current_user)
-    await db.commit()
 
     query = (
         select(Application.id, Application.job_id, Job.title, Application.current_status, Application.updated_at)
@@ -186,7 +184,6 @@ async def list_my_offers(
     و فیلتر candidate_id + ترتیب از ایندکس مرکب (candidate_id, updated_at, id) استفاده می‌کند.
     """
     candidate = await get_or_create_candidate_profile(db, current_user)
-    await db.commit()
 
     query = (
         select(Application.id, Application.job_id, Job.title, Company.name, Application.updated_at)

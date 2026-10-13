@@ -1,0 +1,57 @@
+# =============================================================================
+# لایه‌ی «محیط تست بار» روی docker-compose.yml اصلی — هرگز در Production استفاده نمی‌شود.
+#
+#   docker compose -f docker-compose.yml -f loadtest/docker-compose.loadtest.yml up -d --scale backend_api=6 --scale locust_worker=4
+#   http://localhost:8089   رابط وب Locust (شروع/توقف تست، نمودارهای زنده، دانلود گزارش)
+#
+# تفاوت‌ها با محیط عادی:
+#   - بک‌اند پورت مستقیم ندارد تا بتوان چند نسخه‌ی هم‌زمان از آن بالا آورد (--scale)؛ ترافیک
+#     دقیقاً مثل Production از Nginx فرانت‌اند عبور می‌کند و بین نسخه‌ها پخش می‌شود.
+#   - FORWARDED_ALLOW_IPS: هر کاربر مجازی Locust با IP جدای خودش (X-Forwarded-For) دیده می‌شود
+#     تا Rate Limit واقعی سرور روشن بماند و روی هر کاربر جدا اعمال شود.
+#   - max_connections پستگرس متناسب با چند نسخه‌ی بک‌اند × Connection Pool هرکدام.
+#   - Locust در حالت توزیع‌شده: یک Master + چند Worker (هرکدام یک پردازه‌ی جدا).
+# =============================================================================
+
+services:
+  postgres_db:
+    command: ["postgres", "-c", "max_connections=300"]
+
+  backend_api:
+    ports: !reset []
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
+      DB_POOL_SIZE: "15"
+      DB_MAX_OVERFLOW: "15"
+
+  locust_master:
+    image: locustio/locust:2.31.8
+    working_dir: /mnt/locust
+    volumes:
+      - ./loadtest:/mnt/locust
+    ports:
+      - "8089:8089"
+    environment:
+      LOADTEST_WORKERS: "4"
+    # مقادیر پیش‌فرض فرم رابط وب: ۵۰۰۰ کاربر، ۲۵ کاربر جدید در ثانیه (رسیدن به اوج در ۲۰۰ ثانیه)
+    command: >-
+      -f /mnt/locust/locustfile.py --master --expect-workers 4
+      --host http://frontend --users 5000 --spawn-rate 25 --run-time 10m
+      --html /mnt/locust/reports/load-report.html --csv /mnt/locust/reports/stats
+    depends_on:
+      - frontend
+    networks:
+      - ats_network
+
+  locust_worker:
+    image: locustio/locust:2.31.8
+    working_dir: /mnt/locust
+    volumes:
+      - ./loadtest:/mnt/locust
+    environment:
+      LOADTEST_WORKERS: "4"
+    command: ["-f", "/mnt/locust/locustfile.py", "--worker", "--master-host", "locust_master"]
+    depends_on:
+      - locust_master
+    networks:
+      - ats_network

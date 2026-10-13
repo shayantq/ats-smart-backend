@@ -14,6 +14,8 @@ import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from starlette.concurrency import run_in_threadpool
+
 from app.core.config import settings
 
 _SAFE_FILENAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
@@ -26,6 +28,11 @@ def _build_object_key(candidate_id: uuid.UUID, original_filename: str) -> str:
     """
     safe_name = _SAFE_FILENAME_PATTERN.sub("_", original_filename) or "resume"
     return f"{candidate_id}/{uuid.uuid4().hex}_{safe_name}"
+
+
+def _write_file(destination: Path, content: bytes) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(content)
 
 
 class StorageBackend(ABC):
@@ -51,8 +58,8 @@ class LocalStorageBackend(StorageBackend):
     async def save_file(self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str) -> str:
         object_key = _build_object_key(candidate_id, filename)
         destination = self._root / object_key
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(content)
+        # I/O دیسک در Thread Pool — تا نوشتن فایل، Event Loop سرور را برای بقیه‌ی درخواست‌ها قفل نکند
+        await run_in_threadpool(_write_file, destination, content)
         return f"{settings.MEDIA_BASE_URL.rstrip('/')}/resumes/{object_key}"
 
 
@@ -106,7 +113,9 @@ class S3StorageBackend(StorageBackend):
 
     async def save_file(self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str) -> str:
         object_key = _build_object_key(candidate_id, filename)
-        self._client.put_object(
+        # boto3 همگام (Sync) است — در Thread Pool تا آپلود شبکه‌ای سرور را قفل نکند
+        await run_in_threadpool(
+            self._client.put_object,
             Bucket=self._bucket,
             Key=object_key,
             Body=content,

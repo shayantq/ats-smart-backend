@@ -71,6 +71,8 @@ services:
       - "${GATEWAY_HTTP_PORT:-80}:80"
     volumes:
       - ./deploy/nginx/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      # ظرفیت اتصال‌های هم‌زمان بالاتر از پیش‌فرض ۱۰۲۴ (یافته‌ی تست بار)
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/gateway-health"]
       interval: 10s
