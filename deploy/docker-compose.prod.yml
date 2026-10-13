@@ -64,6 +64,20 @@ services:
       GF_SERVER_ROOT_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL را در .env سرور تنظیم کنید}/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
 
+  # Offsite واقعی: فضایی بیرون از این سرور (پیش‌فرض S3 یا هر سرویس سازگار) — شبیه‌ساز لوکال خاموش
+  # BACKUP_AGE_RECIPIENT (کلید عمومی age1...) و OFFSITE_S3_* در .env سرور لازم‌اند؛ عمداً اجباری
+  # نشده‌اند تا نبودشان استقرار را نشکند — سرویس خطا می‌دهد و هشدار BackupNeverSucceeded می‌آید
+  backup:
+    environment:
+      RCLONE_CONFIG_OFFSITE_TYPE: ${OFFSITE_TYPE:-s3}
+      RCLONE_CONFIG_OFFSITE_HOST: ${OFFSITE_SFTP_HOST:-}
+      OFFSITE_SFTP_PASSWORD: ${OFFSITE_SFTP_PASSWORD:-}
+    networks: !override
+      - ats_network
+
+  offsite_storage:
+    profiles: ["local-offsite"]
+
   gateway:
     image: nginx:1.27-alpine
     restart: unless-stopped

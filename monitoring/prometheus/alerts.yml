@@ -131,6 +131,45 @@ groups:
           summary: "بیش از ۵ کار پس‌زمینه در ۱۵ دقیقه‌ی اخیر شکست خورده‌اند"
 
   # ---------------------------------------------------------------------------
+  # سرویس backup زمان آخرین بک‌آپ موفق هر نوع را گزارش می‌کند (node_exporter textfile collector)
+  - name: backup
+    rules:
+      # بک‌آپ افزایشی هر ساعت اجرا می‌شود؛ ۲ ساعت بدون موفقیت = تعهد «حداکثر ۱ ساعت هدررفت» در خطر است
+      - alert: BackupWalStale
+        expr: time() - ats_backup_last_success_timestamp_seconds{kind="wal"} > 2 * 3600
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "بیش از ۲ ساعت است که بک‌آپ افزایشی (WAL) موفقی به Offsite نرفته"
+          description: "آخرین بک‌آپ افزایشی موفق: {{ $value | humanizeDuration }} پیش"
+
+      - alert: BackupFullStale
+        expr: time() - ats_backup_last_success_timestamp_seconds{kind="full"} > 26 * 3600
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "بک‌آپ کامل شبانه‌ی دیتابیس انجام نشده است"
+          description: "آخرین بک‌آپ کامل موفق: {{ $value | humanizeDuration }} پیش"
+
+      - alert: BackupResumesStale
+        expr: time() - ats_backup_last_success_timestamp_seconds{kind="resumes"} > 8 * 86400
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "بک‌آپ هفتگی فایل‌های رزومه بیش از ۸ روز است انجام نشده"
+
+      - alert: BackupNeverSucceeded
+        expr: absent(ats_backup_last_success_timestamp_seconds{kind="full"})
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "هیچ بک‌آپ کامل موفقی ثبت نشده — سرویس backup را بررسی کنید"
+
+  # ---------------------------------------------------------------------------
   - name: monitoring-stack
     rules:
       - alert: ExporterDown

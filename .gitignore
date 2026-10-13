@@ -18,6 +18,9 @@ deploy/release.env*
 coverage.xml
 pytest-report.xml
 
+# کلیدهای رمزنگاری بک‌آپ (کلید خصوصی هرگز نباید وارد گیت شود)
+backup/secrets/
+
 # خروجی تست‌های بار و امنیت
 loadtest/reports/
 security/reports/
