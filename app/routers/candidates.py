@@ -21,13 +21,18 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import Float, cast, func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.candidate_utils import get_or_create_candidate_profile
 from app.core.deps import get_current_user, require_roles
 from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
-from app.core.search_query import build_resume_search_tsquery, resume_fts_tsvector_expression
+from app.core.search_query import (
+    build_resume_search_tsquery,
+    resume_experience_years_expression,
+    resume_fts_tsvector_expression,
+    resume_has_skill_condition,
+)
 from app.core.state_machine import ApplicationStatus, is_transition_allowed
 from app.db.session import get_db
 from app.models import Application, Candidate, Company, Job, Resume, StatusHistory, User
@@ -365,7 +370,7 @@ async def search_candidates(
         .scalar_subquery()
     )
     best_experience_subquery = (
-        select(func.max(cast(Resume.skill_analysis["total_experience_years"].astext, Float)))
+        select(func.max(resume_experience_years_expression(Resume.skill_analysis)))
         .where(Resume.candidate_id == Candidate.id)
         .correlate(Candidate)
         .scalar_subquery()
@@ -401,7 +406,7 @@ async def search_candidates(
         query = query.where(
             select(Resume.id)
             .where(Resume.candidate_id == Candidate.id)
-            .where(cast(Resume.skill_analysis["total_experience_years"].astext, Float) >= min_experience_years)
+            .where(resume_experience_years_expression(Resume.skill_analysis) >= min_experience_years)
             .exists()
         )
 
@@ -419,16 +424,11 @@ async def search_candidates(
             skill_name = skill_name.strip()
             if not skill_name:
                 continue
+            # ایندکس GIN مهارت‌ها (ix_resumes_skill_keys_gin) — بنگرید app/core/search_query.py
             query = query.where(
                 select(Resume.id)
                 .where(Resume.candidate_id == Candidate.id)
-                .where(
-                    text(
-                        "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
-                        "coalesce(resumes.skill_analysis -> 'skills', '[]'::jsonb)) AS _skill_elem "
-                        "WHERE lower(_skill_elem) = lower(:skill_value))"
-                    ).bindparams(skill_value=skill_name)
-                )
+                .where(resume_has_skill_condition(Resume.skill_analysis, skill_name))
                 .exists()
             )
 

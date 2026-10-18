@@ -6,12 +6,15 @@
 bash k8s/deploy.sh        # استقرار/به‌روزرسانی کامل (Secret ها، ایمیج‌ها، metrics-server، Ingress Controller، مانیفست‌ها)
 bash k8s/verify.sh        # بررسی خودکار معیارهای پذیرش مهاجرت — خروجی نهایی: [ACCEPTANCE PASS]
 bash k8s/hpa-stress.sh    # تست بار + بررسی Scale Up / Scale Down و توزیع بار Ingress — [HPA & INGRESS PASS]
+bash k8s/queue-stress.sh  # ایمیل انبوه + پردازش رزومه هم‌زمان، بدون از دست رفتن کار — [QUEUE STRESS PASS]
+bash k8s/search-benchmark.sh  # سنجش ایندکس‌های GIN جستجوی کارجویان روی ۲۰٬۰۰۰ رزومه — [GIN INDEX PASS]
 ```
 
 | آدرس (محیط لوکال) | سرویس |
 |---|---|
 | http://localhost:8081 | سایت — از طریق NGINX Ingress Controller |
-| http://localhost:3030 | Grafana — کاربر/رمز در `k8s/overlays/local/secrets/grafana.env` |
+| http://localhost:3030 | Grafana — کاربر/رمز در `k8s/overlays/local/secrets/grafana.env` (داشبورد «کلاستر Kubernetes») |
+| http://localhost:8025 | Mailpit — سرور SMTP آزمایشی؛ همه‌ی ایمیل‌های محیط لوکال اینجا دیده می‌شوند |
 | `kubectl -n ats-smart port-forward svc/prometheus 9091:9090` ← http://localhost:9091 | Prometheus (فقط داخل کلاستر) |
 
 پورت‌ها عمداً با Docker Compose (8080، 3000، 8088) و پورت 80 ویندوز (سرویس سیستمی http.sys) تداخل ندارند و هر دو محیط می‌توانند هم‌زمان اجرا شوند.
@@ -27,7 +30,7 @@ bash k8s/hpa-stress.sh    # تست بار + بررسی Scale Up / Scale Down و 
                                     ▼                                                                ▼
                          frontend Pod ×2..4 (HPA)                                  backend-api Pod ×2..6 (HPA: CPU/RAM ۷۵٪)
                                                                                    │          │       │
-                                         worker Pod ×1..4 (HPA: سرویس رزومه) ──────┼──────────┼── PVC media (RWX)
+                worker ×1..4 (ایمیل‌ها) · resume-worker ×1..4 (رزومه‌ها) ─────────┼──────────┼── PVC media (RWX)
                                          scheduler                                 │          │
                                       ▼            ▼
                        Service postgres     Service redis
@@ -45,7 +48,8 @@ bash k8s/hpa-stress.sh    # تست بار + بررسی Scale Up / Scale Down و 
 | # | سرویس Compose | منبع Kubernetes | نسخه‌ها | ذخیره‌سازی |
 |---|---|---|---|---|
 | 1 | `backend_api` | Deployment `backend-api` + Service + HPA + PDB | ۲ تا ۶ (HPA) | PVC `media` (RWX) |
-| 2 | `worker` | Deployment `worker` + HPA (سرویس پردازش رزومه) | ۱ تا ۴ (HPA) | PVC `media` |
+| 2 | `worker` | Deployment `worker` (صف‌های notifications ← bulk ← default) + HPA | ۱ تا ۴ (HPA) | — |
+| 2′ | (همان worker) | Deployment `resume-worker` (صف resumes، پردازش سنگین رزومه) + HPA | ۱ تا ۴ (HPA) | PVC `media` |
 | 3 | `scheduler` | Deployment `scheduler` (Recreate) | همیشه ۱ | — |
 | 4 | `frontend` | Deployment `frontend` + Service + HPA + PDB | ۲ تا ۴ (HPA) | — |
 | 5 | `postgres_db` | **StatefulSet** `postgres` + Service + Headless Service | ۱ | volumeClaimTemplates: `data`، `wal-archive` |
@@ -56,6 +60,8 @@ bash k8s/hpa-stress.sh    # تست بار + بررسی Scale Up / Scale Down و 
 | 10 | `backup` | Deployment `backup` (Recreate) | ۱ | PVC `backup-metrics` + WAL مشترک |
 | — | `postgres_exporter` · `redis_exporter` | Sidecar داخل Pod همان سرویس | — | — |
 | — | `node_exporter` | **DaemonSet** (یک نسخه روی هر Node) | — | — |
+| — | (جدید) | `kube-state-metrics` — وضعیت اشیای کلاستر برای Prometheus | ۱ | — |
+| — | (فقط لوکال) | `mailpit` — سرور SMTP آزمایشی (`overlays/local/mailpit.yaml`) | ۱ | — |
 | — | `gateway` (Nginx لبه) | **NGINX Ingress Controller** (`k8s/addons/nginx-ingress`) + Ingress `ats-smart` | ۲ تا ۴ (HPA) | — |
 | — | `migrate` | **Job** یک‌باره (پیش از بالا آمدن API/Worker) | — | — |
 | — | `backup_restore` | CronJob معلق `backup-drill` (فقط اجرای دستی) | — | — |
@@ -83,7 +89,7 @@ k8s/
 ├── addons/metrics-server/      # منبع متریک HPA (آینه‌ی Docker Hub، چون registry.k8s.io از ایران 403 می‌دهد)
 ├── addons/nginx-ingress/       # NGINX Ingress Controller (ورودی واحد ترافیک، توزیع بار در سطح Pod)
 ├── loadtest/                   # سناریوی Locust و Job تست بار HPA (hpa-stress.sh)
-├── deploy.sh · verify.sh · hpa-stress.sh
+├── deploy.sh · verify.sh · hpa-stress.sh · queue-stress.sh · search-benchmark.sh
 └── .release/                   # تولیدی deploy.sh (تگ ایمیج همین انتشار) — در .gitignore
 monitoring/kustomization.yaml   # ConfigMap قوانین هشدار و داشبوردها از همان فایل‌های Compose
 ```
@@ -174,7 +180,8 @@ kubectl patch pv <pv-name> -p '{"spec":{"claimRef":null}}'                    # 
 | سرویس | نسخه‌ها | معیار Scale Up | Scale Down |
 |---|---|---|---|
 | backend-api | ۲ تا ۶ | CPU **یا** RAM بالای ۷۵٪ | ۲ دقیقه آرامش، سپس ۱ Pod در هر ۳۰ ثانیه |
-| worker (سرویس رزومه) | ۱ تا ۴ | CPU **یا** RAM بالای ۷۵٪ (OCR/NER رزومه‌ها) | ۳ دقیقه آرامش، ۱ Pod در دقیقه (Warm Shutdown کار در حال اجرا) |
+| resume-worker (سرویس رزومه) | ۱ تا ۴ | CPU **یا** RAM بالای ۷۵٪ (OCR/NER رزومه‌ها) | ۳ دقیقه آرامش، ۱ Pod در دقیقه (Warm Shutdown کار در حال اجرا) |
+| worker (ایمیل‌ها) | ۱ تا ۴ | CPU **یا** RAM بالای ۷۵٪ (ایمیل انبوه) | ۲ دقیقه آرامش، ۱ Pod در دقیقه |
 | frontend | ۲ تا ۴ | CPU بالای ۷۵٪ (حافظه‌ی Nginx مستقل از ترافیک است) | ۲ دقیقه آرامش |
 | nginx-ingress | ۲ تا ۴ | CPU بالای ۷۵٪ | ۲ دقیقه آرامش |
 
@@ -215,9 +222,40 @@ LOAD_USERS=250 LOAD_HOLD=300 bash k8s/hpa-stress.sh
 
 ---
 
+## صف‌های پس‌زمینه (Redis / RQ) و پایگاه داده
+
+- **چهار صف با اولویت جدا** (`app/core/queue.py`):
+
+| صف | محتوا | Worker | Timeout · تلاش مجدد |
+|---|---|---|---|
+| `notifications` | ایمیل‌های تراکنشی (OTP، تغییر وضعیت، پیشنهاد، یادآور مصاحبه) | `worker` — همیشه اول | ۲ دقیقه · ۳ بار (۳۰ث، ۲د، ۱۰د) |
+| `bulk` | ایمیل انبوه (`enqueue_bulk`: هر ۵۰۰ کار با یک Pipeline) | `worker` — بعد از notifications | ۲ دقیقه · ۳ بار |
+| `resumes` | پردازش سنگین رزومه (OCR ← NER ← مهارت ← نمره) | `resume-worker` (جدا) | ۵ دقیقه · ۲ بار |
+| `default` | بقیه | `worker` | ۳ دقیقه · ۲ بار |
+
+- **هیچ کاری از دست نمی‌رود:**
+  - Worker با SIGTERM کار جاری را تمام می‌کند (`terminationGracePeriodSeconds` بیشتر از Timeout هر صف).
+  - Worker ای که ناگهان از بین برود، کارش را «رهاشده» می‌گذارد و RQ آن را با همان سیاست تلاش مجدد دوباره در صف قرار می‌دهد.
+  - کار ناموفق ۷ روز نگه داشته می‌شود؛ نتیجه‌ی کار موفق ۱۰ دقیقه (حافظه‌ی Broker با حجم بالا بی‌حد رشد نمی‌کند).
+- **Redis** (`base/redis/redis.conf`):
+  - `appendonly` + `appendfsync everysec`: بیشترین هدررفت در قطعی ناگهانی ۱ ثانیه.
+  - `maxmemory 384mb` + `noeviction`: با پر شدن حافظه هیچ کاری بی‌صدا حذف نمی‌شود؛ هشدار `RedisMemoryHigh` در ۸۰٪.
+  - lazyfree، `tcp-keepalive` و SLOWLOG.
+  - کلاینت‌های برنامه: Timeout اتصال و `health_check_interval`.
+- **ایندکس‌های جستجو** (مایگریشن `9c4e2a7b1d35`):
+  - GIN روی آرایه‌ی حروف‌کوچک مهارت‌ها (`ats_resume_skill_keys`).
+  - B-Tree روی سابقه (`ats_resume_experience_years`).
+  - هر دو با `fastupdate`، و Autovacuum حساس به درج برای جدول `resumes`.
+  - ایندکس GIN بلااستفاده‌ی قبلی (`jsonb_path_ops`) حذف شد.
+  - همه `CONCURRENTLY`، بدون قفل نوشتن روی جدول.
+
+---
+
 ## مانیتورینگ، هشدار و بک‌آپ
 
 - **Prometheus** اهداف را با Kubernetes Service Discovery (فقط Pod های همین Namespace، با Role محدود) پیدا می‌کند. هر نسخه‌ی HPA بک‌اند خودکار Scrape می‌شود و برچسب `pod` دارد.
+  - وضعیت خود کلاستر: **kube-state-metrics** (Pod ها، Deployment ها، HPA، Node ها) و **cAdvisor** داخل kubelet (CPU/RAM هر کانتینر، از مسیر Proxy سرور API با ClusterRole فقط‌خواندنی `nodes/proxy`).
+  - داشبورد **«ATS Smart — کلاستر Kubernetes»** (به‌روزرسانی هر ۱۰ ثانیه، فیلتر Pod): وضعیت کلی کلاستر، CPU/RAM/Throttling هر Pod، نسخه‌های Deployment ها و HPA ها، صف‌های Redis، و بار PostgreSQL و Ingress.
 - **Alertmanager** هشدارها را به `http://backend-api:8000/api/v1/ops/alerts` می‌فرستد و این‌ها به اعلان‌های داخل سایت تیم فنی تبدیل می‌شوند. توکن از Secret به‌صورت فایل Mount می‌شود.
 - **backup:**
   - همان ایمیج و زمان‌بندی Compose (کامل ۰۲:۰۰، WAL ساعتی، رزومه‌ها جمعه‌ها).
@@ -258,7 +296,7 @@ kubectl get pv                                            # Persistent Volume ه
 kubectl -n ats-smart logs -f deploy/backend-api           # لاگ (همه‌ی نسخه‌ها: -l app.kubernetes.io/name=backend-api)
 kubectl -n ats-smart rollout restart deploy/backend-api   # ری‌استارت بدون قطعی
 kubectl -n ats-smart rollout undo deploy/backend-api      # بازگشت به نسخه‌ی قبلی
-kubectl -n ats-smart scale deploy/worker --replicas=3     # Worker بیشتر برای صف شلوغ
+kubectl -n ats-smart exec deploy/redis -c redis -- redis-cli INFO memory   # حافظه‌ی Broker (maxmemory/noeviction)
 kubectl -n ats-smart exec -it postgres-0 -c postgres -- psql -U ats smart_ats_db
 kubectl delete namespace ats-smart                        # حذف کامل (PV ها با Retain باقی می‌مانند)
 ```
@@ -267,5 +305,7 @@ kubectl delete namespace ats-smart                        # حذف کامل (PV 
 
 - **پستگرس تک‌نسخه‌ای است.** دسترس‌پذیری بالای لایه‌ی برنامه با چند نسخه و HPA تأمین شده است، اما برای Failover خودکار دیتابیس، یک Operator مثل CloudNativePG یا Zalando (Primary + Replica) یا دیتابیس مدیریت‌شده‌ی ابری پیشنهاد می‌شود. همین برای Redis هم صادق است (Sentinel، یا سرویس مدیریت‌شده).
 - **PVC `media` به ReadWriteMany نیاز دارد.** روی کلاستر چند Node باید از StorageClass با پشتیبانی RWX یا ذخیره‌سازی S3 استفاده شود.
-- **SMTP در محیط لوکال تنظیم نشده** (`SMTP_HOST=localhost`)، مثل محیط توسعه‌ی Compose. ثبت‌نام و تغییر وضعیت کار می‌کنند، اما کار ارسال ایمیل در Worker با `Connection refused` شکست می‌خورد. برای ایمیل واقعی، `SMTP_*` را در `overlays/local/config.env` و `secrets/backend.env` تنظیم کنید.
+- **ایمیل‌های محیط لوکال به Mailpit می‌روند** (http://localhost:8025)، نه به بیرون. برای ارسال واقعی، `SMTP_*` را در `overlays/local/config.env` و `secrets/backend.env` تنظیم کنید.
+- **cAdvisor روی Docker Desktop برچسب pod ندارد** (cri-dockerd)؛ مصرف هر Pod از مسیر cgroup و پیوند UID با kube-state-metrics به دست می‌آید (`base/monitoring/recording-rules.yml`). شبکه‌ی جدای هر Pod آنجا گزارش نمی‌شود؛ روی کلاسترهای containerd همه‌چیز مستقیم در دسترس است.
+- **مقیاس Worker ها بر اساس CPU/RAM است، نه طول صف.** برای مقیاس بر اساس تعداد کارهای منتظر (و حتی صفر کردن Worker ها در زمان بیکاری)، KEDA با Scaler مخصوص Redis پیشنهاد می‌شود.
 - **ایمیج‌های `registry.k8s.io` از ایران در دسترس نیستند** (پاسخ 403). برای افزونه‌ها از آینه‌های Docker Hub استفاده شده است (`rancher/mirrored-*`).

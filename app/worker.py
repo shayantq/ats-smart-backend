@@ -11,7 +11,11 @@ threading.Timer به‌جای سیگنال یونیکسی) استفاده می�
 (از جمله ویندوز) به‌درستی کار می‌کند.
 
 اجرا (به‌جای دستور `rq worker ...`):
-    python -m app.worker
+    python -m app.worker                          همه‌ی صف‌ها به ترتیب اولویت (Docker Compose / توسعه)
+    python -m app.worker notifications bulk default   فقط ایمیل‌ها و کارهای عمومی (Kubernetes: worker)
+    python -m app.worker resumes                  فقط پردازش سنگین رزومه (Kubernetes: resume-worker)
+
+ترتیب نام صف‌ها همان اولویت است: Worker همیشه اول از صف اول برمی‌دارد.
 """
 
 import logging
@@ -22,6 +26,7 @@ from rq import SimpleWorker
 from rq.timeouts import TimerDeathPenalty
 
 from app.core.config import settings
+from app.core.queue import ALL_QUEUES
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,13 +37,20 @@ class WindowsCompatibleWorker(SimpleWorker):
     death_penalty_class = TimerDeathPenalty
 
 
-def main() -> None:
-    redis_connection = Redis.from_url(settings.REDIS_URL)
-    worker = WindowsCompatibleWorker(["default"], connection=redis_connection)
+def main(queue_names: list[str] | None = None) -> None:
+    queue_names = queue_names or list(ALL_QUEUES)
+    unknown = sorted(set(queue_names) - set(ALL_QUEUES))
+    if unknown:
+        sys.exit(f"صف ناشناخته: {', '.join(unknown)} — صف‌های مجاز: {', '.join(ALL_QUEUES)}")
+    # health_check_interval: اتصال قطع‌شده (مثلاً بعد از ری‌استارت Redis) پیش از استفاده شناسایی می‌شود.
+    # socket_timeout عمداً تنظیم نشده: Worker برای انتظار کار جدید از BLPOP چنددقیقه‌ای استفاده می‌کند.
+    redis_connection = Redis.from_url(settings.REDIS_URL, socket_connect_timeout=5, health_check_interval=30)
+    worker = WindowsCompatibleWorker(queue_names, connection=redis_connection)
+    logging.getLogger("ats_smart.worker").info("Worker صف‌ها (به ترتیب اولویت): %s", ", ".join(queue_names))
     # with_scheduler: تلاش مجدد کارهای ناموفق با فاصله‌ی زمانی (Retry در app/core/queue.py) — زمان‌بند
     # داخلی RQ پردازه‌ی جدا می‌سازد که روی ویندوز (توسعه‌ی محلی بدون Docker) پشتیبانی نمی‌شود
     worker.work(with_scheduler=sys.platform != "win32")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

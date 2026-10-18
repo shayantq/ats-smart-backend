@@ -18,6 +18,7 @@ from redis import Redis
 from rq_scheduler import Scheduler
 
 from app.core.config import settings
+from app.core.queue import QUEUE_NOTIFICATIONS
 from app.tasks.notifications import send_interview_reminder_email_task
 
 logger = logging.getLogger("ats_smart.interview_scheduler")
@@ -33,7 +34,8 @@ def _get_scheduler() -> Scheduler:
     global _redis_connection, _scheduler
     if _scheduler is None:
         _redis_connection = Redis.from_url(settings.REDIS_URL)
-        _scheduler = Scheduler(queue_name="default", connection=_redis_connection)
+        # یادآورها در لحظه‌ی موعد وارد صف پراولویت ایمیل‌های تراکنشی می‌شوند (بنگرید app/core/queue.py)
+        _scheduler = Scheduler(queue_name=QUEUE_NOTIFICATIONS, connection=_redis_connection)
     return _scheduler
 
 

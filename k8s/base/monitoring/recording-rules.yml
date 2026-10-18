@@ -1,0 +1,53 @@
+# قوانین ضبط Prometheus روی Kubernetes (ConfigMap «prometheus-k8s-rules») — مصرف لحظه‌ای هر Pod
+#
+# cAdvisor داخل kubelet روی بیشتر کلاسترها (containerd) برچسب‌های namespace/pod را خودش می‌گذارد؛
+# روی Docker Desktop (cri-dockerd) فقط مسیر cgroup را دارد (/kubepods/<qos>/pod<UID>). برای همین هر
+# قانون دو شاخه دارد: برچسب مستقیم pod، یا (در نبودش) پیوند UID استخراج‌شده از مسیر cgroup (relabel در
+# prometheus.yml) با kube_pod_info از kube-state-metrics. داشبورد «کلاستر Kubernetes» فقط از همین
+# سری‌های یکسان ats:pod_* استفاده می‌کند و روی هر دو نوع کلاستر کار می‌کند.
+
+groups:
+  - name: ats-pod-usage
+    interval: 15s
+    rules:
+      - record: ats:pod_cpu_usage:cores
+        expr: >-
+          sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!="", container!="POD", pod!=""}[1m]))
+          or
+          sum by (namespace, pod) (
+            rate(container_cpu_usage_seconds_total{uid!=""}[1m])
+            * on (uid) group_left (namespace, pod) max by (uid, namespace, pod) (kube_pod_info)
+          )
+
+      - record: ats:pod_memory_working_set:bytes
+        expr: >-
+          sum by (namespace, pod) (container_memory_working_set_bytes{container!="", container!="POD", pod!=""})
+          or
+          sum by (namespace, pod) (
+            container_memory_working_set_bytes{uid!=""}
+            * on (uid) group_left (namespace, pod) max by (uid, namespace, pod) (kube_pod_info)
+          )
+
+      - record: ats:pod_cpu_throttled:ratio
+        expr: >-
+          (
+            sum by (namespace, pod) (rate(container_cpu_cfs_throttled_periods_total{container!="", pod!=""}[5m]))
+            / sum by (namespace, pod) (rate(container_cpu_cfs_periods_total{container!="", pod!=""}[5m]))
+          )
+          or
+          (
+            sum by (namespace, pod) (
+              rate(container_cpu_cfs_throttled_periods_total{uid!=""}[5m])
+              * on (uid) group_left (namespace, pod) max by (uid, namespace, pod) (kube_pod_info)
+            )
+            / sum by (namespace, pod) (
+              rate(container_cpu_cfs_periods_total{uid!=""}[5m])
+              * on (uid) group_left (namespace, pod) max by (uid, namespace, pod) (kube_pod_info)
+            )
+          )
+
+      # نسبت حافظه به سقف (limits) — نزدیک ۱۰۰٪ یعنی خطر OOM Kill
+      - record: ats:pod_memory_limit_usage:ratio
+        expr: >-
+          ats:pod_memory_working_set:bytes
+          / on (namespace, pod) sum by (namespace, pod) (kube_pod_container_resource_limits{resource="memory"})

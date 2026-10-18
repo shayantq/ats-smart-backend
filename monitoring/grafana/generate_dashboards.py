@@ -418,10 +418,201 @@ api_performance = dashboard(
     ],
 )
 
+# ---------------------------------------------------------------------------
+# کلاستر Kubernetes — kube-state-metrics (وضعیت اشیا) + cAdvisor (مصرف هر کانتینر) + صف‌ها و دیتابیس
+# (در Docker Compose این متریک‌ها وجود ندارند؛ پنل‌های این داشبورد آنجا «No data» نشان می‌دهند)
+# ---------------------------------------------------------------------------
+K8S_NS = 'namespace="ats-smart"'
+# سری‌های ats:pod_* از قوانین ضبط k8s/base/monitoring/recording-rules.yml (روی همه‌ی انواع کلاستر یکسان)
+POD_FILTER = K8S_NS + ', pod=~"$pod"'
+HEALTHY_COUNT_THRESHOLDS = _thresholds((None, "green"), (1, "red"))
+RESTART_THRESHOLDS = _thresholds((None, "green"), (1, "orange"), (5, "red"))
+INGRESS_REQUESTS = "nginx_ingress_controller_upstream_server_response_latency_ms_count"
+
+kubernetes_cluster = dashboard(
+    "ats-kubernetes-cluster",
+    "ATS Smart — کلاستر Kubernetes",
+    "وضعیت زنده‌ی کلاستر و تک‌تک Pod ها: مصرف CPU/RAM/شبکه، مقیاس‌دهی خودکار (HPA)، صف‌های Redis و بار پایگاه داده",
+    [
+        row("وضعیت کلی کلاستر", 0),
+        stat(
+            "Node های آماده",
+            'sum(kube_node_status_condition{condition="Ready", status="true"})',
+            unit="short",
+            x=0,
+            y=1,
+        ),
+        stat("Pod های در حال اجرا", f'sum(kube_pod_status_phase{{{K8S_NS}, phase="Running"}})', unit="short", x=4, y=1),
+        stat(
+            "Pod های ناسالم",
+            f'sum(kube_pod_status_phase{{{K8S_NS}, phase=~"Pending|Failed|Unknown"}}) or vector(0)',
+            unit="short",
+            x=8,
+            y=1,
+            thresholds=HEALTHY_COUNT_THRESHOLDS,
+            description="Pending / Failed / Unknown — هشدار KubePodNotReady بعد از ۱۰ دقیقه",
+        ),
+        stat(
+            "ری‌استارت کانتینرها (۱ ساعت)",
+            f"sum(increase(kube_pod_container_status_restarts_total{{{K8S_NS}}}[1h])) or vector(0)",
+            unit="short",
+            x=12,
+            y=1,
+            thresholds=RESTART_THRESHOLDS,
+            decimals=0,
+        ),
+        stat(
+            "Deployment های کامل",
+            f"count(kube_deployment_status_replicas_available{{{K8S_NS}}} == kube_deployment_spec_replicas{{{K8S_NS}}})"
+            f" / count(kube_deployment_spec_replicas{{{K8S_NS}}}) * 100",
+            unit="percent",
+            x=16,
+            y=1,
+            thresholds=_thresholds((None, "red"), (100, "green")),
+            description="درصد Deployment هایی که همه‌ی نسخه‌های مطلوبشان در دسترس است",
+        ),
+        stat("CPU سرور", CPU_PERCENT, unit="percent", x=20, y=1, thresholds=USAGE_THRESHOLDS, decimals=1),
+        row("Pod ها — مصرف زنده (فیلتر بالای صفحه: pod)", 5),
+        timeseries(
+            "CPU هر Pod (هسته)",
+            [(f"ats:pod_cpu_usage:cores{{{POD_FILTER}}}", "{{pod}}")],
+            unit="short",
+            x=0,
+            y=6,
+            h=9,
+        ),
+        timeseries(
+            "حافظه‌ی هر Pod (Working Set)",
+            [(f"ats:pod_memory_working_set:bytes{{{POD_FILTER}}}", "{{pod}}")],
+            unit="bytes",
+            x=12,
+            y=6,
+            h=9,
+            description="همان معیاری که OOM Kill و HPA حافظه بر اساس آن تصمیم می‌گیرند",
+        ),
+        timeseries(
+            "حافظه نسبت به سقف (limits) هر Pod",
+            [(f"ats:pod_memory_limit_usage:ratio{{{POD_FILTER}}} * 100", "{{pod}}")],
+            unit="percent",
+            x=0,
+            y=15,
+            thresholds=_thresholds((None, "transparent"), (90, "red")),
+            description="نزدیک ۱۰۰٪ = خطر OOM Kill کانتینر؛ ناحیه‌ی قرمز از ۹۰٪",
+        ),
+        timeseries(
+            "محدودشدن CPU (Throttling) هر Pod",
+            [(f"ats:pod_cpu_throttled:ratio{{{POD_FILTER}}} * 100", "{{pod}}")],
+            unit="percent",
+            x=12,
+            y=15,
+            description="درصد بازه‌هایی که کانتینر به سقف CPU (limits) خورده — بالا بودن مداوم = limits کم است",
+        ),
+        row("مقیاس‌دهی خودکار و Deployment ها", 23),
+        timeseries(
+            "نسخه‌های در دسترس هر Deployment",
+            [(f"kube_deployment_status_replicas_available{{{K8S_NS}}}", "{{deployment}}")],
+            unit="short",
+            x=0,
+            y=24,
+        ),
+        timeseries(
+            "تعداد فعلی Pod های هر HPA",
+            [(f"kube_horizontalpodautoscaler_status_current_replicas{{{K8S_NS}}}", "{{horizontalpodautoscaler}}")],
+            unit="short",
+            x=12,
+            y=24,
+            description="بالا رفتن خط = Scale Up خودکار با عبور CPU/RAM از ۷۵٪؛ پایین آمدن = Scale Down",
+        ),
+        row("صف‌های کارهای پس‌زمینه (Redis / RQ)", 32),
+        timeseries(
+            "کارهای منتظر هر صف",
+            [('max by (queue) (ats_rq_jobs{state="queued"})', "{{queue}}")],
+            unit="short",
+            x=0,
+            y=33,
+            w=8,
+            description="notifications (فوری) ← resumes (سنگین) ← bulk (انبوه، کم‌اولویت) ← default",
+        ),
+        timeseries(
+            "کارهای در حال اجرا / Worker های هر صف",
+            [
+                ('max by (queue) (ats_rq_jobs{state="started"})', "در حال اجرا · {{queue}}"),
+                ("max by (queue) (ats_rq_queue_workers)", "Worker · {{queue}}"),
+            ],
+            unit="short",
+            x=8,
+            y=33,
+            w=8,
+        ),
+        timeseries(
+            "حافظه‌ی Redis (Broker)",
+            [("max(redis_memory_used_bytes)", "مصرف"), ("max(redis_memory_max_bytes)", "سقف (maxmemory)")],
+            unit="bytes",
+            x=16,
+            y=33,
+            w=8,
+            description="noeviction: با رسیدن به سقف هیچ کاری حذف نمی‌شود؛ هشدار RedisMemoryHigh در ۸۰٪",
+        ),
+        timeseries(
+            "کارهای ناموفق هر صف (نگه‌داری ۷ روز)",
+            [('max by (queue) (ats_rq_jobs{state="failed"})', "{{queue}}")],
+            unit="short",
+            x=0,
+            y=41,
+            w=8,
+        ),
+        row("پایگاه داده و ترافیک", 49),
+        timeseries(
+            "کانکشن‌های PostgreSQL",
+            [('sum by (state) (pg_stat_activity_count{state!=""})', "{{state}}")],
+            unit="short",
+            x=0,
+            y=50,
+            w=8,
+        ),
+        timeseries(
+            "تراکنش‌های PostgreSQL در ثانیه",
+            [
+                ("sum(rate(pg_stat_database_xact_commit[1m]))", "Commit"),
+                ("sum(rate(pg_stat_database_xact_rollback[1m]))", "Rollback"),
+            ],
+            unit="short",
+            x=8,
+            y=50,
+            w=8,
+        ),
+        timeseries(
+            "درخواست‌های ورودی Ingress به تفکیک سرویس",
+            [(f"sum by (service) (rate({INGRESS_REQUESTS}[1m]))", "{{service}}")],
+            unit="reqps",
+            x=16,
+            y=50,
+            w=8,
+        ),
+    ],
+)
+POD_VARIABLE_QUERY = 'label_values(kube_pod_info{namespace="ats-smart"}, pod)'
+kubernetes_cluster["templating"]["list"] = [
+    {
+        "name": "pod",
+        "label": "Pod",
+        "type": "query",
+        "datasource": DATASOURCE,
+        "query": {"query": POD_VARIABLE_QUERY, "refId": "PodVariable"},
+        "definition": POD_VARIABLE_QUERY,
+        "refresh": 2,
+        "sort": 1,
+        "multi": True,
+        "includeAll": True,
+        "allValue": ".*",
+        "current": {"selected": True, "text": ["All"], "value": ["$__all"]},
+    }
+]
+
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    for board in (system_overview, api_performance):
+    for board in (system_overview, api_performance, kubernetes_cluster):
         path = OUTPUT_DIR / f"{board['uid']}.json"
         path.write_text(json.dumps(board, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"written: {path.name} ({len(board['panels'])} panels)")

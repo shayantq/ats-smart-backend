@@ -190,8 +190,12 @@ while true; do
     sleep 3
 done
 ok "migrate (Job): مایگریشن‌ها تا head اجرا شدند"
-for workload in deployment/redis deployment/backend-api deployment/worker deployment/scheduler deployment/frontend \
-    deployment/prometheus deployment/alertmanager deployment/grafana deployment/backup daemonset/node-exporter; do
+workloads=(deployment/redis deployment/backend-api deployment/worker deployment/resume-worker deployment/scheduler
+    deployment/frontend deployment/prometheus deployment/alertmanager deployment/grafana deployment/kube-state-metrics
+    deployment/backup daemonset/node-exporter)
+# سرویس‌های مخصوص یک Overlay (مثلاً Mailpit محیط لوکال)
+kubectl -n "$NAMESPACE" get deployment mailpit >/dev/null 2>&1 && workloads+=(deployment/mailpit)
+for workload in "${workloads[@]}"; do
     if ! kubectl -n "$NAMESPACE" rollout status "$workload" --timeout="$ROLLOUT_TIMEOUT" >/dev/null; then
         kubectl -n "$NAMESPACE" describe "$workload" | tail -20
         die "${workload} در زمان مقرر آماده نشد"

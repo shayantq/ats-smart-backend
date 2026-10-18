@@ -4,8 +4,10 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.dialects import postgresql
 
+from app.core.search_query import resume_has_skill_condition
 from app.models import Application, Candidate, Resume, StatusHistory
 from tests.integration.conftest import auth_headers
 
@@ -130,3 +132,54 @@ async def test_hr_search_combines_full_text_skills_and_score(client, db_session,
     assert (
         await client.get("/api/v1/candidates/search/", params={"min_ai_score": 101}, headers=headers)
     ).status_code == 422
+
+
+async def test_skill_filter_is_case_insensitive_requires_every_skill_and_tolerates_bad_data(
+    client, db_session, make_user, make_application
+):
+    application, _, _ = await make_application(status="Applied")
+    db_session.add_all(
+        [
+            Resume(
+                candidate_id=application.candidate_id,
+                file_url="http://test/media/a.pdf",
+                skill_analysis={"skills": ["FastAPI", "PostgreSQL"], "total_experience_years": 3.0},
+            ),
+            # مهارت دوم در رزومه‌ی دیگرِ همان کارجو — هر مهارت کافی است در یکی از رزومه‌هایش باشد
+            Resume(
+                candidate_id=application.candidate_id,
+                file_url="http://test/media/b.pdf",
+                skill_analysis={"skills": ["Kubernetes"], "total_experience_years": 1.0},
+            ),
+            # ساختار نامعتبر (skills غیرآرایه) نه درج را خراب می‌کند نه جستجو را
+            Resume(
+                candidate_id=application.candidate_id,
+                file_url="http://test/media/c.pdf",
+                skill_analysis={"skills": "x"},
+            ),
+        ]
+    )
+    await db_session.flush()
+    headers = auth_headers(await make_user(role="HR_Manager"))
+
+    async def search(**params) -> list[str]:
+        response = await client.get("/api/v1/candidates/search/", params=params, headers=headers)
+        assert response.status_code == 200
+        return [item["candidate_id"] for item in response.json()["items"]]
+
+    expected = [str(application.candidate_id)]
+    assert await search(skills=["fastapi", "KUBERNETES"]) == expected
+    assert await search(skills=["fastapi", "rust"]) == []
+    assert await search(min_experience_years=3) == expected
+    assert await search(min_experience_years=4) == []
+
+
+async def test_skill_filter_condition_uses_the_gin_index(db_session):
+    """عبارت شرط مهارت در کوئری دقیقاً با عبارت ایندکس GIN یکی است (پستگرس ایندکس را به کار می‌گیرد)."""
+    condition = resume_has_skill_condition(Resume.skill_analysis, "Django").compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    )
+    # جدول تست تقریباً خالی است و برنامه‌ریز Seq Scan را ارزان‌تر می‌بیند؛ فقط امکان استفاده از ایندکس سنجیده می‌شود
+    await db_session.execute(text("SET LOCAL enable_seqscan = off"))
+    plan = (await db_session.execute(text(f"EXPLAIN SELECT id FROM resumes WHERE {condition}"))).scalars().all()
+    assert any("ix_resumes_skill_keys_gin" in line for line in plan), plan

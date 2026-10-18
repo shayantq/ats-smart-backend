@@ -96,8 +96,23 @@ services:
   redis_cache:
     image: redis:7.4-alpine
     restart: unless-stopped
-    # appendonly: صف کارها و یادآورهای زمان‌بندی‌شده‌ی مصاحبه با ری‌استارت از بین نروند
-    command: ["redis-server", "--appendonly", "yes"]
+    # Redis هم کش است هم Message Broker صف کارها — تنظیمات برای «هیچ کاری از دست نرود»
+    # (همان مقادیر k8s/base/redis/redis.conf نسخه‌ی Kubernetes — هر دو هم‌زمان به‌روز شوند):
+    #   appendonly + appendfsync everysec  صف و یادآورهای مصاحبه با ری‌استارت/قطعی برق حداکثر ۱ ثانیه داده از دست می‌دهند
+    #   maxmemory + noeviction              با پر شدن حافظه هیچ کلیدی (کار در صف!) بی‌صدا حذف نمی‌شود؛ نوشتن جدید
+    #                                       خطا می‌دهد (لاگ + هشدار RedisMemoryHigh) به‌جای از دست رفتن کارهای قبلی
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
+      - --tcp-keepalive
+      - "60"
     volumes:
       - redis_data:/data
     healthcheck:

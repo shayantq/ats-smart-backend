@@ -100,12 +100,10 @@ class PrometheusMiddleware:
 
 class RQQueueCollector(Collector):
     """
-    وضعیت لحظه‌ای صف RQ در هر Scrape. اتصال Redis جدا و با Timeout کوتاه ساخته
-    می‌شود تا قطعی Redis هیچ‌وقت خودِ Scrape را معطل نکند — در آن حالت فقط
+    وضعیت لحظه‌ای صف‌های RQ (هر صف جدا — بنگرید app/core/queue.py) در هر Scrape. اتصال Redis جدا و با
+    Timeout کوتاه ساخته می‌شود تا قطعی Redis هیچ‌وقت خودِ Scrape را معطل نکند — در آن حالت فقط
     ats_rq_redis_up=0 گزارش می‌شود (که خودش یک هشدار است).
     """
-
-    _QUEUE_NAME = "default"
 
     def __init__(self) -> None:
         self._connection = None
@@ -129,25 +127,37 @@ class RQQueueCollector(Collector):
             from rq.registry import DeferredJobRegistry, FailedJobRegistry, StartedJobRegistry
             from rq_scheduler import Scheduler
 
-            connection = self._get_connection()
-            queue = Queue(self._QUEUE_NAME, connection=connection)
+            from app.core.queue import ALL_QUEUES, QUEUE_NOTIFICATIONS
 
-            jobs = GaugeMetricFamily("ats_rq_jobs", "تعداد کارهای صف RQ به تفکیک وضعیت", labels=["queue", "state"])
-            jobs.add_metric([self._QUEUE_NAME, "queued"], queue.count)
-            jobs.add_metric([self._QUEUE_NAME, "started"], StartedJobRegistry(queue=queue).count)
-            jobs.add_metric([self._QUEUE_NAME, "failed"], FailedJobRegistry(queue=queue).count)
-            jobs.add_metric([self._QUEUE_NAME, "deferred"], DeferredJobRegistry(queue=queue).count)
+            connection = self._get_connection()
+            jobs = GaugeMetricFamily("ats_rq_jobs", "تعداد کارهای صف RQ به تفکیک صف و وضعیت", labels=["queue", "state"])
+            for queue_name in ALL_QUEUES:
+                queue = Queue(queue_name, connection=connection)
+                jobs.add_metric([queue_name, "queued"], queue.count)
+                jobs.add_metric([queue_name, "started"], StartedJobRegistry(queue=queue).count)
+                jobs.add_metric([queue_name, "failed"], FailedJobRegistry(queue=queue).count)
+                jobs.add_metric([queue_name, "deferred"], DeferredJobRegistry(queue=queue).count)
             # یادآورهای مصاحبه که rq-scheduler برای آینده نگه داشته (app/core/interview_scheduler.py)
             jobs.add_metric(
-                [self._QUEUE_NAME, "scheduled"], Scheduler(queue_name=self._QUEUE_NAME, connection=connection).count()
+                [QUEUE_NOTIFICATIONS, "scheduled"],
+                Scheduler(queue_name=QUEUE_NOTIFICATIONS, connection=connection).count(),
             )
 
+            all_workers = Worker.all(connection=connection)
             workers = GaugeMetricFamily("ats_rq_workers", "تعداد Workerهای فعال RQ")
-            workers.add_metric([], Worker.count(connection=connection))
+            workers.add_metric([], len(all_workers))
+            queue_workers = GaugeMetricFamily(
+                "ats_rq_queue_workers", "تعداد Workerهای فعالی که به هر صف گوش می‌دهند", labels=["queue"]
+            )
+            for queue_name in ALL_QUEUES:
+                queue_workers.add_metric(
+                    [queue_name], sum(queue_name in worker.queue_names() for worker in all_workers)
+                )
 
             redis_up.add_metric([], 1)
             yield jobs
             yield workers
+            yield queue_workers
         except Exception as error:  # noqa: BLE001 - Scrape هرگز نباید به‌خاطر Redis خطای 500 بدهد
             logger.warning("خواندن متریک‌های صف RQ ناموفق بود: %s", error)
             redis_up.add_metric([], 0)

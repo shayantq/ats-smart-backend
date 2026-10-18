@@ -17,11 +17,11 @@ async def test_tests_run_on_a_separate_temporary_database(db_session):
 async def test_schema_comes_from_real_alembic_migrations(db_session):
     """اسکیمای دیتابیس تست همان اسکیمای Production است (کل زنجیره‌ی مایگریشن‌ها اجرا شده)."""
     version = (await db_session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-    assert version == "b5e2c9d4a710"
-    gin_index = await db_session.execute(
-        text("SELECT 1 FROM pg_indexes WHERE indexname = 'ix_resumes_raw_text_fts_v2'")
-    )
-    assert gin_index.scalar_one_or_none() == 1
+    assert version == "9c4e2a7b1d35"
+    indexes = await db_session.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'resumes'"))
+    names = set(indexes.scalars())
+    assert {"ix_resumes_raw_text_fts_v2", "ix_resumes_skill_keys_gin", "ix_resumes_experience_years"} <= names
+    assert "ix_resumes_skill_analysis_gin" not in names  # ایندکس بلااستفاده‌ی قبلی حذف شده
 
 
 # دو اجرای پشت‌سرهم یک تست: هرکدام اول بررسی می‌کند دیتابیس خالی است و بعد داده می‌سازد.

@@ -16,6 +16,8 @@ global:
 
 rule_files:
   - /etc/prometheus/rules/alerts.yml
+  # مصرف لحظه‌ای هر Pod (ats:pod_*) — مخصوص Kubernetes (recording-rules.yml همین پوشه)
+  - /etc/prometheus/k8s-rules/recording-rules.yml
 
 alerting:
   alertmanagers:
@@ -107,6 +109,51 @@ scrape_configs:
         type: A
         port: 9113
         refresh_interval: 15s
+
+  # وضعیت اشیای کلاستر (kube-state-metrics): Pod ها، Deployment ها، HPA، Node ها، PVC ها
+  - job_name: kube-state-metrics
+    honor_labels: true
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          own_namespace: true
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name, __meta_kubernetes_pod_container_port_name]
+        regex: kube-state-metrics;http-metrics
+        action: keep
+
+  # مصرف لحظه‌ای CPU/RAM/شبکه‌ی هر کانتینر (cAdvisor داخل kubelet) — از مسیر Proxy سرور API با
+  # توکن ServiceAccount (ClusterRole «ats-smart-prometheus-nodes» در prometheus.yaml)
+  - job_name: kubernetes-cadvisor
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+    metric_relabel_configs:
+      # فقط متریک‌هایی که داشبوردها لازم دارند (cAdvisor صدها سری دیگر هم دارد) — حافظه‌ی Prometheus کم می‌ماند
+      - source_labels: [__name__]
+        regex: container_(cpu_usage_seconds_total|memory_working_set_bytes|cpu_cfs_throttled_periods_total|cpu_cfs_periods_total|oom_events_total)
+        action: keep
+      # UID پاد از مسیر cgroup سطح Pod (/kubepods/<qos>/pod<UID>) — روی Docker Desktop (cri-dockerd) cAdvisor
+      # برچسب pod/namespace ندارد؛ recording-rules.yml با همین UID به kube_pod_info پیوند می‌زند
+      - source_labels: [id]
+        regex: .*/pod([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})
+        target_label: uid
+      # سری‌های cgroup سیستمی (نه Pod و نه کانتینر) کنار گذاشته می‌شوند
+      - source_labels: [uid, container]
+        regex: ;
+        action: drop
 
   - job_name: alertmanager
     static_configs:

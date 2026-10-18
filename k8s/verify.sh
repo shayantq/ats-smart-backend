@@ -6,7 +6,7 @@
 #   bash k8s/verify.sh --deep           + حذف کامل StatefulSet پستگرس و ساخت دوباره‌ی آن
 #   bash k8s/verify.sh --no-disruption  فقط بررسی‌های بدون اختلال (معیار ۱ و ۲)
 #
-#   ۱. همه‌ی ۱۰ سرویس مستقر و همه‌ی Pod ها در وضعیت Running/Ready
+#   ۱. همه‌ی سرویس‌ها مستقر و همه‌ی Pod ها در وضعیت Running/Ready
 #   ۲. ارتباط پایدار شبکه‌ی داخلی: DNS، بک‌اند ↔ PostgreSQL/Redis، Worker ↔ PostgreSQL/Redis،
 #      فرانت‌اند ↔ بک‌اند (۲۰۰ درخواست پیاپی)، Target های Prometheus، نبود خطای اتصال در لاگ‌ها
 #   ۳. ماندگاری داده‌ی PostgreSQL روی Persistent Volume پس از از کار افتادن/حذف Pod
@@ -83,11 +83,12 @@ printf '\033[1mATS Smart — بررسی معیارهای پذیرش Kubernetes\0
 printf 'context: %s · namespace: %s · %s\n' "$(kubectl config current-context)" "$NAMESPACE" "$(date '+%Y-%m-%d %H:%M:%S %Z')"
 
 # =============================================================================
-section "معیار ۱: استقرار هر ۱۰ سرویس و وضعیت Running همه‌ی Pod ها"
+section "معیار ۱: استقرار همه‌ی سرویس‌ها و وضعیت Running همه‌ی Pod ها"
 # =============================================================================
 printf '  %-26s %-12s %-8s %s\n' SERVICE KIND READY IMAGE
-for workload in deployment/backend-api deployment/worker deployment/scheduler deployment/frontend \
-    statefulset/postgres deployment/redis deployment/prometheus deployment/alertmanager deployment/grafana deployment/backup; do
+for workload in deployment/backend-api deployment/worker deployment/resume-worker deployment/scheduler deployment/frontend \
+    statefulset/postgres deployment/redis deployment/prometheus deployment/alertmanager deployment/grafana \
+    deployment/kube-state-metrics deployment/backup; do
     data="$(k get "$workload" -o jsonpath='{.spec.replicas}|{.status.readyReplicas}|{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
     IFS='|' read -r desired ready image <<<"$data"
     ready="${ready:-0}"

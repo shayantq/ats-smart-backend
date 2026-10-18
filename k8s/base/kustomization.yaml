@@ -43,6 +43,7 @@ resources:
   - monitoring/alertmanager.yaml
   - monitoring/grafana.yaml
   - monitoring/node-exporter.yaml
+  - monitoring/kube-state-metrics.yaml
   # پشتیبان‌گیری و بازیابی فاجعه
   - backup/backup.yaml
   - backup/backup-drill.yaml
@@ -59,9 +60,15 @@ configMapGenerator:
       - postgres/pg_hba.conf
     literals:
       - POSTGRES_DB=smart_ats_db
+  - name: redis-config
+    files:
+      - redis/redis.conf
   - name: prometheus-config
     files:
       - monitoring/prometheus.yml
+  - name: prometheus-k8s-rules
+    files:
+      - monitoring/recording-rules.yml
   - name: alertmanager-config
     files:
       - monitoring/alertmanager.yml

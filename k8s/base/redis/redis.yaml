@@ -1,8 +1,9 @@
 # =============================================================================
-# Redis — کش نشست کاربران + صف کارهای پس‌زمینه (RQ) + یادآورهای زمان‌بندی‌شده‌ی مصاحبه
+# Redis — کش نشست کاربران + Message Broker صف‌های RQ + یادآورهای زمان‌بندی‌شده‌ی مصاحبه
 #
-# appendonly (AOF) روی PVC: کارهای در صف و یادآورهای rq-scheduler با ری‌استارت/جابه‌جایی
-# Pod از بین نمی‌روند. یک نسخه (Recreate): دو Redis هم‌زمان روی یک فایل AOF نمی‌نویسند.
+# پیکربندی کامل (ماندگاری AOF با fsync ثانیه‌ای، maxmemory با noeviction، keepalive): redis.conf
+# همین پوشه (ConfigMap «redis-config»). AOF روی PVC: کارهای در صف و یادآورهای rq-scheduler با
+# ری‌استارت/جابه‌جایی Pod از بین نمی‌روند. یک نسخه (Recreate): دو Redis هم‌زمان روی یک فایل AOF نمی‌نویسند.
 # =============================================================================
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -45,7 +46,7 @@ spec:
       containers:
         - name: redis
           image: redis:7.4-alpine
-          args: ["redis-server", "--appendonly", "yes", "--dir", "/data"]
+          args: ["redis-server", "/etc/redis/redis.conf"]
           ports:
             - name: redis
               containerPort: 6379
@@ -64,12 +65,16 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              memory: 128Mi
+            # بالاتر از maxmemory (384mb) — سربار بازنویسی AOF و بافر کلاینت‌ها جا دارد
             limits:
               memory: 512Mi
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: config
+              mountPath: /etc/redis
+              readOnly: true
 
         # Sidecar متریک‌ها: حافظه، کلاینت‌های متصل، کلیدها (Prometheus job «redis»)
         - name: redis-exporter
@@ -90,6 +95,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: redis-data
+        - name: config
+          configMap:
+            name: redis-config
 ---
 # نام DNS «redis» همان چیزی است که REDIS_URL (redis://redis:6379/0) به آن اشاره می‌کند
 apiVersion: v1

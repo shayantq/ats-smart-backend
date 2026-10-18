@@ -65,13 +65,13 @@ uvicorn app.main:app --reload          # http://localhost:8000/docs
 پردازش‌های پس‌زمینه هرکدام در یک ترمینال جدا:
 
 ```bash
-python -m app.worker                            # Worker صف (پردازش رزومه، ایمیل) — سازگار با ویندوز
+python -m app.worker                            # Worker همه‌ی صف‌ها (ایمیل، رزومه، انبوه) — سازگار با ویندوز
 rqscheduler --host localhost --port 6379        # زمان‌بند یادآورهای مصاحبه
 ```
 
 - ساخت migration جدید بعد از تغییر مدل‌ها: `alembic revision --autogenerate -m "توضیح"`
 - اگر Tesseract در PATH نیست (مخصوصاً ویندوز)، مسیر کامل `tesseract.exe` را در `TESSERACT_CMD_PATH` بدهید.
-- روی لینوکس/مک به‌جای `python -m app.worker` می‌توان از `rq worker --url redis://localhost:6379/0 default` هم استفاده کرد (Worker پیش‌فرض RQ به `SIGALRM` نیاز دارد که در ویندوز وجود ندارد).
+- `python -m app.worker resumes` فقط یک صف را پردازش می‌کند (بنگرید «صف‌های پس‌زمینه» پایین). روی لینوکس/مک `rq worker --url redis://localhost:6379/0 notifications resumes bulk default` هم کار می‌کند (Worker پیش‌فرض RQ به `SIGALRM` نیاز دارد که در ویندوز وجود ندارد).
 
 ---
 
@@ -193,7 +193,7 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 
 - پارسر AND/OR دستی است (`app/core/search_query.py`) چون `websearch_to_tsquery` پستگرس کلمه‌ی `and` را عملگر نمی‌شناسد.
 - پیش از `to_tsvector('simple', ...)` نویسه‌های `./+#@_-` به فاصله تبدیل می‌شوند (`resume_fts_tsvector_expression`)؛ وگرنه پارسر پستگرس «Node.js» را یک توکن واحد می‌دید. ایندکس فعلی: `ix_resumes_raw_text_fts_v2` (مایگریشن `f7b1e9a3c852`).
-- ایندکس‌های پشتیبان: GIN با `jsonb_path_ops` روی `resumes.skill_analysis` و ایندکس مرکب `(candidate_id, score_ai)` روی `applications` (مایگریشن `a4d8f0c2b716`).
+- ایندکس‌های پشتیبان (مایگریشن `9c4e2a7b1d35`): GIN روی آرایه‌ی حروف‌کوچک مهارت‌های هر رزومه (`ats_resume_skill_keys(skill_analysis)` — فیلتر `skills` با `@>`)، B-Tree روی سابقه‌ی خالص (`ats_resume_experience_years`)، هر دو با `fastupdate` و Autovacuum حساس به درج برای ورود انبوه رزومه؛ و ایندکس مرکب `(candidate_id, score_ai)` روی `applications`. نسخه‌ی قبلی فیلتر مهارت (`jsonb_array_elements_text` روی هر ردیف) هیچ ایندکسی را به کار نمی‌گرفت. سنجش: `bash k8s/search-benchmark.sh`.
 - `min_ai_score` یعنی «کارجویی که *حداقل در یکی* از درخواست‌هایش این نمره را گرفته» (نمره‌ی عمومیِ مستقل از آگهی وجود ندارد).
 - چون `candidates` ستون زمانی ندارد، صفحه‌بندی این مسیر روی `Candidate.id` است (پایدار، ولی بدون معنای زمانی).
 
@@ -260,6 +260,7 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 
 - `GET /api/v1/health` — بررسی سلامت · `GET /metrics` — متریک‌های Prometheus (بیرون از `/api/v1`؛ در Production از بیرون بسته است).
 - **کش و صف (Redis):** نشست کاربر ۵ دقیقه کش می‌شود (`app/core/cache.py`)؛ کارهای سنگین با RQ (`app/core/queue.py`) به‌صورت fire-and-forget به صف می‌روند. قطعی Redis سرور را از کار نمی‌اندازد — فقط کش/صف موقتاً غیرفعال می‌مانند.
+- **صف‌های پس‌زمینه** (به ترتیب اولویت Worker): `notifications` (ایمیل‌های تراکنشی: OTP، وضعیت، پیشنهاد، یادآور — Timeout ۲ دقیقه) · `resumes` (پردازش سنگین رزومه — Timeout ۵ دقیقه) · `bulk` (ایمیل انبوه با `enqueue_bulk`: هر ۵۰۰ کار با یک Pipeline) · `default`. همه‌ی کارها تلاش مجدد با فاصله دارند (کار «رهاشده» توسط Worker ازکارافتاده هم دوباره در صف قرار می‌گیرد)، نتیجه‌ی کار موفق ۱۰ دقیقه و کار ناموفق ۷ روز نگه داشته می‌شود. Redis: AOF با `appendfsync everysec` و `maxmemory-policy noeviction` (هیچ کاری بی‌صدا حذف نمی‌شود). تست استرس: `bash k8s/queue-stress.sh`.
 
 ---
 
@@ -401,8 +402,8 @@ backend /metrics · node · postgres · redis exporters ─► Prometheus ─►
                                                     Grafana (داشبورد زنده)      اعلان داخل سایت برای تیم فنی
 ```
 
-- **متریک‌های بک‌اند** (`app/core/metrics.py`): `http_requests_total`، `http_request_duration_seconds`، `http_requests_in_progress`، `ats_rq_jobs{state}` (کارهای منتظر/در حال اجرا/ناموفق/زمان‌بندی‌شده)، `ats_rq_workers` + CPU/RAM پردازه. برچسب مسیر همیشه الگوی مسیر است (مثل `/api/v1/jobs/{job_id}`).
-- **داشبوردهای Grafana** (خودکار provision، پوشه‌ی «ATS Smart»): **سلامت سیستم** (CPU، RAM، دیسک، شبکه، کانکشن‌ها و تراکنش‌های PostgreSQL، Redis، صف) و **کارایی API** (RPS، Latency p50/p95/p99، نرخ خطای 5xx، پرترافیک‌ترین و کندترین مسیرها). منبع: `monitoring/grafana/generate_dashboards.py` (بعد از تغییر، اجرایش کنید).
+- **متریک‌های بک‌اند** (`app/core/metrics.py`): `http_requests_total`، `http_request_duration_seconds`، `http_requests_in_progress`، `ats_rq_jobs{queue, state}` (کارهای منتظر/در حال اجرا/ناموفق/زمان‌بندی‌شده‌ی هر صف)، `ats_rq_workers` و `ats_rq_queue_workers{queue}` + CPU/RAM پردازه. برچسب مسیر همیشه الگوی مسیر است (مثل `/api/v1/jobs/{job_id}`).
+- **داشبوردهای Grafana** (خودکار provision، پوشه‌ی «ATS Smart»): **کلاستر Kubernetes** (وضعیت Node ها و Pod ها، CPU/RAM زنده‌ی هر Pod، HPA، صف‌ها، دیتابیس — فقط روی Kubernetes)، **سلامت سیستم** (CPU، RAM، دیسک، شبکه، کانکشن‌ها و تراکنش‌های PostgreSQL، Redis، صف) و **کارایی API** (RPS، Latency p50/p95/p99، نرخ خطای 5xx، پرترافیک‌ترین و کندترین مسیرها). منبع: `monitoring/grafana/generate_dashboards.py` (بعد از تغییر، اجرایش کنید).
 
 | هشدار (`monitoring/prometheus/alerts.yml`) | شرط | شدت |
 |---|---|---|
@@ -410,7 +411,9 @@ backend /metrics · node · postgres · redis exporters ─► Prometheus ─►
 | `ApiHighErrorRate` | نرخ خطای 5xx بالای **۵٪** (۱ دقیقه) | critical |
 | `BackendDown` · `PostgresDown` · `RedisDown` · `NoQueueWorkers` | سرویس در دسترس نیست / Worker فعالی نیست | critical |
 | `HostHighCpuUsage` · `ApiHighLatency` · `PostgresTooManyConnections` | CPU بالای ۸۵٪ (۵ دقیقه) · p95 بیش از ۱ ثانیه · کانکشن‌ها بالای ۸۰٪ | warning |
-| `QueueBacklog` · `QueueJobsFailing` · `HostLowDiskSpace` · `ExporterDown` | بیش از ۵۰ کار منتظر · بیش از ۵ شکست در ۱۵ دقیقه · دیسک زیر ۱۰٪ · Exporter قطع | warning |
+| `QueueBacklog` · `QueueJobsFailing` · `HostLowDiskSpace` · `ExporterDown` | بیش از ۵۰ کار منتظر در یک صف (به‌جز bulk) · بیش از ۵ شکست در ۱۵ دقیقه · دیسک زیر ۱۰٪ · Exporter قطع | warning |
+| `QueueHasNoWorkers` · `BulkQueueStalled` · `RedisMemoryHigh` | صفی بدون هیچ Worker · صف انبوه ۱۵ دقیقه کوچک نشده · حافظه‌ی Redis بالای ۸۰٪ maxmemory | critical · warning · warning |
+| `KubePodCrashLooping` · `KubePodNotReady` · `KubeDeploymentReplicasMismatch` · `KubeHpaMaxedOut` | فقط Kubernetes (kube-state-metrics): ری‌استارت پیاپی · Pod آماده نشده · نسخه‌های ناقص · HPA روی سقف | critical · warning |
 
 Alertmanager هر هشدار (و «برطرف شد») را با `OPS_WEBHOOK_TOKEN` به بک‌اند می‌فرستد؛ برای همه‌ی کاربران فعال با نقش‌های `OPS_ALERT_RECIPIENT_ROLES` اعلان ساخته می‌شود.
 

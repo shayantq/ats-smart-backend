@@ -8,6 +8,7 @@
 # آدرس‌ها پس از استقرار:
 #   http://localhost:8081   سایت (NGINX Ingress Controller ← فرانت‌اند و مستقیماً Pod های بک‌اند)
 #   http://localhost:3030   Grafana
+#   http://localhost:8025   Mailpit (ایمیل‌های ارسالی محیط لوکال)
 #   Prometheus / Alertmanager فقط داخل کلاستر — kubectl -n ats-smart port-forward svc/prometheus 9091:9090
 # =============================================================================
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -26,6 +27,7 @@ resources:
   - ../../base
   - storageclass.yaml
   - offsite-pvc.yaml
+  - mailpit.yaml
 
 # ایمیج‌های ساخته‌شده روی همین سیستم (docker compose build یا k8s/deploy.sh). Docker Desktop
 # از همان Image Store موتور داکر استفاده می‌کند؛ با تگ غیر latest، imagePullPolicy پیش‌فرض

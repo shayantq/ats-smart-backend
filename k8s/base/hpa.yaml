@@ -62,8 +62,51 @@ spec:
           periodSeconds: 30
 ---
 # سرویس رزومه: آپلود رزومه در backend-api است و پردازش سنگین آن (OCR ← NER ← موتور مهارت ←
-# نمره‌ی تطابق) در Worker صف RQ. هر Pod اضافه یک مصرف‌کننده‌ی دیگر از همان صف است؛ OCR پرمصرف‌ترین
-# بخش CPU/RAM سیستم است، پس با رسیدن صف شلوغ به ۷۵٪، Worker های بیشتری رزومه‌ها را موازی پردازش می‌کنند.
+# نمره‌ی تطابق) در resume-worker (صف resumes). هر Pod اضافه یک مصرف‌کننده‌ی دیگر از همان صف است؛ OCR
+# پرمصرف‌ترین بخش CPU/RAM سیستم است، پس با رسیدن موج رزومه‌ها به ۷۵٪، رزومه‌ها موازی پردازش می‌شوند.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: resume-worker
+  labels:
+    app.kubernetes.io/name: resume-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: resume-worker
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+    # Worker در حال پردازش یک رزومه با SIGTERM کارش را تمام می‌کند (Warm Shutdown)؛ کاهش آرام‌تر
+    scaleDown:
+      stabilizationWindowSeconds: 180
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+---
+# Worker ایمیل‌ها (صف‌های notifications ← bulk ← default): ارسال انبوه ایمیل (هزاران کار سبک پشت سر هم)
+# CPU را بالا می‌برد و Worker های بیشتری صف را موازی خالی می‌کنند — ایمیل‌های تراکنشی همچنان اولویت دارند.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -97,9 +140,8 @@ spec:
         - type: Pods
           value: 2
           periodSeconds: 30
-    # Worker در حال پردازش یک رزومه با SIGTERM کارش را تمام می‌کند (Warm Shutdown)؛ کاهش آرام‌تر
     scaleDown:
-      stabilizationWindowSeconds: 180
+      stabilizationWindowSeconds: 120
       policies:
         - type: Pods
           value: 1

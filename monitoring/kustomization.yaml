@@ -25,3 +25,4 @@ configMapGenerator:
     files:
       - grafana/dashboards/ats-api-performance.json
       - grafana/dashboards/ats-system-overview.json
+      - grafana/dashboards/ats-kubernetes-cluster.json

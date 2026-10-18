@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import func, literal_column
+from sqlalchemy import Float, Text, func, literal_column
+from sqlalchemy.dialects.postgresql import ARRAY, array
 from sqlalchemy.sql.elements import ColumnElement
 
 
@@ -114,3 +115,22 @@ def resume_fts_tsvector_expression(raw_text_column: ColumnElement) -> ColumnElem
         literal_column(f"'{_FTS_PUNCTUATION_REPLACEMENT}'"),
     )
     return func.to_tsvector("simple", normalized)
+
+
+def resume_has_skill_condition(skill_analysis_column: ColumnElement, skill_name: str) -> ColumnElement:
+    """
+    شرط «این رزومه مهارت X را دارد» (بدون حساسیت به حروف بزرگ/کوچک) به شکلی که پستگرس از ایندکس GIN
+    ix_resumes_skill_keys_gin استفاده کند (مایگریشن 9c4e2a7b1d35):
+
+        ats_resume_skill_keys(skill_analysis) @> ARRAY[lower(:skill)]
+
+    عبارت سمت چپ باید دقیقاً همان عبارت ایندکس باشد. نسخه‌ی قبلی (jsonb_array_elements_text + lower
+    روی هر عنصر) هیچ ایندکسی را به کار نمی‌گرفت و با هر جستجو کل جدول resumes خوانده می‌شد.
+    """
+    skill_keys = func.ats_resume_skill_keys(skill_analysis_column, type_=ARRAY(Text))
+    return skill_keys.contains(array([func.lower(skill_name)], type_=Text))
+
+
+def resume_experience_years_expression(skill_analysis_column: ColumnElement) -> ColumnElement:
+    """سابقه‌ی خالص (سال) طبق موتور مهارت — همان عبارت ایندکس ix_resumes_experience_years."""
+    return func.ats_resume_experience_years(skill_analysis_column, type_=Float)

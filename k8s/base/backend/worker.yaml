@@ -1,8 +1,16 @@
 # =============================================================================
-# Worker صف RQ — پردازش رزومه (OCR → NER → موتور مهارت → نمره‌ی تطابق) و ارسال ایمیل‌ها
+# Worker های صف RQ — دو Deployment جدا با مقیاس خودکار مستقل (بنگرید app/core/queue.py)
 #
-# مقیاس خودکار با HPA: هر نسخه‌ی اضافه یک مصرف‌کننده‌ی دیگر از همان صف Redis است.
-# SIGTERM = Warm Shutdown در RQ: کار در حال اجرا (مثلاً OCR یک رزومه) پیش از خروج تمام می‌شود.
+#   worker          صف‌های notifications ← bulk ← default (به همین ترتیب اولویت): ایمیل‌های تراکنشی
+#                   (OTP، تغییر وضعیت، پیشنهاد، یادآور) همیشه جلوتر از ایمیل‌های انبوه پردازش می‌شوند
+#   resume-worker   صف resumes: پردازش سنگین رزومه (OCR ← NER ← موتور مهارت ← نمره‌ی تطابق)
+#
+# چرا جدا: یک OCR چند ده ثانیه CPU می‌گیرد؛ با Worker مشترک، موجی از رزومه‌ها ایمیل OTP کاربر را
+# دقیقه‌ها پشت سر خودش نگه می‌داشت. حالا هر کدام منابع، Timeout و HPA خودش را دارد.
+#
+# بدون از دست رفتن کار: SIGTERM = Warm Shutdown در RQ — کار در حال اجرا پیش از خروج تمام می‌شود
+# (terminationGracePeriodSeconds بیشتر از job_timeout هر صف است). اگر Pod ناگهان از بین برود، RQ
+# کار «رهاشده» را با سیاست تلاش مجدد همان کار دوباره در صف می‌گذارد.
 # =============================================================================
 apiVersion: apps/v1
 kind: Deployment
@@ -12,7 +20,7 @@ metadata:
     app.kubernetes.io/name: worker
     app.kubernetes.io/component: queue-worker
 spec:
-  # replicas را HPA مدیریت می‌کند (hpa.yaml: ۱ تا ۴، بر اساس CPU/RAM پردازش رزومه‌ها)
+  # replicas را HPA مدیریت می‌کند (hpa.yaml: ۱ تا ۴)
   revisionHistoryLimit: 5
   selector:
     matchLabels:
@@ -23,7 +31,75 @@ spec:
         app.kubernetes.io/name: worker
         app.kubernetes.io/component: queue-worker
     spec:
-      terminationGracePeriodSeconds: 70
+      # بیشتر از job_timeout ایمیل‌ها (۱۲۰ ثانیه)
+      terminationGracePeriodSeconds: 150
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-migrations
+          image: ats-smart-backend
+          command:
+            - sh
+            - -c
+            - until alembic current 2>/dev/null | grep -q '(head)'; do echo 'در انتظار اجرای مایگریشن‌ها ...'; sleep 3; done
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              memory: 384Mi
+      containers:
+        - name: worker
+          image: ats-smart-backend
+          command: ["python", "-m", "app.worker", "notifications", "bulk", "default"]
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets
+          # HPA درصد مصرف را نسبت به همین requests می‌سنجد (هدف ۷۵٪ — بنگرید hpa.yaml)
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resume-worker
+  labels:
+    app.kubernetes.io/name: resume-worker
+    app.kubernetes.io/component: queue-worker
+spec:
+  # replicas را HPA مدیریت می‌کند (hpa.yaml: ۱ تا ۴، بر اساس CPU/RAM پردازش رزومه‌ها)
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resume-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: resume-worker
+        app.kubernetes.io/component: queue-worker
+    spec:
+      # بیشتر از job_timeout پردازش رزومه (۳۰۰ ثانیه): Scale Down یا استقرار وسط OCR، رزومه را نصفه رها نمی‌کند
+      terminationGracePeriodSeconds: 330
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -50,21 +126,22 @@ spec:
             limits:
               memory: 384Mi
       containers:
-        - name: worker
+        - name: resume-worker
           image: ats-smart-backend
-          command: ["python", "-m", "app.worker"]
+          command: ["python", "-m", "app.worker", "resumes"]
           envFrom:
             - configMapRef:
                 name: ats-config
             - secretRef:
                 name: ats-backend-secrets
+          # OCR (رندر صفحه + Tesseract) و مدل spaCy پرمصرف‌ترین بخش سیستم‌اند
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
+              cpu: 200m
+              memory: 384Mi
             limits:
               cpu: "1"
-              memory: 1Gi
+              memory: 1536Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

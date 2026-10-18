@@ -36,6 +36,34 @@ subjects:
   - kind: ServiceAccount
     name: prometheus
 ---
+# متریک‌های CPU/RAM/شبکه‌ی تک‌تک کانتینرها (cAdvisor داخل kubelet هر Node) از مسیر Proxy سرور API —
+# فقط خواندن اطلاعات Node ها، بدون دسترسی به هیچ منبع دیگری
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ats-smart-prometheus-nodes
+  labels:
+    app.kubernetes.io/name: prometheus
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/proxy", "nodes/metrics"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ats-smart-prometheus-nodes
+  labels:
+    app.kubernetes.io/name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ats-smart-prometheus-nodes
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: ats-smart
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -112,6 +140,9 @@ spec:
             - name: rules
               mountPath: /etc/prometheus/rules
               readOnly: true
+            - name: k8s-rules
+              mountPath: /etc/prometheus/k8s-rules
+              readOnly: true
             - name: data
               mountPath: /prometheus
       volumes:
@@ -121,6 +152,9 @@ spec:
         - name: rules
           configMap:
             name: prometheus-rules
+        - name: k8s-rules
+          configMap:
+            name: prometheus-k8s-rules
         - name: data
           persistentVolumeClaim:
             claimName: prometheus-data
