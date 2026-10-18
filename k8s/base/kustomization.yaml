@@ -1,0 +1,66 @@
+# =============================================================================
+# ATS Smart روی Kubernetes — لایه‌ی پایه (مستقل از محیط)
+#
+# این لایه به‌تنهایی اعمال نمی‌شود: Secret ها، StorageClass، تگ ایمیج‌ها و نحوه‌ی
+# دسترسی بیرونی را Overlay هر محیط تعیین می‌کند (بنگرید k8s/overlays/local).
+#
+#   ۱۰ سرویس:  backend-api · worker · scheduler · frontend          (لایه‌ی برنامه)
+#              postgres (StatefulSet) · redis                         (لایه‌ی داده)
+#              prometheus · alertmanager · grafana                    (مانیتورینگ)
+#              backup                                                 (پشتیبان‌گیری/DR)
+#   + Exporterها به‌صورت Sidecar کنار postgres/redis/backup، node-exporter به‌صورت
+#     DaemonSet (یک نسخه روی هر Node) و migrate به‌صورت Job یک‌باره
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ats-smart
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ats-smart
+    # Selector ها تغییرناپذیرند؛ این برچسب فقط روی متادیتا می‌نشیند
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  # لایه‌ی داده
+  - postgres/statefulset.yaml
+  - postgres/services.yaml
+  - redis/redis.yaml
+  # لایه‌ی برنامه
+  - backend/media-pvc.yaml
+  - backend/migrate-job.yaml
+  - backend/backend-api.yaml
+  - backend/worker.yaml
+  - backend/scheduler.yaml
+  - frontend/frontend.yaml
+  - hpa.yaml
+  # مانیتورینگ و هشدار
+  - ../../monitoring
+  - monitoring/prometheus.yaml
+  - monitoring/alertmanager.yaml
+  - monitoring/grafana.yaml
+  - monitoring/node-exporter.yaml
+  # پشتیبان‌گیری و بازیابی فاجعه
+  - backup/backup.yaml
+  - backup/backup-drill.yaml
+
+configMapGenerator:
+  # تنظیمات غیرحساس برنامه (معادل بخش غیرمحرمانه‌ی .env) — Overlay ها مقادیر
+  # وابسته به محیط (آدرس عمومی، SMTP و ...) را با behavior: merge جایگزین می‌کنند
+  - name: ats-config
+    envs:
+      - config/app.env
+  - name: postgres-config
+    files:
+      - postgres/pg_hba.conf
+  - name: prometheus-config
+    files:
+      - monitoring/prometheus.yml
+  - name: alertmanager-config
+    files:
+      - monitoring/alertmanager.yml
+  - name: backup-config
+    envs:
+      - backup/backup.env

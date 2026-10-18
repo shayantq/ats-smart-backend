@@ -1,0 +1,18 @@
+# =============================================================================
+# StorageClass محلی با reclaimPolicy: Retain — طراحی ذخیره‌سازی پایدار
+#
+# StorageClass پیش‌فرض Docker Desktop («hostpath») از Delete استفاده می‌کند: با حذف PVC، خودِ
+# PV و داده‌ی روی دیسک هم پاک می‌شود. اینجا همان Provisioner با Retain: حتی اگر PVC دیتابیس
+# اشتباهی حذف شود، PV با وضعیت Released و داده‌ی کامل روی دیسک باقی می‌ماند و قابل اتصال مجدد است.
+#
+# روی کلاستر واقعی فقط provisioner عوض می‌شود، مثلاً:
+#   AWS EBS: ebs.csi.aws.com · GKE: pd.csi.storage.gke.io · Azure: disk.csi.azure.com
+#   k3s / بِرمتال: rancher.io/local-path · ArvanCloud / OpenStack: cinder.csi.openstack.org
+# =============================================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ats-retain
+provisioner: docker.io/hostpath
+reclaimPolicy: Retain
+volumeBindingMode: Immediate

@@ -1,0 +1,76 @@
+# =============================================================================
+# تمرین بازیابی فاجعه (معادل سرویس backup_restore در Compose) — هرگز خودکار اجرا نمی‌شود
+#
+# CronJob معلق (suspend: true) فقط نقش «قالب» را دارد تا اجرای دستی با یک دستور ممکن باشد:
+#   kubectl -n ats-smart create job backup-drill-manual --from=cronjob/backup-drill
+#   kubectl -n ats-smart logs -f job/backup-drill-manual
+# بازیابی کامل از Offsite در یک نمونه‌ی PostgreSQL کاملاً جدید داخل همین Pod (نه دیتابیس اصلی).
+#
+# تنها جایی که «کلید خصوصی» رمزگشایی استفاده می‌شود؛ Secret آن فقط هنگام تمرین/بازیابی ساخته
+# و بعد حذف می‌شود (بنگرید k8s/README.md):
+#   kubectl -n ats-smart create secret generic backup-restore-key --from-file=age-identity.txt=<مسیر کلید>
+# =============================================================================
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-drill
+  labels:
+    app.kubernetes.io/name: backup-drill
+    app.kubernetes.io/component: backup
+spec:
+  suspend: true
+  schedule: "0 0 1 1 *"
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backup-drill
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: drill
+              image: ats-smart-backup
+              args: ["drill"]
+              envFrom:
+                - configMapRef:
+                    name: backup-config
+                - secretRef:
+                    name: ats-backup-secrets
+              env:
+                - name: BACKUP_AGE_IDENTITY_FILE
+                  value: /run/secrets/backup-private/age-identity.txt
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: ats-postgres-secrets
+                      key: POSTGRES_USER
+                - name: PGDATABASE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: ats-config
+                      key: POSTGRES_DB
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 1Gi
+              volumeMounts:
+                - name: restore-key
+                  mountPath: /run/secrets/backup-private
+                  readOnly: true
+                - name: restore-target
+                  mountPath: /restore
+          volumes:
+            - name: restore-key
+              secret:
+                secretName: backup-restore-key
+                optional: true
+            # نمونه‌ی بازیابی‌شده موقت است و با پایان Job حذف می‌شود
+            - name: restore-target
+              emptyDir:
+                sizeLimit: 10Gi

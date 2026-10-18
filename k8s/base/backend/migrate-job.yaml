@@ -1,0 +1,68 @@
+# =============================================================================
+# اجرای یک‌باره‌ی مایگریشن‌های دیتابیس (alembic upgrade head) — معادل سرویس migrate
+#
+# API و Worker تا رسیدن دیتابیس به آخرین نسخه (head) بالا نمی‌آیند (initContainer
+# «wait-for-migrations» در همان مانیفست‌ها). Job تغییرناپذیر است؛ برای انتشار نسخه‌ی
+# جدید، k8s/deploy.sh پیش از اعمال، Job قبلی را حذف می‌کند (یا TTL زیر خودکار پاکش می‌کند).
+# مایگریشن‌ها باید Expand/Contract باشند (سازگار با نسخه‌ی قبلی کد که هنوز در حال اجراست).
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  labels:
+    app.kubernetes.io/name: migrate
+    app.kubernetes.io/component: migration
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: migrate
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # تا پستگرس اتصال TCP نپذیرد، مایگریشن شروع نمی‌شود (به‌جای چند بار شکست و Backoff)
+        - name: wait-for-postgres
+          image: ats-smart-backend
+          command:
+            - python
+            - -c
+            - |
+              import socket, time
+              while True:
+                  try:
+                      socket.create_connection(("postgres", 5432), timeout=2).close()
+                      break
+                  except OSError:
+                      print("در انتظار PostgreSQL ...", flush=True)
+                      time.sleep(2)
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      containers:
+        - name: migrate
+          image: ats-smart-backend
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi

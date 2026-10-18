@@ -1,0 +1,27 @@
+# =============================================================================
+# پیکربندی‌های مشترک مانیتورینگ برای استقرار روی Kubernetes (k8s/base از همین‌جا می‌خواند)
+#
+# همین فایل‌ها در Docker Compose مستقیماً Mount می‌شوند؛ این Kustomization فقط از روی
+# همان فایل‌ها ConfigMap می‌سازد تا قوانین هشدار و داشبوردها یک منبع حقیقت داشته باشند
+# (تغییر در alerts.yml یا خروجی generate_dashboards.py خودکار به هر دو محیط می‌رسد).
+#
+# پسوند هش نام ConfigMapها (پیش‌فرض Kustomize) باعث می‌شود با هر تغییر محتوا،
+# Pod های Prometheus/Grafana خودکار با پیکربندی جدید Rollout شوند.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configMapGenerator:
+  - name: prometheus-rules
+    files:
+      - prometheus/alerts.yml
+  - name: grafana-datasources
+    files:
+      - grafana/provisioning/datasources/prometheus.yml
+  - name: grafana-dashboard-providers
+    files:
+      - grafana/provisioning/dashboards/dashboards.yml
+  - name: grafana-dashboards
+    files:
+      - grafana/dashboards/ats-api-performance.json
+      - grafana/dashboards/ats-system-overview.json

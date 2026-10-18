@@ -1,0 +1,79 @@
+# =============================================================================
+# Worker صف RQ — پردازش رزومه (OCR → NER → موتور مهارت → نمره‌ی تطابق) و ارسال ایمیل‌ها
+#
+# مقیاس‌پذیر: هر نسخه‌ی اضافه یک مصرف‌کننده‌ی دیگر از همان صف Redis است (kubectl scale).
+# SIGTERM = Warm Shutdown در RQ: کار در حال اجرا (مثلاً OCR یک رزومه) پیش از خروج تمام می‌شود.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/component: queue-worker
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker
+        app.kubernetes.io/component: queue-worker
+    spec:
+      terminationGracePeriodSeconds: 70
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-migrations
+          image: ats-smart-backend
+          command:
+            - sh
+            - -c
+            - until alembic current 2>/dev/null | grep -q '(head)'; do echo 'در انتظار اجرای مایگریشن‌ها ...'; sleep 3; done
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              memory: 384Mi
+      containers:
+        - name: worker
+          image: ats-smart-backend
+          command: ["python", "-m", "app.worker"]
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # همان PVC رزومه‌ها که API در آن ذخیره می‌کند
+            - name: media
+              mountPath: /app/media
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: media

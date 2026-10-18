@@ -1,0 +1,6 @@
+# همه‌ی منابع ATS Smart در یک Namespace جدا — جداسازی از بقیه‌ی برنامه‌های کلاستر،
+# و امکان حذف/مهاجرت یکجا (نام نهایی را Overlay می‌تواند تغییر دهد)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ats-smart

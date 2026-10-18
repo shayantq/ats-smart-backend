@@ -1,0 +1,109 @@
+# =============================================================================
+# فرانت‌اند React (Nginx) — Deployment + Service
+#
+# همان ایمیج Compose بدون تغییر: Nginx فایل‌های استاتیک را سرو و /api و /media را به
+# Service «backend-api» پراکسی می‌کند. آدرس بک‌اند و DNS Resolver با متغیرهای محیطی
+# قالب nginx.conf (envsubst هنگام شروع) به نسخه‌ی Kubernetes تغییر می‌کنند:
+#   BACKEND_UPSTREAM  نام کامل (FQDN) سرویس — resolver خودِ Nginx دامنه‌های جست‌وجوی
+#                     resolv.conf را اعمال نمی‌کند، پس نام کوتاه «backend-api» کافی نیست
+#   NGINX_RESOLVER    DNS داخلی کلاستر (CoreDNS) به‌جای 127.0.0.11 داکر
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/component: web
+spec:
+  # replicas را HPA مدیریت می‌کند (hpa.yaml: ۲ تا ۴)
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+        app.kubernetes.io/component: web
+    spec:
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: frontend
+      containers:
+        - name: frontend
+          image: ats-smart-frontend
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: BACKEND_UPSTREAM
+              value: backend-api.$(POD_NAMESPACE).svc.cluster.local:8000
+            - name: NGINX_RESOLVER
+              value: kube-dns.kube-system.svc.cluster.local
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+spec:
+  # ClusterIP در لایه‌ی پایه؛ نحوه‌ی دسترسی بیرونی (LoadBalancer / Ingress) را Overlay تعیین می‌کند
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend

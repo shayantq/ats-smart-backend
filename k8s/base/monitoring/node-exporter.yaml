@@ -1,0 +1,80 @@
+# =============================================================================
+# node-exporter — متریک‌های سخت‌افزاری هر Node (CPU، RAM، دیسک، شبکه)
+#
+# DaemonSet: روی هر Node کلاستر دقیقاً یک نسخه اجرا می‌شود (با اضافه‌شدن Node، خودکار).
+# برای دیدن پردازه‌ها و فایل‌سیستم میزبان به hostPID و Mount فقط‌خواندنی /proc، /sys و / نیاز دارد.
+# =============================================================================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  labels:
+    app.kubernetes.io/name: node-exporter
+    app.kubernetes.io/component: monitoring-agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: node-exporter
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: node-exporter
+        app.kubernetes.io/component: monitoring-agent
+    spec:
+      hostPID: true
+      # روی Node های Control Plane (Taint دار) هم اجرا شود
+      tolerations:
+        - operator: Exists
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+        - name: node-exporter
+          image: prom/node-exporter:v1.8.2
+          args:
+            - --path.procfs=/host/proc
+            - --path.sysfs=/host/sys
+            - --path.rootfs=/host/root
+            - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/kubelet/.+|var/lib/docker/.+)($|/)
+          ports:
+            - name: metrics
+              containerPort: 9100
+          readinessProbe:
+            httpGet:
+              path: /
+              port: metrics
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              memory: 96Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
+            # بدون mountPropagation: ریشه‌ی VM داکر دسکتاپ Mount اشتراکی (shared) نیست و
+            # HostToContainer آنجا کانتینر را اجرانشدنی می‌کند
+            - name: root
+              mountPath: /host/root
+              readOnly: true
+      volumes:
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: root
+          hostPath:
+            path: /

@@ -4,7 +4,7 @@
 
 - **بک‌اند** (ریشه‌ی ریپو): FastAPI (Async) · PostgreSQL · SQLAlchemy 2 · Alembic · Redis (کش + صف RQ)
 - **فرانت‌اند** (`frontend/`): React · TypeScript · Vite · Tailwind — راهنمای جدا: [`frontend/README.md`](frontend/README.md)
-- **زیرساخت:** Docker (Multi-stage) · Docker Compose · GitHub Actions · Prometheus · Grafana · Alertmanager
+- **زیرساخت:** Docker (Multi-stage) · Docker Compose · **Kubernetes** (Kustomize، HPA، StatefulSet) · GitHub Actions · Prometheus · Grafana · Alertmanager
 
 **امکانات اصلی:** احراز هویت JWT و RBAC · مدیریت آگهی · بورد کانبان با ماشین وضعیت صلب · آپلود رزومه و خط لوله‌ی هوش مصنوعی (OCR → NER → موتور مهارت → نمره‌ی تطابق) · پورتال کارجو · مدیریت مصاحبه با یادآور خودکار · اطلاع‌رسانی ایمیلی · جستجوی پیشرفته‌ی کارجویان · داشبورد تحلیلی · مانیتورینگ و هشدار زنده
 
@@ -19,6 +19,7 @@
 - [تست بار و امنیت](#تست-بار-و-امنیت)
 - [پشتیبان‌گیری و بازیابی فاجعه (DR)](#پشتیبانگیری-و-بازیابی-فاجعه-dr)
 - [زیرساخت: Docker، مانیتورینگ، CI/CD و استقرار](#زیرساخت-docker-مانیتورینگ-cicd-و-استقرار)
+- [استقرار روی Kubernetes](#استقرار-روی-kubernetes)
 - [ساختار ریپو](#ساختار-ریپو)
 - [محدودیت‌های شناخته‌شده](#محدودیتهای-شناختهشده)
 
@@ -480,6 +481,22 @@ python deploy/traffic_probe.py --url https://ats.example.com    # پایش زن�
 
 ---
 
+## استقرار روی Kubernetes
+
+همه‌ی ۱۰ سرویس (backend-api، worker، scheduler، frontend، postgres، redis، prometheus، alertmanager، grafana، backup) با همان ایمیج‌های Compose روی یک کلاستر Kubernetes — راهنمای کامل: [`k8s/README.md`](k8s/README.md)
+
+```bash
+bash k8s/deploy.sh     # لوکال: Kubernetes داخلی Docker Desktop — سایت http://localhost:8090 · Grafana http://localhost:3030
+bash k8s/verify.sh     # بررسی خودکار معیارهای پذیرش: Pod ها، شبکه‌ی داخلی، ماندگاری داده (--deep: حذف کامل StatefulSet)
+```
+
+- **داده‌ی پایدار:** PostgreSQL به‌صورت StatefulSet با volumeClaimTemplates (داده + آرشیو WAL)؛ StorageClass با `reclaimPolicy: Retain` و `persistentVolumeClaimRetentionPolicy: Retain` — حذف Pod، StatefulSet یا حتی PVC داده را از بین نمی‌برد. Redis با AOF روی PVC.
+- **مقیاس و دسترس‌پذیری:** HPA بر اساس CPU (بک‌اند ۲ تا ۶، فرانت‌اند ۲ تا ۴، با metrics-server در `k8s/addons`)، RollingUpdate بدون قطعی (`maxUnavailable: 0` + `preStop`)، PodDisruptionBudget، Probe های Startup/Readiness/Liveness.
+- **پیکربندی:** ConfigMap برای تنظیمات غیرحساس و چهار Secret جدا با حداقل دسترسی (Kustomize Generator؛ فایل‌های واقعی در `.gitignore`)؛ قوانین هشدار و داشبوردها از همان پوشه‌ی `monitoring/` (`monitoring/kustomization.yaml`).
+- **ساختار:** `k8s/base` (مستقل از محیط) + `k8s/overlays/local` (Docker Desktop)؛ برای Production فقط یک Overlay جدید (StorageClass ابری، Registry، Ingress/TLS) — جدول تفاوت‌ها در راهنمای `k8s/`.
+
+---
+
 ## ساختار ریپو
 
 ```
@@ -503,7 +520,8 @@ python deploy/traffic_probe.py --url https://ats.example.com    # پایش زن�
 ├── alembic/                 # مایگریشن‌های دیتابیس
 ├── tests/                   # unit/ (تست‌های واحد) · integration/ (API + دیتابیس موقت)
 ├── frontend/                # فرانت‌اند React (+ Dockerfile و nginx.conf)
-├── monitoring/              # Prometheus (+ alerts.yml)، Alertmanager، Grafana (provisioning + داشبوردها)
+├── monitoring/              # Prometheus (+ alerts.yml)، Alertmanager، Grafana (provisioning + داشبوردها) + kustomization.yaml (ConfigMap های K8s)
+├── k8s/                     # Kubernetes: base/ (مانیفست‌ها)، overlays/local/، addons/metrics-server، deploy.sh، verify.sh
 ├── deploy/                  # docker-compose.prod.yml، deploy.sh، compose.sh، nginx/ (gateway + nginx.conf)
 ├── loadtest/                # Locust: locustfile، داده‌ی تست، compose محیط تست بار، RESULTS.md
 ├── security/                # OWASP ZAP: compose اسکن، توکن اسکنر، RESULTS.md

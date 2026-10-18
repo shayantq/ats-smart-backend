@@ -1,0 +1,81 @@
+# =============================================================================
+# rq-scheduler — یادآورهای مصاحبه (۲۴ ساعت پیش از جلسه) را در لحظه‌ی موعد وارد صف می‌کند
+#
+# همیشه دقیقاً یک نسخه (Recreate): دو Scheduler هم‌زمان هر یادآور را دوبار ارسال می‌کردند.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  labels:
+    app.kubernetes.io/name: scheduler
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scheduler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scheduler
+        app.kubernetes.io/component: scheduler
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # rqscheduler در نبود Redis بلافاصله خارج می‌شود — به‌جای CrashLoopBackOff منتظر می‌ماند
+        - name: wait-for-redis
+          image: ats-smart-backend
+          command:
+            - python
+            - -c
+            - |
+              import os, time, redis
+              client = redis.Redis.from_url(os.environ["REDIS_URL"], socket_timeout=2)
+              while True:
+                  try:
+                      client.ping()
+                      break
+                  except redis.RedisError:
+                      print("در انتظار Redis ...", flush=True)
+                      time.sleep(2)
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ats-config
+                  key: REDIS_URL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      containers:
+        - name: scheduler
+          image: ats-smart-backend
+          command: ["rqscheduler", "--url", "$(REDIS_URL)", "--interval", "30"]
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ats-config
+                  key: REDIS_URL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

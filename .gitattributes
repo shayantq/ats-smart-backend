@@ -10,3 +10,7 @@ backup/crontab text eol=lf
 # فایل‌های باینری هرگز تبدیل پایان خط نشوند (مثلاً PDF نمونه‌ی تست بار — loadtest/sample_resume.pdf)
 *.pdf binary
 *.png binary
+
+# فایل‌های env که Kustomize به ConfigMap/Secret تبدیل می‌کند: CR ویندوزی وارد مقدار متغیرها می‌شد
+*.env text eol=lf
+*.env.example text eol=lf

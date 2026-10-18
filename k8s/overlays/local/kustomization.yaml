@@ -1,0 +1,152 @@
+# =============================================================================
+# Overlay محیط لوکال — کلاستر Kubernetes داخلی Docker Desktop (تک Node)
+#
+#   استقرار کامل (پیشنهادی):   bash k8s/deploy.sh
+#   یا مستقیم:                  kubectl apply -k k8s/overlays/local
+#                               (پیش‌نیاز: فایل‌های secrets/*.env و ایمیج‌های :local)
+#
+# آدرس‌ها پس از استقرار:
+#   http://localhost:8090   سایت (Service فرانت‌اند از نوع LoadBalancer)
+#   http://localhost:3030   Grafana
+#   Prometheus / Alertmanager فقط داخل کلاستر — kubectl -n ats-smart port-forward svc/prometheus 9091:9090
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ats-smart
+
+# همان برچسب لایه‌ی پایه، برای منابع خودِ این Overlay (StorageClass، PVC و Secret ها) —
+# deploy.sh با همین برچسب اعمال/Prune می‌کند
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ats-smart
+    includeSelectors: false
+
+resources:
+  - ../../base
+  - storageclass.yaml
+  - offsite-pvc.yaml
+
+# ایمیج‌های ساخته‌شده روی همین سیستم (docker compose build یا k8s/deploy.sh). Docker Desktop
+# از همان Image Store موتور داکر استفاده می‌کند؛ با تگ غیر latest، imagePullPolicy پیش‌فرض
+# IfNotPresent است و نیازی به Registry نیست. deploy.sh تگ را به sha کامیت جاری تغییر می‌دهد.
+images:
+  - name: ats-smart-backend
+    newTag: local
+  - name: ats-smart-frontend
+    newTag: local
+  - name: ats-smart-backup
+    newTag: local
+
+configMapGenerator:
+  - name: ats-config
+    behavior: merge
+    envs:
+      - config.env
+  - name: backup-config
+    behavior: merge
+    envs:
+      - backup.env
+
+# مقادیر محرمانه از فایل‌های secrets/*.env (در .gitignore؛ نمونه: secrets/*.env.example).
+# پسوند هش نام Secret ها: با تغییر هر رمز، Pod های مصرف‌کننده خودکار Rollout می‌شوند.
+secretGenerator:
+  - name: ats-postgres-secrets
+    envs:
+      - secrets/postgres.env
+  - name: ats-backend-secrets
+    envs:
+      - secrets/backend.env
+  - name: ats-grafana-secrets
+    envs:
+      - secrets/grafana.env
+  - name: ats-backup-secrets
+    envs:
+      - secrets/backup.env
+
+patches:
+  # همه‌ی PVC ها (و PVC های StatefulSet پستگرس) روی StorageClass با Retain
+  - target:
+      kind: PersistentVolumeClaim
+    patch: |-
+      - op: add
+        path: /spec/storageClassName
+        value: ats-retain
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: ats-retain
+      - op: add
+        path: /spec/volumeClaimTemplates/1/spec/storageClassName
+        value: ats-retain
+
+  # دسترسی از مرورگر: Docker Desktop سرویس‌های LoadBalancer را روی localhost باز می‌کند.
+  # پورت‌ها عمداً با Docker Compose (8080، 3000، 8088) تداخل ندارند تا هر دو هم‌زمان اجرا شوند.
+  - target:
+      kind: Service
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+      - op: replace
+        path: /spec/ports/0/port
+        value: 8090
+  - target:
+      kind: Service
+      name: grafana
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+      - op: replace
+        path: /spec/ports/0/port
+        value: 3030
+
+  # VM داکر دسکتاپ (WSL2) درایوهای ویندوز (9p) و فایل‌سیستم توزیع میزبان را هم Mount کرده؛
+  # این‌ها دیسک Node نیستند و هشدار HostLowDiskSpace را بی‌جا (بر اساس درایو C:) فعال می‌کردند
+  - target:
+      kind: DaemonSet
+      name: node-exporter
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|tmp|var/lib/kubelet/.+|var/lib/docker/.+|mnt/host|mnt/wsl|parent-distro|usr/lib/wsl|usr/lib/modules|host_mnt)($|/)
+      - op: remove
+        path: /spec/template/spec/containers/0/args/3
+
+  # Offsite شبیه‌سازی‌شده (PVC «offsite») برای سرویس backup و تمرین بازیابی
+  - target:
+      kind: Deployment
+      name: backup
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: offsite
+          persistentVolumeClaim:
+            claimName: offsite
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: offsite
+          mountPath: /offsite
+  - target:
+      kind: CronJob
+      name: backup-drill
+    patch: |-
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/volumes/-
+        value:
+          name: offsite
+          persistentVolumeClaim:
+            claimName: offsite
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: offsite
+          mountPath: /offsite
+          readOnly: true

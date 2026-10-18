@@ -1,0 +1,36 @@
+# Headless Service (clusterIP: None): هویت شبکه‌ای پایدار StatefulSet —
+#   postgres-0.postgres-headless.<namespace>.svc.cluster.local
+# (لازمه‌ی StatefulSet و پایه‌ی افزودن Replica های خواندنی در آینده)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+# Service اصلی که برنامه‌ها به آن وصل می‌شوند (DATABASE_URL: ...@postgres:5432/...):
+# یک IP مجازی ثابت (ClusterIP) که با تغییر IP پاد بعد از ری‌استارت عوض نمی‌شود.
+# پورت به بیرون از کلاستر باز نیست.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

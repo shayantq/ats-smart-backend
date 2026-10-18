@@ -1,0 +1,15 @@
+# فایل‌های رزومه‌ی آپلودشده: API (چند نسخه) ذخیره می‌کند، Worker پردازش می‌کند و backup
+# (فقط‌خواندنی) هفتگی پشتیبان می‌گیرد — پس چند Pod هم‌زمان Mount می‌کنند: ReadWriteMany.
+# روی کلاستر چند Node، StorageClass باید RWX را پشتیبانی کند (NFS / EFS / Azure Files / CephFS)،
+# یا STORAGE_BACKEND=s3 تا اصلاً فایلی روی دیسک Pod ها نماند.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media
+  labels:
+    app.kubernetes.io/name: backend-api
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 5Gi

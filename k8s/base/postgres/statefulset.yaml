@@ -1,0 +1,168 @@
+# =============================================================================
+# PostgreSQL — StatefulSet با ذخیره‌سازی پایدار (Persistent Volume)
+#
+# چرا StatefulSet و نه Deployment:
+#   - هویت پایدار: Pod همیشه «postgres-0» است و بعد از هر ری‌استارت/حذف، دقیقاً به
+#     همان PVC های قبلی خودش (data-postgres-0 و wal-archive-postgres-0) وصل می‌شود.
+#   - volumeClaimTemplates: برای هر نسخه یک PVC اختصاصی ساخته می‌شود و با حذف Pod
+#     (حتی حذف خودِ StatefulSet، طبق persistentVolumeClaimRetentionPolicy) پاک نمی‌شود.
+#   - ترتیب و یکتایی: هرگز دو Pod هم‌زمان روی یک پوشه‌ی داده نمی‌نویسند.
+#
+# زنجیره‌ی ذخیره‌سازی:  Pod ─► PVC (data-postgres-0) ─► PV ─► دیسک واقعی (StorageClass)
+#   PV ها با Dynamic Provisioning توسط StorageClass ساخته می‌شوند؛ Overlay هر محیط یک
+#   StorageClass با reclaimPolicy: Retain انتخاب می‌کند تا حتی با حذف اشتباهی PVC هم
+#   خودِ داده روی دیسک باقی بماند.
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+spec:
+  serviceName: postgres-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  # حذف StatefulSet یا کاهش replicas هرگز PVC های داده را پاک نمی‌کند
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: database
+    spec:
+      # فرصت Checkpoint و خاموشی تمیز (Fast Shutdown) پیش از SIGKILL
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          # پوشه‌ی آرشیو WAL (PVC مشترک با سرویس backup) باید متعلق به کاربر postgres باشد
+          command:
+            - sh
+            - -c
+            - install -d -o postgres -g postgres -m 700 /wal_archive && exec docker-entrypoint.sh "$@"
+            - --
+          # آرشیو پیوسته‌ی WAL = پایه‌ی بک‌آپ افزایشی و بازیابی لحظه‌ای (PITR) — مثل docker-compose.yml
+          args:
+            - postgres
+            - -c
+            - hba_file=/etc/postgresql/pg_hba.conf
+            - -c
+            - archive_mode=on
+            - -c
+            - archive_command=cp %p /wal_archive/%f.tmp && mv /wal_archive/%f.tmp /wal_archive/%f
+          envFrom:
+            - secretRef:
+                name: ats-postgres-secrets  # POSTGRES_USER, POSTGRES_PASSWORD
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: ats-config
+                  key: POSTGRES_DB
+            # زیرپوشه‌ی جدا: ریشه‌ی بعضی دیسک‌ها (ext4 ابری) پوشه‌ی lost+found دارد و initdb
+            # روی پوشه‌ی غیرخالی اجرا نمی‌شود
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          # Readiness: تا وقتی پستگرس کوئری نپذیرد، Service ترافیکی به این Pod نمی‌دهد
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1']
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Liveness با آستانه‌ی بالا: Recovery طولانی پس از قطعی ناگهانی نباید با ری‌استارت قطع شود
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1']
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: wal-archive
+              mountPath: /wal_archive
+            - name: pg-hba
+              mountPath: /etc/postgresql/pg_hba.conf
+              subPath: pg_hba.conf
+              readOnly: true
+            # حافظه‌ی مشترک پستگرس (پیش‌فرض کانتینر فقط ۶۴ مگابایت است)
+            - name: dshm
+              mountPath: /dev/shm
+
+        # Sidecar متریک‌ها: کانکشن‌های فعال، تراکنش‌ها، حجم دیتابیس (Prometheus job «postgres»)
+        - name: postgres-exporter
+          image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: ats-config
+                  key: POSTGRES_DB
+            - name: DATA_SOURCE_URI
+              value: 127.0.0.1:5432/$(POSTGRES_DB)?sslmode=disable
+            - name: DATA_SOURCE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ats-postgres-secrets
+                  key: POSTGRES_USER
+            - name: DATA_SOURCE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: ats-postgres-secrets
+                  key: POSTGRES_PASSWORD
+          ports:
+            - name: metrics
+              containerPort: 9187
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: pg-hba
+          configMap:
+            name: postgres-config
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+
+  # PVC اختصاصی هر نسخه — StorageClass را Overlay تعیین می‌کند (پیش‌فرض: StorageClass پیش‌فرض کلاستر)
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+    # سگمنت‌های WAL تا انتقال ساعتی (رمزنگاری‌شده) به Offsite توسط سرویس backup
+    - metadata:
+        name: wal-archive
+        labels:
+          app.kubernetes.io/name: postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

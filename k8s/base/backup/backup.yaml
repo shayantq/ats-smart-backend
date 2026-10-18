@@ -1,0 +1,138 @@
+# =============================================================================
+# سرویس backup — پشتیبان‌گیری خودکار رمزنگاری‌شده به Offsite (همان ایمیج و رفتار نسخه‌ی Compose)
+#
+#   زمان‌بندی داخلی (backup/crontab، وقت تهران): ۰۲:۰۰ بک‌آپ کامل · هر ساعت WAL · جمعه‌ها رزومه‌ها
+#   هر فایل در لحظه‌ی تولید فشرده و با «کلید عمومی» age رمزنگاری و سپس به Offsite فرستاده می‌شود.
+#
+# آرشیو WAL پستگرس روی PVC «wal-archive-postgres-0» (ساخته‌شده توسط StatefulSet) است و این Pod
+# هم آن را Mount می‌کند؛ چون PVC از نوع ReadWriteOnce است، podAffinity این Pod را روی همان
+# Node پستگرس قرار می‌دهد (RWO اجازه‌ی اشتراک بین Pod های یک Node را می‌دهد).
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-metrics
+  labels:
+    app.kubernetes.io/name: backup
+spec:
+  # state.json زمان آخرین بک‌آپ‌های موفق — با ری‌استارت Pod نباید هشدار «بک‌آپ متوقف شده» بدهد
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backup
+  labels:
+    app.kubernetes.io/name: backup
+    app.kubernetes.io/component: backup
+spec:
+  replicas: 1
+  # دو زمان‌بند هم‌زمان = بک‌آپ تکراری
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backup
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backup
+        app.kubernetes.io/component: backup
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: postgres
+      initContainers:
+        # اولین بک‌آپ کامل (ensure-full) هنگام شروع گرفته می‌شود — پستگرس باید آماده باشد
+        - name: wait-for-postgres
+          image: ats-smart-backup
+          command: ["sh", "-c", "until pg_isready -h postgres -p 5432 -q; do echo 'در انتظار PostgreSQL ...'; sleep 2; done"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+      containers:
+        - name: backup
+          image: ats-smart-backup
+          envFrom:
+            - configMapRef:
+                name: backup-config
+            - secretRef:
+                name: ats-backup-secrets  # BACKUP_AGE_RECIPIENT، OFFSITE_SFTP_PASSWORD، RCLONE_CONFIG_OFFSITE_*_KEY*
+          env:
+            - name: PGHOST
+              value: postgres
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: ats-postgres-secrets
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ats-postgres-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGDATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: ats-config
+                  key: POSTGRES_DB
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: wal-archive
+              mountPath: /wal_archive
+            - name: media
+              mountPath: /media
+              readOnly: true
+            - name: metrics
+              mountPath: /metrics
+
+        # Sidecar: متریک‌های textfile بک‌آپ (ats_backup_last_success_timestamp_seconds) برای
+        # Prometheus job «backup» — فقط همین Collector، نه متریک‌های میزبان
+        - name: metrics-exporter
+          image: prom/node-exporter:v1.8.2
+          args:
+            - --collector.disable-defaults
+            - --collector.textfile
+            - --collector.textfile.directory=/metrics
+          ports:
+            - name: metrics
+              containerPort: 9100
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: metrics
+              mountPath: /metrics
+              readOnly: true
+      volumes:
+        - name: wal-archive
+          persistentVolumeClaim:
+            claimName: wal-archive-postgres-0
+        - name: media
+          persistentVolumeClaim:
+            claimName: media
+            readOnly: true
+        - name: metrics
+          persistentVolumeClaim:
+            claimName: backup-metrics

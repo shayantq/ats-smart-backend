@@ -1,0 +1,32 @@
+# پیکربندی Alertmanager روی Kubernetes (ConfigMap «alertmanager-config») — مسیریابی هشدارها
+# به «کانال پیام‌رسان داخل سایت» تیم فنی؛ همان قواعد monitoring/alertmanager/alertmanager.yml.
+#
+# تفاوت‌ها با نسخه‌ی Compose: آدرس وب‌هوک نام Service کوبرنتیز است (backend-api، نه backend_api)
+# و توکن Bearer مستقیماً از Secret به‌صورت فایل Mount می‌شود (بدون نوشتن در /tmp هنگام شروع).
+
+route:
+  receiver: ats-in-app
+  group_by: ["alertname", "severity"]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    # هشدارهای بحرانی تا رفع نشده‌اند هر ساعت یادآوری می‌شوند
+    - matchers: ['severity="critical"']
+      receiver: ats-in-app
+      repeat_interval: 1h
+
+receivers:
+  - name: ats-in-app
+    webhook_configs:
+      - url: http://backend-api:8000/api/v1/ops/alerts
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/secrets/OPS_WEBHOOK_TOKEN
+
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: ["alertname"]

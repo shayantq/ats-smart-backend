@@ -1,0 +1,157 @@
+# =============================================================================
+# بک‌اند FastAPI — Deployment (بدون حالت؛ مقیاس افقی با HPA) + Service
+#
+# استقرار بدون قطعی (معادل deploy/deploy.sh در Compose):
+#   - RollingUpdate با maxUnavailable: 0 — نسخه‌ی جدید کنار نسخه‌ی فعلی بالا می‌آید و تا
+#     readinessProbe سبز نشود ترافیک نمی‌گیرد؛ Pod قدیمی فقط بعد از آن خارج می‌شود.
+#   - preStop (۵ ثانیه): پیش از SIGTERM فرصت حذف Pod از Endpoint های Service داده می‌شود
+#     تا درخواست تازه‌ای به Pod در حال خاموش‌شدن نرسد؛ سپس uvicorn درخواست‌های در حال
+#     اجرا را تا ۳۰ ثانیه کامل می‌کند (--timeout-graceful-shutdown در Dockerfile).
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  labels:
+    app.kubernetes.io/name: backend-api
+    app.kubernetes.io/component: api
+spec:
+  # replicas عمداً تعریف نشده: تعداد نسخه‌ها فقط دست HPA است (hpa.yaml: ۲ تا ۶). اگر اینجا
+  # عددی بود، هر kubectl apply آن را به همان عدد برمی‌گرداند — حتی وسط اوج ترافیک.
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend-api
+        app.kubernetes.io/component: api
+    spec:
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        # کاربر غیر root ایمیج (app، uid 10001)؛ fsGroup: پوشه‌ی رزومه‌ها قابل نوشتن
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      # پخش نسخه‌ها روی Node های مختلف (در صورت وجود) — از کار افتادن یک Node کل API را نمی‌خواباند
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: backend-api
+      initContainers:
+        # تا Job «migrate» دیتابیس را به آخرین نسخه نرسانده، کد جدید بالا نمی‌آید
+        - name: wait-for-migrations
+          image: ats-smart-backend
+          command:
+            - sh
+            - -c
+            - until alembic current 2>/dev/null | grep -q '(head)'; do echo 'در انتظار اجرای مایگریشن‌ها ...'; sleep 3; done
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              memory: 384Mi
+      containers:
+        - name: backend-api
+          image: ats-smart-backend
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets  # DATABASE_URL، SECRET_KEY، OPS_WEBHOOK_TOKEN، SMTP_*، S3_*
+          # /api/v1/health عمداً به دیتابیس/Redis وابسته نیست: قطعی موقت آن‌ها نباید همه‌ی
+          # Pod ها را از سرویس خارج یا ری‌استارت کند (برنامه در نبود Redis هم کار می‌کند).
+          # بررسی عمیق اتصال‌ها: /api/v1/health/ready (k8s/verify.sh)
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: media
+---
+# نام DNS «backend-api» — فرانت‌اند (Nginx) و Alertmanager درخواست‌ها را به این آدرس می‌فرستند.
+# kube-proxy بار را بین همه‌ی Pod های Ready پخش می‌کند.
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-api
+  labels:
+    app.kubernetes.io/name: backend-api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: backend-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+# حین تخلیه‌ی Node یا ارتقای کلاستر، حداقل یک نسخه‌ی API همیشه در حال سرویس‌دهی می‌ماند
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-api
+  labels:
+    app.kubernetes.io/name: backend-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend-api
