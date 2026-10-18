@@ -3,33 +3,32 @@
 مهاجرت کامل ATS Smart از Docker Compose به Kubernetes برای مقیاس‌دهی خودکار و دسترس‌پذیری بالا. همان ایمیج‌های Compose بدون هیچ تغییری استفاده می‌شوند. ساختار مانیفست‌ها با **Kustomize** است که داخل خودِ `kubectl` وجود دارد و ابزار اضافه‌ای لازم ندارد.
 
 ```bash
-bash k8s/deploy.sh     # استقرار/به‌روزرسانی کامل (Secret ها، ایمیج‌ها، metrics-server، مانیفست‌ها، انتظار برای Rollout)
-bash k8s/verify.sh     # بررسی خودکار معیارهای پذیرش — خروجی نهایی: [ACCEPTANCE PASS]
+bash k8s/deploy.sh        # استقرار/به‌روزرسانی کامل (Secret ها، ایمیج‌ها، metrics-server، Ingress Controller، مانیفست‌ها)
+bash k8s/verify.sh        # بررسی خودکار معیارهای پذیرش مهاجرت — خروجی نهایی: [ACCEPTANCE PASS]
+bash k8s/hpa-stress.sh    # تست بار + بررسی Scale Up / Scale Down و توزیع بار Ingress — [HPA & INGRESS PASS]
 ```
 
 | آدرس (محیط لوکال) | سرویس |
 |---|---|
-| http://localhost:8090 | سایت (Service فرانت‌اند، نوع LoadBalancer) |
+| http://localhost:8081 | سایت — از طریق NGINX Ingress Controller |
 | http://localhost:3030 | Grafana — کاربر/رمز در `k8s/overlays/local/secrets/grafana.env` |
 | `kubectl -n ats-smart port-forward svc/prometheus 9091:9090` ← http://localhost:9091 | Prometheus (فقط داخل کلاستر) |
 
-پورت‌ها عمداً با Docker Compose (8080، 3000، 8088) تداخل ندارند و هر دو محیط می‌توانند هم‌زمان اجرا شوند.
+پورت‌ها عمداً با Docker Compose (8080، 3000، 8088) و پورت 80 ویندوز (سرویس سیستمی http.sys) تداخل ندارند و هر دو محیط می‌توانند هم‌زمان اجرا شوند.
 
 ---
 
 ## معماری
 
 ```
-                    مرورگر ── :8090 ──► Service frontend (LoadBalancer)
-                                              │
-                         ┌────────────────────┴────────────────────┐
-                         ▼                                         ▼
-                 frontend Pod ×2..4 (HPA)            ── /api ، /media ──►  Service backend-api (ClusterIP)
-                                                                           │ (kube-proxy: پخش بار)
-                                              ┌────────────────────────────┴───────────┐
-                                              ▼                                        ▼
-                                   backend-api Pod ×2..6 (HPA)                  worker · scheduler
-                                      │            │        └─── PVC media (RWX) ───┘
+        مرورگر ── :8081 ──► Service nginx-ingress (LoadBalancer) ──► NGINX Ingress Controller ×2..4 (HPA)
+                                                                    │ least_conn · retry · health check
+                                    ┌───────────── /  ──────────────┴──────── /api ، /media ─────────┐
+                                    ▼                                                                ▼
+                         frontend Pod ×2..4 (HPA)                                  backend-api Pod ×2..6 (HPA: CPU/RAM ۷۵٪)
+                                                                                   │          │       │
+                                         worker Pod ×1..4 (HPA: سرویس رزومه) ──────┼──────────┼── PVC media (RWX)
+                                         scheduler                                 │          │
                                       ▼            ▼
                        Service postgres     Service redis
                               │                    │
@@ -46,7 +45,7 @@ bash k8s/verify.sh     # بررسی خودکار معیارهای پذیرش —
 | # | سرویس Compose | منبع Kubernetes | نسخه‌ها | ذخیره‌سازی |
 |---|---|---|---|---|
 | 1 | `backend_api` | Deployment `backend-api` + Service + HPA + PDB | ۲ تا ۶ (HPA) | PVC `media` (RWX) |
-| 2 | `worker` | Deployment `worker` | ۱ (قابل `kubectl scale`) | PVC `media` |
+| 2 | `worker` | Deployment `worker` + HPA (سرویس پردازش رزومه) | ۱ تا ۴ (HPA) | PVC `media` |
 | 3 | `scheduler` | Deployment `scheduler` (Recreate) | همیشه ۱ | — |
 | 4 | `frontend` | Deployment `frontend` + Service + HPA + PDB | ۲ تا ۴ (HPA) | — |
 | 5 | `postgres_db` | **StatefulSet** `postgres` + Service + Headless Service | ۱ | volumeClaimTemplates: `data`، `wal-archive` |
@@ -57,6 +56,7 @@ bash k8s/verify.sh     # بررسی خودکار معیارهای پذیرش —
 | 10 | `backup` | Deployment `backup` (Recreate) | ۱ | PVC `backup-metrics` + WAL مشترک |
 | — | `postgres_exporter` · `redis_exporter` | Sidecar داخل Pod همان سرویس | — | — |
 | — | `node_exporter` | **DaemonSet** (یک نسخه روی هر Node) | — | — |
+| — | `gateway` (Nginx لبه) | **NGINX Ingress Controller** (`k8s/addons/nginx-ingress`) + Ingress `ats-smart` | ۲ تا ۴ (HPA) | — |
 | — | `migrate` | **Job** یک‌باره (پیش از بالا آمدن API/Worker) | — | — |
 | — | `backup_restore` | CronJob معلق `backup-drill` (فقط اجرای دستی) | — | — |
 | — | `offsite_storage` | فقط لوکال: PVC `offsite` (ریموت rclone از نوع local) | — | — |
@@ -78,10 +78,12 @@ k8s/
 │   ├── hpa.yaml                # مقیاس‌دهی خودکار بک‌اند و فرانت‌اند
 │   ├── monitoring/             # Prometheus (+RBAC)، Alertmanager، Grafana، node-exporter + پیکربندی‌های K8s
 │   └── backup/                 # سرویس backup، CronJob تمرین بازیابی، backup.env
-├── overlays/local/             # Docker Desktop: StorageClass با Retain، LoadBalancer، Secret ها، Offsite محلی
+├── overlays/local/             # Docker Desktop: StorageClass با Retain، پورت 8081 Ingress، Secret ها، Offsite محلی
 │   └── secrets/*.env.example   # نمونه‌ی Secret ها (فایل‌های واقعی *.env در .gitignore)
 ├── addons/metrics-server/      # منبع متریک HPA (آینه‌ی Docker Hub، چون registry.k8s.io از ایران 403 می‌دهد)
-├── deploy.sh · verify.sh
+├── addons/nginx-ingress/       # NGINX Ingress Controller (ورودی واحد ترافیک، توزیع بار در سطح Pod)
+├── loadtest/                   # سناریوی Locust و Job تست بار HPA (hpa-stress.sh)
+├── deploy.sh · verify.sh · hpa-stress.sh
 └── .release/                   # تولیدی deploy.sh (تگ ایمیج همین انتشار) — در .gitignore
 monitoring/kustomization.yaml   # ConfigMap قوانین هشدار و داشبوردها از همان فایل‌های Compose
 ```
@@ -147,7 +149,8 @@ kubectl patch pv <pv-name> -p '{"spec":{"claimRef":null}}'                    # 
   - پورت دیتابیس و Redis هرگز بیرون از کلاستر باز نیست.
 - **فرانت‌اند:** Nginx با متغیرهای `BACKEND_UPSTREAM` و `NGINX_RESOLVER` همان ایمیج به CoreDNS و نام کامل `backend-api.<ns>.svc.cluster.local` وصل می‌شود. resolver خودِ Nginx دامنه‌های جست‌وجو را اعمال نمی‌کند.
 - **ConfigMap ها:**
-  - `ats-config` (از `base/config/app.env` + `overlays/local/config.env`)
+  - `ats-config` (از `base/config/app.env` + `overlays/local/config.env`) — فقط برای کانتینرهای ایمیج بک‌اند
+  - `postgres-config` (pg_hba + نام دیتابیس) — جدا، تا تغییر تنظیمات برنامه باعث ری‌استارت دیتابیس نشود
   - `backup-config`
   - پیکربندی‌های Prometheus/Alertmanager/pg_hba
   - قوانین هشدار و داشبوردها
@@ -166,12 +169,19 @@ kubectl patch pv <pv-name> -p '{"spec":{"claimRef":null}}'                    # 
 
 ## مقیاس‌دهی خودکار و استقرار بدون قطعی
 
-- **HPA** (`base/hpa.yaml`) بر اساس CPU کار می‌کند (هدف ۷۰٪ نسبت به `requests`):
-  - بک‌اند: ۲ تا ۶ نسخه
-  - فرانت‌اند: ۲ تا ۴ نسخه
-  - افزایش فوری، کاهش با تأخیر ۵ دقیقه‌ای
+- **HPA** (`base/hpa.yaml`، منبع متریک: metrics-server). درصدها نسبت به `requests` هر کانتینر سنجیده می‌شوند:
+
+| سرویس | نسخه‌ها | معیار Scale Up | Scale Down |
+|---|---|---|---|
+| backend-api | ۲ تا ۶ | CPU **یا** RAM بالای ۷۵٪ | ۲ دقیقه آرامش، سپس ۱ Pod در هر ۳۰ ثانیه |
+| worker (سرویس رزومه) | ۱ تا ۴ | CPU **یا** RAM بالای ۷۵٪ (OCR/NER رزومه‌ها) | ۳ دقیقه آرامش، ۱ Pod در دقیقه (Warm Shutdown کار در حال اجرا) |
+| frontend | ۲ تا ۴ | CPU بالای ۷۵٪ (حافظه‌ی Nginx مستقل از ترافیک است) | ۲ دقیقه آرامش |
+| nginx-ingress | ۲ تا ۴ | CPU بالای ۷۵٪ | ۲ دقیقه آرامش |
+
+  - با دو متریک، HPA برای هر کدام تعداد لازم را حساب و بیشترین را انتخاب می‌کند: `⌈تعداد فعلی × مصرف ÷ ۷۵٪⌉`. افزایش بدون تأخیر است (هر ۳۰ ثانیه تا دو برابر یا ۲ Pod).
+  - **request حافظه‌ی بک‌اند ۵۱۲Mi است.** مصرف پایه‌ی هر Pod پایتون (حدود ۲۰۰Mi ≈ ۴۰٪) با کم شدن ترافیک تقریباً ثابت می‌ماند؛ اگر نزدیک ۷۵٪ بود، طبق همین فرمول HPA هرگز Pod ها را کم نمی‌کرد.
   - سقف بک‌اند با ظرفیت اتصال‌های دیتابیس هماهنگ است: `(6+1) × 12 = 84 < 100`
-  - Deployment ها عمداً `replicas` ندارند تا `kubectl apply` تعداد تعیین‌شده توسط HPA را برنگرداند.
+  - Deployment های تحت HPA عمداً `replicas` ندارند تا `kubectl apply` تعداد تعیین‌شده توسط HPA را برنگرداند.
   - وضعیت: `kubectl -n ats-smart get hpa` و `kubectl top pods -n ats-smart`
 - **RollingUpdate** با `maxUnavailable: 0`:
   - Pod جدید تا سبز شدن `readinessProbe` ترافیک نمی‌گیرد.
@@ -180,6 +190,28 @@ kubectl patch pv <pv-name> -p '{"spec":{"claimRef":null}}'                    # 
 - **مایگریشن‌ها:** Job `migrate` پیش از کد جدید اجرا می‌شود. initContainer `wait-for-migrations` در API و Worker تا رسیدن دیتابیس به `head` منتظر می‌ماند.
   - مایگریشن‌ها باید Expand/Contract باشند تا نسخه‌ی قبلی کد هم در حین انتشار با دیتابیس کار کند.
 - **Probe ها:** `/api/v1/health` عمداً به دیتابیس و Redis وابسته نیست. قطعی موقت آن‌ها نباید همه‌ی Pod ها را از سرویس خارج یا ری‌استارت کند. بررسی عمیق اتصال‌ها با `/api/v1/health/ready` انجام می‌شود.
+
+---
+
+## Ingress و توزیع بار پیشرفته
+
+ورودی واحد ترافیک کاربران **NGINX Ingress Controller** است (`k8s/addons/nginx-ingress`، ایمیج رسمی `nginx/nginx-ingress:5.7.0`؛ پروژه‌ی جامعه‌ی `ingress-nginx` از مارس ۲۰۲۶ بازنشسته شده و ایمیج‌هایش فقط روی `registry.k8s.io` است). Ingress برنامه (`base/ingress.yaml`) از الگوی **Mergeable** استفاده می‌کند: یک master برای دامنه و دو minion با تنظیمات جدا — `/api/` و `/media/` مستقیماً به Pod های بک‌اند، `/` به Pod های فرانت‌اند.
+
+- **سطح Pod، نه ClusterIP:** Controller فهرست IP تک‌تک Pod های Ready را از EndpointSlice می‌خواند. هر Pod تازه‌ی HPA بلافاصله پس از Ready شدن سهم ترافیک می‌گیرد، و Pod در حال حذف قبل از خاموشی کنار گذاشته می‌شود (preStop).
+- **`least_conn`:** هر درخواست به Pod با کمترین اتصال فعال می‌رود؛ Pod کند یا شلوغ خودکار سهم کمتری می‌گیرد.
+- **بدون 502:** `proxy-next-upstream` (error / timeout / 502 / 503 / 504، تا ۳ بار): اگر Podی اتصال را رد کرد یا خطا داد، همان درخواست بی‌صدا به Pod سالم بعدی می‌رود. Health Check غیرفعال (`max-fails=1`، `fail-timeout=10s`) Pod خطادار را ۱۰ ثانیه کنار می‌گذارد. `keepalive` اتصال‌های باز به Pod ها را نگه می‌دارد.
+- **IP واقعی کاربر:** Ingress لبه‌ی شبکه است و `X-Forwarded-For` را با IP اتصال **بازنویسی** می‌کند (نه الحاق به مقدار ارسالی کاربر)، و بک‌اند (`FORWARDED_ALLOW_IPS=*`، فقط از داخل کلاستر در دسترس) همان را می‌خواند. شمارنده‌ی Rate Limit هم در Redis مشترک است (`app/core/limiter.py`)؛ قبلاً هر Pod شمارنده‌ی جدا داشت و سقف واقعی «۵ × تعداد Pod ها» می‌شد.
+- هدرهای امنیتی (CSP، X-Frame-Options و ...) برای پاسخ‌های API در خودِ Ingress اضافه می‌شوند — همان `frontend/security-headers.conf`.
+- **متریک‌ها:** Prometheus (job `ingress`) زمان پاسخ و کد وضعیت را به تفکیک هر Pod مقصد جمع می‌کند (`nginx_ingress_controller_upstream_server_response_latency_ms_count{server, code}`).
+
+### تست بار و HPA
+
+```bash
+bash k8s/hpa-stress.sh                         # پیش‌فرض: ۱۵۰ کاربر، ۱ دقیقه افزایش، ۳ دقیقه اوج
+LOAD_USERS=250 LOAD_HOLD=300 bash k8s/hpa-stress.sh
+```
+
+یک Job Locust داخل کلاستر (`k8s/loadtest/`) سناریوی «انتشار آگهی پرطرفدار» را اجرا می‌کند: مرور مداوم فهرست آگهی‌ها، از مسیر واقعی کاربر (Service ورودی Ingress). اسکریپت ۴۰ آگهی آزمایشی از طریق خودِ API می‌سازد و در پایان پاکشان می‌کند. هر ۱۵ ثانیه وضعیت HPA ها ثبت می‌شود، و پس از پایان بار، تا برگشت بک‌اند به حداقل صبر می‌کند. بعد سه معیار را بررسی می‌کند: Scale Up، Scale Down، و پخش بار بین همه‌ی Pod ها با صفر 502. گزارش کامل در `k8s/loadtest/reports/` ذخیره می‌شود.
 
 ---
 
@@ -211,7 +243,7 @@ kubectl -n ats-smart delete secret backup-restore-key            # کلید خص
 | StorageClass | `docker.io/hostpath` + Retain | CSI ابر (`ebs.csi.aws.com`، `pd.csi.storage.gke.io`، Cinder ابر آروان و ...) + Retain |
 | رزومه‌ها (`media`، RWX) | hostpath | NFS / EFS / CephFS، یا بهتر `STORAGE_BACKEND=s3` |
 | ایمیج‌ها | Image Store محلی | `images: newName: <DOCKERHUB_USERNAME>/ats-smart-backend` + تگ `sha-…` CI |
-| دسترسی بیرونی | LoadBalancer روی localhost | Ingress Controller + TLS (cert-manager)؛ `FRONTEND_ORIGIN=https://<دامنه>` |
+| دسترسی بیرونی | NGINX Ingress روی localhost:8081 | همان Ingress Controller روی 80/443 (`k8s/addons/nginx-ingress`) + TLS (cert-manager)؛ دامنه‌ی واقعی در Ingress و `FRONTEND_ORIGIN=https://<دامنه>` |
 | Secret ها | فایل‌های `secrets/*.env` | Sealed Secrets / External Secrets (Vault، AWS Secrets Manager) |
 | Offsite بک‌آپ | PVC `offsite` | باکت S3 جدا (پیش‌فرض `base/backup/backup.env`) |
 | metrics-server | `k8s/addons` | معمولاً از پیش روی کلاسترهای مدیریت‌شده نصب است |

@@ -220,10 +220,10 @@ if ((${#backend_pods[@]} > 1)); then
         || fail "فقط ${served} از ${#backend_pods[@]} نسخه‌ی بک‌اند درخواست گرفته‌اند"
 fi
 
-# ۲-۶: از بیرون کلاستر (مرورگر کاربر) — Service نوع LoadBalancer فرانت‌اند
+# ۲-۶: از بیرون کلاستر (مرورگر کاربر) — NGINX Ingress Controller
 if [[ "$OVERLAY" == "local" ]] && command -v curl >/dev/null; then
-    external="$(curl -s -m 5 http://localhost:8090/api/v1/health/ready || true)"
-    ready_checks_ok "$external" && pass "http://localhost:8090 (LoadBalancer) → ${external}" || fail "http://localhost:8090 → ${external:-بدون پاسخ}"
+    external="$(curl -s -m 5 http://localhost:8081/api/v1/health/ready || true)"
+    ready_checks_ok "$external" && pass "http://localhost:8081 (NGINX Ingress) → ${external}" || fail "http://localhost:8081 → ${external:-بدون پاسخ}"
 fi
 
 # ۲-۷: Prometheus همه‌ی اهداف را از طریق شبکه‌ی داخلی Scrape می‌کند (up == 1)

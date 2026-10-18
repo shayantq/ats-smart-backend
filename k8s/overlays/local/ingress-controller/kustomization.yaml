@@ -1,0 +1,20 @@
+# NGINX Ingress Controller برای Docker Desktop: پورت 80 ویندوز معمولاً در اختیار سرویس سیستمی
+# (http.sys / IIS) است؛ ورودی سایت روی localhost:8081 (و 8443 برای HTTPS) باز می‌شود.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../addons/nginx-ingress
+
+patches:
+  - target:
+      kind: Service
+      name: nginx-ingress
+      namespace: nginx-ingress
+    patch: |-
+      - op: replace
+        path: /spec/ports/0/port
+        value: 8081
+      - op: replace
+        path: /spec/ports/1/port
+        value: 8443

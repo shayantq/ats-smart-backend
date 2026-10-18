@@ -1,0 +1,222 @@
+# =============================================================================
+# NGINX Ingress Controller (پروژه‌ی رسمی NGINX، ایمیج nginx/nginx-ingress) — ورودی واحد ترافیک کاربران
+#
+# چرا این Controller: پروژه‌ی جامعه‌ی kubernetes/ingress-nginx از مارس ۲۰۲۶ بازنشسته شده و ایمیج‌هایش
+# فقط روی registry.k8s.io است (از ایران 403)؛ این نسخه به‌طور فعال نگه‌داری می‌شود و روی Docker Hub است.
+#
+# مسیر درخواست:  کاربر ─► Service (LoadBalancer) ─► Pod های Controller (۲ تا ۴، HPA)
+#                ─► مستقیماً IP تک‌تک Pod های آماده‌ی برنامه (EndpointSlice؛ نه ClusterIP)
+# پس الگوریتم توزیع بار (least_conn)، Health Check غیرفعال و تلاش مجدد روی Pod بعدی همه در سطح
+# Pod اعمال می‌شوند و هر Pod تازه‌ی HPA بلافاصله پس از Ready شدن سهم ترافیکش را می‌گیرد.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: nginx
+  annotations:
+    # Ingress های بدون ingressClassName هم به همین Controller سپرده می‌شوند
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: nginx.org/ingress-controller
+---
+# تنظیمات سراسری NGINX (کلیدها: https://docs.nginx.com/nginx-ingress-controller/configuration/global-configuration/configmap-resource/)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: nginx-ingress
+data:
+  # تعداد پردازه‌های NGINX هر Pod؛ «auto» روی Node های پرهسته ده‌ها پردازه و حافظه‌ی زیاد می‌گرفت —
+  # مقیاس افقی Controller با HPA انجام می‌شود، نه با پردازه‌های بیشتر در یک Pod
+  worker-processes: "2"
+  worker-connections: "16384"
+  # اتصال‌های باز نگه‌داشته‌شده به Pod های برنامه (بدون Handshake TCP برای هر درخواست)
+  keepalive: "64"
+  server-tokens: "False"
+  # X-Forwarded-For پیش‌فرض (الحاق به مقدار ارسالی کاربر) غیرفعال است؛ Ingress لبه‌ی شبکه است و
+  # این هدر را با IP واقعی اتصال «بازنویسی» می‌کند (location-snippets در k8s/base/ingress.yaml)
+  # تا کاربر نتواند با جعل آن از Rate Limit بک‌اند عبور کند — همان رفتار deploy/nginx/gateway.conf
+  disable-forwarded-headers: "True"
+  log-format-escaping: "json"
+  log-format: '{"time":"$time_iso8601","client":"$remote_addr","request":"$request","status":$status,"upstream":"$upstream_addr","upstream_status":"$upstream_status","request_time":$request_time}'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-ingress
+  namespace: nginx-ingress
+  labels:
+    app.kubernetes.io/name: nginx-ingress
+spec:
+  # replicas را HPA مدیریت می‌کند (hpa.yaml همین پوشه: ۲ تا ۴)
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx-ingress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nginx-ingress
+    spec:
+      serviceAccountName: nginx-ingress
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: nginx-ingress
+      containers:
+        - name: nginx-ingress
+          image: nginx/nginx-ingress:5.7.0-alpine
+          args:
+            - -nginx-configmaps=$(POD_NAMESPACE)/nginx-config
+            - -ingress-class=nginx
+            # فقط منابع استاندارد Ingress (بدون CRD های VirtualServer/Policy)
+            - -enable-custom-resources=false
+            # location-snippets برای هدرهای امنیتی مسیر API (k8s/base/ingress.yaml)؛ کلاستر تک‌مستأجر است
+            # و فقط مدیر کلاستر Ingress می‌سازد — در کلاستر اشتراکی این گزینه را خاموش نگه دارید
+            - -enable-snippets
+            - -enable-prometheus-metrics
+            # متریک زمان پاسخ و کد وضعیت به تفکیک هر Pod مقصد (اثبات پخش بار در Prometheus)
+            - -enable-latency-metrics
+            - -enable-telemetry-reporting=false
+            - -report-ingress-status
+            - -external-service=nginx-ingress
+            - -ready-status
+            - -ready-status-port=8081
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+            - name: readiness-port
+              containerPort: 8081
+            - name: metrics
+              containerPort: 9113
+          readinessProbe:
+            httpGet:
+              path: /nginx-ready
+              port: readiness-port
+            periodSeconds: 1
+          livenessProbe:
+            httpGet:
+              path: /nginx-ready
+              port: readiness-port
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          # پیش از SIGTERM فرصت خروج این Pod از Endpoint های Service ورودی
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            # فایل اجرایی ایمیج Capability «NET_BIND_SERVICE» دارد؛ بدون آن در مجموعه‌ی مجاز، کرنل اجرای
+            # فایل را رد می‌کند (operation not permitted). بقیه‌ی Capability ها حذف‌اند.
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
+---
+# ورودی ترافیک کاربران از بیرون کلاستر. externalTrafficPolicy: Local یعنی IP مبدأ کاربر حفظ می‌شود
+# (بدون SNAT) — لازمه‌ی Rate Limit و لاگ درست؛ Load Balancer ابری فقط به Node های دارای Pod می‌فرستد.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-ingress
+  namespace: nginx-ingress
+  labels:
+    app.kubernetes.io/name: nginx-ingress
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: nginx-ingress
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: https
+      port: 443
+      targetPort: https
+---
+# Headless: Prometheus (dns_sd_configs) هر Pod Controller را جدا Scrape می‌کند — بدون نیاز به RBAC
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-ingress-metrics
+  namespace: nginx-ingress
+  labels:
+    app.kubernetes.io/name: nginx-ingress
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: nginx-ingress
+  ports:
+    - name: metrics
+      port: 9113
+      targetPort: metrics
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nginx-ingress
+  namespace: nginx-ingress
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx-ingress
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nginx-ingress
+  namespace: nginx-ingress
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nginx-ingress
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 120

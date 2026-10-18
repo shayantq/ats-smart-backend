@@ -1,9 +1,19 @@
 # =============================================================================
-# مقیاس‌دهی خودکار افقی (HPA) — افزایش/کاهش تعداد Pod ها بر اساس مصرف CPU
+# مقیاس‌دهی خودکار افقی (HPA) — افزایش/کاهش خودکار تعداد Pod ها بر اساس CPU و RAM
 #
-# درصد هدف نسبت به resources.requests.cpu هر کانتینر سنجیده می‌شود. پیش‌نیاز: metrics-server
-# روی کلاستر (k8s/addons/metrics-server). کاهش نسخه‌ها با تأخیر ۵ دقیقه‌ای (stabilization)
-# انجام می‌شود تا نوسان کوتاه ترافیک باعث بالا و پایین شدن مداوم Pod ها نشود.
+# درصدها نسبت به resources.requests هر کانتینر سنجیده می‌شوند (منبع متریک: metrics-server).
+# با دو متریک، HPA برای هر کدام تعداد لازم را حساب و «بیشترین» را انتخاب می‌کند: عبور CPU «یا» RAM
+# از ۷۵٪ کافی است تا Pod اضافه شود؛ و فقط وقتی هر دو پایین آمدند Pod ها کم می‌شوند.
+#
+#   تعداد مطلوب = ⌈ تعداد فعلی × (مصرف فعلی ÷ ۷۵٪) ⌉
+#
+# نکته‌ی طراحی RAM: حافظه‌ی پایه‌ی هر Pod پایتون با کم شدن ترافیک تقریباً ثابت می‌ماند؛ اگر حافظه‌ی
+# پایه نزدیک ۷۵٪ request بود، طبق همین فرمول HPA هرگز Pod ها را کم نمی‌کرد. برای همین request حافظه‌ی
+# بک‌اند ۵۱۲Mi است (مصرف پایه حدود ۲۰۰Mi ≈ ۴۰٪) تا پس از پایان اوج، Pod ها مرحله‌به‌مرحله تا حداقل برگردند.
+#
+# رفتار:
+#   افزایش  بدون تأخیر؛ در هر ۳۰ ثانیه تا دو برابر یا ۲ Pod (هر کدام بیشتر) — واکنش سریع به اوج ناگهانی
+#   کاهش    پس از ۲ دقیقه آرامش (stabilization) و حداکثر ۱ Pod در هر ۳۰ ثانیه — بدون نوسان مداوم
 # =============================================================================
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -25,7 +35,61 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: 75
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 120
+      selectPolicy: Min
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 30
+---
+# سرویس رزومه: آپلود رزومه در backend-api است و پردازش سنگین آن (OCR ← NER ← موتور مهارت ←
+# نمره‌ی تطابق) در Worker صف RQ. هر Pod اضافه یک مصرف‌کننده‌ی دیگر از همان صف است؛ OCR پرمصرف‌ترین
+# بخش CPU/RAM سیستم است، پس با رسیدن صف شلوغ به ۷۵٪، Worker های بیشتری رزومه‌ها را موازی پردازش می‌کنند.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/name: worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
@@ -33,13 +97,15 @@ spec:
         - type: Pods
           value: 2
           periodSeconds: 30
+    # Worker در حال پردازش یک رزومه با SIGTERM کارش را تمام می‌کند (Warm Shutdown)؛ کاهش آرام‌تر
     scaleDown:
-      stabilizationWindowSeconds: 300
+      stabilizationWindowSeconds: 180
       policies:
         - type: Pods
           value: 1
           periodSeconds: 60
 ---
+# فرانت‌اند (Nginx + فایل‌های استاتیک): حافظه‌ی Nginx ثابت و مستقل از ترافیک است، پس فقط CPU
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -59,7 +125,7 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: 75
   behavior:
     scaleDown:
-      stabilizationWindowSeconds: 300
+      stabilizationWindowSeconds: 120

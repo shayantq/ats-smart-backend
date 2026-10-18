@@ -1,0 +1,116 @@
+# =============================================================================
+# Ingress برنامه — توزیع هوشمند ترافیک کاربران روی همه‌ی Pod های فعال
+#
+# الگوی Mergeable (قابلیت NGINX Ingress): یک Ingress «master» دامنه و تنظیمات سطح سرور را دارد و
+# دو «minion» مسیرها را با تنظیمات جدای خودشان اضافه می‌کنند:
+#   /api/ ، /media/  ─► مستقیماً Pod های backend-api (بدون عبور از Nginx فرانت‌اند)
+#   /                ─► Pod های frontend (فایل‌های React)
+#
+# توزیع بار پیشرفته در مسیر API:
+#   least_conn          هر درخواست به Pod با کمترین اتصال فعال — Pod کند/شلوغ خودکار سهم کمتری می‌گیرد
+#                       و Pod تازه‌ی HPA (با صفر اتصال) بلافاصله بار می‌گیرد؛ بهتر از Round Robin کور
+#   max-fails/fail-timeout  Health Check غیرفعال: Pod ی که خطای اتصال بدهد ۱۰ ثانیه کنار گذاشته می‌شود
+#   proxy-next-upstream     اگر Pod (مثلاً در حال خاموش‌شدن پس از Scale Down) اتصال را رد کرد یا 502/503/504
+#                       داد، همان درخواست بی‌صدا به Pod سالم بعدی سپرده می‌شود — کاربر 502 نمی‌بیند
+#   keepalive (ConfigMap)   اتصال‌های باز به Pod ها؛ بدون Handshake TCP برای هر درخواست
+#
+# نام دامنه را Overlay هر محیط تعیین می‌کند (لوکال: localhost).
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ats-smart
+  labels:
+    app.kubernetes.io/name: ingress
+  annotations:
+    nginx.org/mergeable-ingress-type: master
+    nginx.org/server-tokens: "False"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ats.example.com
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ats-smart-api
+  labels:
+    app.kubernetes.io/name: ingress
+  annotations:
+    nginx.org/mergeable-ingress-type: minion
+    nginx.org/lb-method: least_conn
+    nginx.org/max-fails: "1"
+    nginx.org/fail-timeout: "10s"
+    nginx.org/proxy-next-upstream: "error timeout http_502 http_503 http_504"
+    nginx.org/proxy-next-upstream-tries: "3"
+    nginx.org/proxy-next-upstream-timeout: "10s"
+    nginx.org/proxy-connect-timeout: "2s"
+    nginx.org/proxy-read-timeout: "60s"
+    # حداکثر حجم آپلود رزومه در بک‌اند ۱۰ مگابایت است + سربار multipart
+    nginx.org/client-max-body-size: "12m"
+    # ۱. Ingress لبه‌ی شبکه است: X-Forwarded-For با IP واقعی اتصال «بازنویسی» می‌شود (نه الحاق به مقدار
+    #    ارسالی کاربر) تا Rate Limit بک‌اند قابل دور زدن نباشد؛ هدرهای پیش‌فرض Controller با
+    #    disable-forwarded-headers خاموش‌اند (k8s/addons/nginx-ingress/controller.yaml)
+    # ۲. همان هدرهای امنیتی frontend/security-headers.conf برای پاسخ‌های API (قبلاً Nginx فرانت‌اند اضافه می‌کرد)
+    nginx.org/location-snippets: |
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-Host $host;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-Frame-Options "DENY" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+      add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+      add_header Cross-Origin-Opener-Policy "same-origin" always;
+      add_header Cross-Origin-Embedder-Policy "require-corp" always;
+      add_header Cross-Origin-Resource-Policy "same-origin" always;
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ats.example.com
+      http:
+        paths:
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-api
+                port:
+                  name: http
+          - path: /media/
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-api
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ats-smart-web
+  labels:
+    app.kubernetes.io/name: ingress
+  annotations:
+    nginx.org/mergeable-ingress-type: minion
+    nginx.org/lb-method: least_conn
+    nginx.org/proxy-next-upstream: "error timeout http_502 http_503 http_504"
+    nginx.org/proxy-next-upstream-tries: "3"
+    nginx.org/proxy-connect-timeout: "2s"
+    nginx.org/location-snippets: |
+      proxy_set_header X-Forwarded-For $remote_addr;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Forwarded-Host $host;
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ats.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  name: http

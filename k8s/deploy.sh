@@ -7,9 +7,9 @@
 #   IMAGE_TAG=sha-1a2b3c4 ...          تگ ایمیج دلخواه (پیش‌فرض: sha کامیت جاری)
 #   FORCE_BUILD=1 ...                  ساخت دوباره‌ی ایمیج‌ها حتی اگر همین تگ موجود باشد
 #   SKIP_BUILD=1 ...                   بدون ساخت ایمیج (همان تگ‌های :local داخل Overlay)
-#   SKIP_ADDONS=1 ...                  بدون نصب metrics-server
+#   SKIP_ADDONS=1 ...                  بدون نصب/به‌روزرسانی metrics-server و NGINX Ingress Controller
 #
-# مراحل: بررسی کلاستر ← ساخت Secret های محلی (فقط بار اول) ← ساخت ایمیج‌ها ← metrics-server
+# مراحل: بررسی کلاستر ← ساخت Secret های محلی (فقط بار اول) ← ساخت ایمیج‌ها ← metrics-server و Ingress Controller
 #        ← اعمال مانیفست‌ها ← انتظار برای مایگریشن و Rollout همه‌ی سرویس‌ها ← خلاصه‌ی وضعیت
 # =============================================================================
 set -euo pipefail
@@ -157,6 +157,13 @@ else
         && ok "metrics-server نصب شد (HPA و kubectl top)" \
         || warn "metrics-server آماده نشد — HPA تا آماده شدنش فقط حداقل نسخه‌ها را نگه می‌دارد"
 fi
+# NGINX Ingress Controller: نسخه‌ی مخصوص Overlay (مثلاً پورت‌های لوکال) اگر وجود دارد، وگرنه نسخه‌ی عمومی
+if [[ "${SKIP_ADDONS:-0}" != "1" ]]; then
+    ingress_dir="k8s/overlays/${OVERLAY}/ingress-controller"
+    [[ -d "$ingress_dir" ]] || ingress_dir="k8s/addons/nginx-ingress"
+    kubectl apply -k "$ingress_dir" >/dev/null
+    kubectl -n nginx-ingress rollout status deployment/nginx-ingress --timeout=180s >/dev/null         && ok "NGINX Ingress Controller آماده است (${ingress_dir})"         || die "NGINX Ingress Controller آماده نشد: kubectl -n nginx-ingress describe pods"
+fi
 
 # -----------------------------------------------------------------------------
 log "۵/۷ اعمال مانیفست‌ها (${RELEASE_DIR})"
@@ -200,9 +207,9 @@ kubectl -n "$NAMESPACE" get svc,pvc
 if [[ "$OVERLAY" == "local" ]]; then
     cat <<EOF
 
-    سایت:     http://localhost:8090
+    سایت:     http://localhost:8081   (NGINX Ingress)
     Grafana:  http://localhost:3030   (کاربر/رمز: ${SECRETS_DIR}/grafana.env)
     Prometheus: kubectl -n ${NAMESPACE} port-forward svc/prometheus 9091:9090  ←  http://localhost:9091
-    بررسی معیارهای پذیرش: bash k8s/verify.sh
+    بررسی معیارهای پذیرش: bash k8s/verify.sh · تست بار و HPA: bash k8s/hpa-stress.sh
 EOF
 fi

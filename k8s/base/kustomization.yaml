@@ -36,6 +36,7 @@ resources:
   - backend/scheduler.yaml
   - frontend/frontend.yaml
   - hpa.yaml
+  - ingress.yaml
   # مانیتورینگ و هشدار
   - ../../monitoring
   - monitoring/prometheus.yaml
@@ -52,9 +53,12 @@ configMapGenerator:
   - name: ats-config
     envs:
       - config/app.env
+  # جدا از ats-config: تغییر تنظیمات برنامه (با پسوند هش جدید) نباید باعث ری‌استارت دیتابیس شود
   - name: postgres-config
     files:
       - postgres/pg_hba.conf
+    literals:
+      - POSTGRES_DB=smart_ats_db
   - name: prometheus-config
     files:
       - monitoring/prometheus.yml

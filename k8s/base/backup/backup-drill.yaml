@@ -51,7 +51,7 @@ spec:
                 - name: PGDATABASE
                   valueFrom:
                     configMapKeyRef:
-                      name: ats-config
+                      name: postgres-config
                       key: POSTGRES_DB
               resources:
                 requests:

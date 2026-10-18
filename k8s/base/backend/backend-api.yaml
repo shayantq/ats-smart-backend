@@ -107,13 +107,14 @@ spec:
             preStop:
               exec:
                 command: ["sleep", "5"]
+          # HPA درصد مصرف را نسبت به همین requests می‌سنجد (هدف ۷۵٪ — بنگرید hpa.yaml)
           resources:
             requests:
               cpu: 100m
-              memory: 192Mi
+              memory: 512Mi
             limits:
               cpu: "1"
-              memory: 768Mi
+              memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

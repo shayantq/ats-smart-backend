@@ -98,6 +98,16 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_pod_name]
         target_label: pod
 
+  # NGINX Ingress Controller (Namespace nginx-ingress): اتصال‌ها و درخواست‌ها + زمان پاسخ و کد وضعیت
+  # به تفکیک هر Pod مقصد (upstream_server) — اثبات پخش بار و نبود 502. کشف با DNS سرویس Headless
+  # (به RBAC در Namespace دیگر نیازی نیست)
+  - job_name: ingress
+    dns_sd_configs:
+      - names: ["nginx-ingress-metrics.nginx-ingress.svc.cluster.local"]
+        type: A
+        port: 9113
+        refresh_interval: 15s
+
   - job_name: alertmanager
     static_configs:
       - targets: ["alertmanager:9093"]

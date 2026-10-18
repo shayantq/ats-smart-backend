@@ -1,0 +1,17 @@
+# =============================================================================
+# NGINX Ingress Controller — افزونه‌ی سطح کلاستر (Namespace nginx-ingress)، یک‌بار برای هر کلاستر
+#   kubectl apply -k k8s/addons/nginx-ingress            (پورت‌های استاندارد 80/443)
+#   kubectl apply -k k8s/overlays/local/ingress-controller   (Docker Desktop: 8081/8443)
+# k8s/deploy.sh نسخه‌ی مناسب محیط را خودکار اعمال می‌کند.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ats-smart-ingress
+    includeSelectors: false
+
+resources:
+  - rbac.yaml
+  - controller.yaml

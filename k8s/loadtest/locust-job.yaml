@@ -1,0 +1,54 @@
+# Job تست بار Locust داخل کلاستر — اجرا و پایش با k8s/hpa-stress.sh (مقادیر __...__ را همان اسکریپت پر می‌کند).
+# بار از Service ورودی NGINX Ingress عبور می‌کند، درست مثل ترافیک کاربران واقعی.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loadtest
+  labels:
+    app.kubernetes.io/name: loadtest
+    app.kubernetes.io/part-of: ats-smart-loadtest
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loadtest
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: locust
+          image: locustio/locust:2.31.8
+          args:
+            - -f
+            - /mnt/locust/locustfile.py
+            - --headless
+            - --host
+            - __TARGET_URL__
+            - --only-summary
+            - --exit-code-on-error
+            - "1"
+          env:
+            - name: LOAD_USERS
+              value: "__USERS__"
+            - name: LOAD_RAMP
+              value: "__RAMP__"
+            - name: LOAD_HOLD
+              value: "__HOLD__"
+            - name: LOAD_HOST_HEADER
+              value: "__HOST_HEADER__"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 512Mi
+          volumeMounts:
+            - name: locustfile
+              mountPath: /mnt/locust
+              readOnly: true
+      volumes:
+        - name: locustfile
+          configMap:
+            name: loadtest-locustfile

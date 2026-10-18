@@ -63,7 +63,7 @@ spec:
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
-                  name: ats-config
+                  name: postgres-config
                   key: POSTGRES_DB
             # زیرپوشه‌ی جدا: ریشه‌ی بعضی دیسک‌ها (ext4 ابری) پوشه‌ی lost+found دارد و initdb
             # روی پوشه‌ی غیرخالی اجرا نمی‌شود
@@ -113,7 +113,7 @@ spec:
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
-                  name: ats-config
+                  name: postgres-config
                   key: POSTGRES_DB
             - name: DATA_SOURCE_URI
               value: 127.0.0.1:5432/$(POSTGRES_DB)?sslmode=disable

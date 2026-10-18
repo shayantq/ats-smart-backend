@@ -370,6 +370,51 @@ api_performance = dashboard(
             x=12,
             y=24,
         ),
+        row("مقیاس‌دهی خودکار (HPA) و NGINX Ingress — فقط Kubernetes", 32),
+        timeseries(
+            "تعداد Pod های فعال",
+            [
+                ('count(up{job="backend_api"} == 1)', "backend-api"),
+                ('count(up{job="ingress"} == 1)', "nginx-ingress"),
+            ],
+            unit="short",
+            x=0,
+            y=33,
+            w=8,
+            description="بالا رفتن خط بک‌اند در اوج ترافیک = Scale Up خودکار HPA؛ "
+            "برگشت به ۲ پس از پایان اوج = Scale Down",
+        ),
+        timeseries(
+            "توزیع ترافیک Ingress بین Pod های بک‌اند",
+            [
+                (
+                    "sum by (server) (rate(nginx_ingress_controller_upstream_server_response_latency_ms_count"
+                    '{service="backend-api"}[1m]))',
+                    "{{server}}",
+                )
+            ],
+            unit="reqps",
+            x=8,
+            y=33,
+            w=8,
+            description="هر خط یک Pod بک‌اند (IP) از دید Ingress؛ "
+            "Pod های تازه‌ی HPA بلافاصله سهم ترافیک می‌گیرند (least_conn)",
+        ),
+        timeseries(
+            "پاسخ‌های Ingress به تفکیک کد وضعیت",
+            [
+                (
+                    "sum by (code) (rate(nginx_ingress_controller_upstream_server_response_latency_ms_count"
+                    '{service="backend-api"}[1m]))',
+                    "{{code}}",
+                )
+            ],
+            unit="reqps",
+            x=16,
+            y=33,
+            w=8,
+            description="نبود خط 502/503/504 = هیچ خطای Bad Gateway حتی حین افزوده/حذف شدن Pod ها",
+        ),
     ],
 )
 

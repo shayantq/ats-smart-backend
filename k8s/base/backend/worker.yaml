@@ -1,7 +1,7 @@
 # =============================================================================
 # Worker صف RQ — پردازش رزومه (OCR → NER → موتور مهارت → نمره‌ی تطابق) و ارسال ایمیل‌ها
 #
-# مقیاس‌پذیر: هر نسخه‌ی اضافه یک مصرف‌کننده‌ی دیگر از همان صف Redis است (kubectl scale).
+# مقیاس خودکار با HPA: هر نسخه‌ی اضافه یک مصرف‌کننده‌ی دیگر از همان صف Redis است.
 # SIGTERM = Warm Shutdown در RQ: کار در حال اجرا (مثلاً OCR یک رزومه) پیش از خروج تمام می‌شود.
 # =============================================================================
 apiVersion: apps/v1
@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/name: worker
     app.kubernetes.io/component: queue-worker
 spec:
-  replicas: 1
+  # replicas را HPA مدیریت می‌کند (hpa.yaml: ۱ تا ۴، بر اساس CPU/RAM پردازش رزومه‌ها)
   revisionHistoryLimit: 5
   selector:
     matchLabels:
