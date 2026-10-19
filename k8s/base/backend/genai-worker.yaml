@@ -1,0 +1,75 @@
+# =============================================================================
+# Worker صف genai — تولید سؤال مصاحبه با مدل زبانی (app/tasks/genai.py)
+#
+# هر کار ده‌ها ثانیه تا چند دقیقه منتظر پاسخ مدل می‌ماند (I/O، نه CPU)؛ Worker جدا دارد تا ایمیل‌ها و
+# پردازش رزومه معطل آن نمانند. نشانی، مدل و کلید سرویس از Secret «ats-genai-secrets» (اختیاری: بدون آن
+# قابلیت غیرفعال است و API پاسخ 503 می‌دهد).
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genai-worker
+  labels:
+    app.kubernetes.io/name: genai-worker
+    app.kubernetes.io/component: queue-worker
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: genai-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: genai-worker
+        app.kubernetes.io/component: queue-worker
+    spec:
+      # بیشتر از job_timeout صف genai (۶۰۰ ثانیه): خاموشی وسط تولید، کار را نصفه رها نمی‌کند
+      terminationGracePeriodSeconds: 630
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-migrations
+          image: ats-smart-backend
+          command:
+            - sh
+            - -c
+            - until alembic current 2>/dev/null | grep -q '(head)'; do echo 'در انتظار اجرای مایگریشن‌ها ...'; sleep 3; done
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              memory: 384Mi
+      containers:
+        - name: genai-worker
+          image: ats-smart-backend
+          command: ["python", "-m", "app.worker", "genai"]
+          envFrom:
+            - configMapRef:
+                name: ats-config
+            - secretRef:
+                name: ats-backend-secrets
+            - secretRef:
+                name: ats-genai-secrets
+                optional: true
+          resources:
+            requests:
+              cpu: 20m
+              memory: 160Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

@@ -1,0 +1,158 @@
+{
+  "prompt_version": "interview-questions/v1",
+  "fit_analysis": {
+    "strengths": [
+      "Has required skills: Python, FastAPI, PostgreSQL",
+      "Extra skills mentioned in the job description: Docker, Redis",
+      "6 years of net experience meets the Senior level (minimum 5)"
+    ],
+    "gaps": [
+      "Required skill Kubernetes is not mentioned directly; only related experience in DevOps",
+      "Required skill not found in resume: Kafka"
+    ],
+    "matched_required_skills": [
+      "Python",
+      "FastAPI",
+      "PostgreSQL"
+    ],
+    "partially_matched_required_skills": {
+      "Kubernetes": "DevOps"
+    },
+    "missing_required_skills": [
+      "Kafka"
+    ],
+    "additional_relevant_skills": [
+      "Docker",
+      "Redis"
+    ]
+  },
+  "focus_summary": "Senior Backend Engineer - Focus on Python, FastAPI, PostgreSQL, and Kubernetes",
+  "questions": [
+    {
+      "category": "technical",
+      "skill": "Python",
+      "difficulty": "easy",
+      "question": "How do you ensure the reliability and scalability of your API development process?",
+      "purpose": "Verify Python proficiency and ensure the candidate understands the importance of scalability and reliability.",
+      "expected_answer": "The candidate should be able to discuss strategies for ensuring the reliability and scalability of the API development process, such as load testing, monitoring, and continuous integration.",
+      "evaluation_points": [
+        "Can discuss strategies for ensuring reliability and scalability",
+        "Understands the importance of load testing and continuous integration"
+      ],
+      "red_flags": [
+        "Lack of specific examples or tools mentioned",
+        "Insufficient knowledge of continuous integration strategies"
+      ],
+      "follow_ups": [
+        "Discuss specific tools or strategies used in the candidate's previous projects",
+        "Explain how these tools were implemented and their impact on scalability"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "technical",
+      "skill": "FastAPI",
+      "difficulty": "hard",
+      "question": "How do you ensure the security and performance of your FastAPI-based API?",
+      "purpose": "Verify the candidate's understanding of FastAPI and its security features.",
+      "expected_answer": "The candidate should be able to discuss the security features of FastAPI, such as authentication, rate limiting, and data validation, and explain how these features contribute to the overall performance and security of the API.",
+      "evaluation_points": [
+        "Can discuss security features of FastAPI",
+        "Understands the impact of security on API performance"
+      ],
+      "red_flags": [
+        "Lack of specific examples or tools mentioned",
+        "Insufficient knowledge of rate limiting and data validation"
+      ],
+      "follow_ups": [
+        "Discuss specific tools or strategies used in the candidate's previous projects",
+        "Explain how these tools were implemented and their impact on security and performance"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "technical",
+      "skill": "PostgreSQL",
+      "difficulty": "hard",
+      "question": "How do you ensure the data integrity and consistency of your PostgreSQL database?",
+      "purpose": "Verify the candidate's understanding of PostgreSQL and its features for data integrity and consistency.",
+      "expected_answer": "The candidate should be able to discuss the features of PostgreSQL that ensure data integrity and consistency, such as transaction management, foreign key constraints, and unique constraints, and explain how these features contribute to the overall data integrity and consistency of the database.",
+      "evaluation_points": [
+        "Can discuss features of PostgreSQL for data integrity and consistency",
+        "Understands the impact of these features on data integrity and consistency"
+      ],
+      "red_flags": [
+        "Lack of specific examples or tools mentioned",
+        "Insufficient knowledge of transaction management and foreign key constraints"
+      ],
+      "follow_ups": [
+        "Discuss specific tools or strategies used in the candidate's previous projects",
+        "Explain how these tools were implemented and their impact on data integrity and consistency"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "system_design",
+      "skill": "System Design",
+      "difficulty": "hard",
+      "question": "How do you ensure the stability and performance of your system in the face of high traffic and unexpected loads?",
+      "purpose": "Verify the candidate's understanding of system design principles and their ability to apply them in a high-traffic environment.",
+      "expected_answer": "The candidate should be able to discuss the principles of system design that ensure stability and performance in high-traffic environments, such as load balancing, caching, and parallel processing, and explain how these principles have been applied in the candidate's previous projects.",
+      "evaluation_points": [
+        "Can discuss principles of system design for stability and performance",
+        "Understands the impact of these principles on system performance"
+      ],
+      "red_flags": [
+        "Lack of specific examples or tools mentioned",
+        "Insufficient knowledge of load balancing, caching, and parallel processing"
+      ],
+      "follow_ups": [
+        "Discuss specific tools or strategies used in the candidate's previous projects",
+        "Explain how these tools were implemented and their impact on stability and performance"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "gap_probe",
+      "skill": "Kubernetes",
+      "difficulty": "medium",
+      "question": "How do you ensure the deployment and management of your Kubernetes-based services?",
+      "purpose": "Verify the candidate's understanding of Kubernetes and their ability to manage services in a Kubernetes environment.",
+      "expected_answer": "The candidate should be able to discuss the tools and strategies for deploying and managing Kubernetes-based services, such as deploying applications, scaling resources, and monitoring services, and explain how these tools and strategies have been applied in the candidate's previous projects.",
+      "evaluation_points": [
+        "Can discuss tools and strategies for deploying and managing Kubernetes-based services",
+        "Understands the impact of these tools and strategies on service management"
+      ],
+      "red_flags": [
+        "Lack of specific examples or tools mentioned",
+        "Insufficient knowledge of deploying applications and scaling resources"
+      ],
+      "follow_ups": [
+        "Discuss specific tools or strategies used in the candidate's previous projects",
+        "Explain how these tools were implemented and their impact on deployment and management"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "gap_probe",
+      "skill": "Kafka",
+      "difficulty": "medium",
+      "question": "How do you ensure the real-time data processing and communication between services in a Kafka-based system?",
+      "purpose": "Verify the candidate's understanding of Kafka and their ability to manage real-time data processing and communication in a Kafka-based system.",
+      "expected_answer": "The candidate should be able to discuss the features of Kafka that ensure real-time data processing and communication, such as message processing, partitioning, and replication, and explain how these features have been applied in the candidate's previous projects.",
+      "evaluation_points": [
+        "Can discuss features of Kafka for real-time data processing and communication",
+        "Understands the impact of these features on real-time data processing and communication"
+      ],
+      "red_flags": [
+        "Lack of specific examples or tools mentioned",
+        "Insufficient knowledge of message processing, partitioning, and replication"
+      ],
+      "follow_ups": [
+        "Discuss specific tools or strategies used in the candidate's previous projects",
+        "Explain how these tools were implemented and their impact on real-time data processing and communication"
+      ],
+      "estimated_minutes": 15
+    }
+  ]
+}

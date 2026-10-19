@@ -14,6 +14,8 @@
                    پس هزاران ایمیل انبوه هرگز OTP یک کاربر را معطل نمی‌کنند
     resumes        پردازش سنگین رزومه (OCR ← NER ← موتور مهارت ← نمره‌ی تطابق) — Worker جدا
                    تا موجی از رزومه‌ها ایمیل‌ها را پشت سر خودش نگه ندارد
+    genai          تولید سؤال مصاحبه با مدل زبانی (app/genai) — هر کار ده‌ها ثانیه منتظر پاسخ مدل می‌ماند،
+                   پس Worker جدای خودش را دارد تا ایمیل و رزومه معطل آن نمانند
     default        بقیه‌ی کارها
 
 هیچ کاری از دست نمی‌رود: همه‌ی کارها سیاست تلاش مجدد دارند (خطای گذرا، یا Worker ای که وسط کار
@@ -36,9 +38,10 @@ logger = logging.getLogger("ats_smart.queue")
 QUEUE_NOTIFICATIONS = "notifications"
 QUEUE_BULK = "bulk"
 QUEUE_RESUMES = "resumes"
+QUEUE_GENAI = "genai"
 QUEUE_DEFAULT = "default"
 # ترتیب اولویت یک Worker که به همه‌ی صف‌ها گوش می‌دهد (RQ همیشه از اولین صف غیرخالی برمی‌دارد)
-ALL_QUEUES = (QUEUE_NOTIFICATIONS, QUEUE_RESUMES, QUEUE_BULK, QUEUE_DEFAULT)
+ALL_QUEUES = (QUEUE_NOTIFICATIONS, QUEUE_RESUMES, QUEUE_GENAI, QUEUE_BULK, QUEUE_DEFAULT)
 
 # نتیجه‌ی کارهای موفق فقط ۱۰ دقیقه در Redis می‌ماند (حافظه‌ی Broker با حجم بالا رشد بی‌حد نمی‌کند)؛
 # کارهای ناموفق ۷ روز برای بررسی و اجرای دوباره‌ی دستی
@@ -63,11 +66,15 @@ _BULK_POLICY = QueuePolicy(QUEUE_BULK, job_timeout=120, retry=TRANSIENT_FAILURE_
 # OCR یک رزومه‌ی اسکن‌شده‌ی چندصفحه‌ای چند ده ثانیه CPU می‌گیرد؛ پردازه‌ی دوباره‌ی رزومه بی‌خطر است
 # (نتیجه‌ی قبلی بازنویسی می‌شود)، پس Worker ازکارافتاده باعث گم شدن رزومه نمی‌شود
 _RESUME_POLICY = QueuePolicy(QUEUE_RESUMES, job_timeout=300, retry=Retry(max=2, interval=[60, 300]))
+# مدل زبانی روی CPU (سرور داخل کلاستر) چند دقیقه طول می‌کشد؛ خطای شبکه/429/5xx با فاصله تکرار می‌شود
+# (تعداد تلاش‌ها با MAX_ATTEMPTS در app/genai/service.py هماهنگ است)
+_GENAI_POLICY = QueuePolicy(QUEUE_GENAI, job_timeout=600, retry=Retry(max=2, interval=[30, 120]))
 _DEFAULT_POLICY = QueuePolicy(QUEUE_DEFAULT, job_timeout=180, retry=Retry(max=2, interval=[30, 120]))
 
 _POLICY_BY_MODULE = {
     "app.tasks.notifications": _NOTIFICATION_POLICY,
     "app.tasks.resume_processing": _RESUME_POLICY,
+    "app.tasks.genai": _GENAI_POLICY,
 }
 
 # سقف هر Pipeline در enqueue_bulk — هزاران کار با چند رفت‌وبرگشت شبکه، نه هزاران

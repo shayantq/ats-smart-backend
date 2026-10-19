@@ -31,3 +31,6 @@ k8s/.release/
 
 # خروجی تست بار و HPA روی Kubernetes (k8s/hpa-stress.sh)
 k8s/loadtest/reports/
+
+# فقط محیط لوکال: نشانی وزن‌های مدل زبانی سرور داخل کلاستر (k8s/overlays/local/genai-inference)
+k8s/overlays/local/genai-inference/model.env

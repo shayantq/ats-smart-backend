@@ -17,7 +17,9 @@ async def test_tests_run_on_a_separate_temporary_database(db_session):
 async def test_schema_comes_from_real_alembic_migrations(db_session):
     """اسکیمای دیتابیس تست همان اسکیمای Production است (کل زنجیره‌ی مایگریشن‌ها اجرا شده)."""
     version = (await db_session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-    assert version == "9c4e2a7b1d35"
+    assert version == "a7c3e91f0b42"
+    tables = await db_session.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
+    assert {"interview_question_sets", "interview_questions"} <= set(tables.scalars())  # بانک سؤال GenAI
     indexes = await db_session.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'resumes'"))
     names = set(indexes.scalars())
     assert {"ix_resumes_raw_text_fts_v2", "ix_resumes_skill_keys_gin", "ix_resumes_experience_years"} <= names

@@ -79,6 +79,16 @@ if [[ ! -f "${SECRETS_DIR}/grafana.env" ]]; then
     printf 'GF_SECURITY_ADMIN_USER=admin\nGF_SECURITY_ADMIN_PASSWORD=%s\n' "$(random_secret 12)" > "${SECRETS_DIR}/grafana.env"
     ok "grafana.env ساخته شد (رمز ورود Grafana داخل همین فایل است)"
 fi
+# هوش مصنوعی مولد: بدون تنظیم، قابلیت غیرفعال می‌ماند (نمونه و راهنما: genai.env.example)
+if [[ ! -f "${SECRETS_DIR}/genai.env" ]]; then
+    cat > "${SECRETS_DIR}/genai.env" <<EOF
+GENAI_BASE_URL=
+GENAI_MODEL=
+GENAI_API_KEY=
+GENAI_STRUCTURED_OUTPUT=json_schema
+EOF
+    ok "genai.env (خالی — تولید سؤال مصاحبه غیرفعال؛ راهنما: genai.env.example)"
+fi
 for name in postgres backend grafana; do
     [[ -f "${SECRETS_DIR}/${name}.env" ]] || die "فایل ${SECRETS_DIR}/${name}.env وجود ندارد (نمونه: ${name}.env.example)"
 done
@@ -175,6 +185,13 @@ kubectl apply -k "$RELEASE_DIR" --prune -l app.kubernetes.io/part-of=ats-smart \
     --prune-allowlist=core/v1/ConfigMap --prune-allowlist=core/v1/Secret | sed 's/^/    /'
 
 # -----------------------------------------------------------------------------
+# سرور مدل زبانی داخل کلاستر (اختیاری، فقط وقتی نشانی وزن‌های مدل در model.env آن پوشه داده شده)
+genai_dir="${OVERLAY_DIR}/genai-inference"
+if [[ -f "${genai_dir}/model.env" ]] && grep -qE '^MODEL_URL=.+' "${genai_dir}/model.env"; then
+    kubectl apply -k "$genai_dir" | sed 's/^/    /'
+    warn "سرور مدل زبانی اعمال شد؛ دانلود اول وزن‌ها ممکن است چند دقیقه طول بکشد: kubectl -n ${NAMESPACE} logs -f deploy/genai-inference -c fetch-model"
+fi
+
 log "۶/۷ انتظار برای آماده شدن سرویس‌ها"
 kubectl -n "$NAMESPACE" rollout status statefulset/postgres --timeout="$ROLLOUT_TIMEOUT" >/dev/null
 ok "postgres (StatefulSet)"
@@ -190,9 +207,9 @@ while true; do
     sleep 3
 done
 ok "migrate (Job): مایگریشن‌ها تا head اجرا شدند"
-workloads=(deployment/redis deployment/backend-api deployment/worker deployment/resume-worker deployment/scheduler
-    deployment/frontend deployment/prometheus deployment/alertmanager deployment/grafana deployment/kube-state-metrics
-    deployment/backup daemonset/node-exporter)
+workloads=(deployment/redis deployment/backend-api deployment/worker deployment/resume-worker deployment/genai-worker
+    deployment/scheduler deployment/frontend deployment/prometheus deployment/alertmanager deployment/grafana
+    deployment/kube-state-metrics deployment/backup daemonset/node-exporter)
 # سرویس‌های مخصوص یک Overlay (مثلاً Mailpit محیط لوکال)
 kubectl -n "$NAMESPACE" get deployment mailpit >/dev/null 2>&1 && workloads+=(deployment/mailpit)
 for workload in "${workloads[@]}"; do

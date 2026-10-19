@@ -1,0 +1,129 @@
+{
+  "additionalProperties": false,
+  "description": "خروجی کامل یک درخواست تولید سؤال — دقیقاً همان JSON که مدل زبانی باید برگرداند.",
+  "properties": {
+    "focus_summary": {
+      "description": "خلاصه‌ی محورهای مصاحبه برای این کارجو و این آگهی",
+      "maxLength": 1500,
+      "minLength": 10,
+      "title": "Focus Summary",
+      "type": "string"
+    },
+    "questions": {
+      "items": {
+        "additionalProperties": false,
+        "description": "یک سؤال مصاحبه‌ی تخصصی به همراه کلید پاسخ برای مصاحبه‌کننده.",
+        "properties": {
+          "category": {
+            "description": "technical: دانش فنی · problem_solving: حل مسئله · system_design: طراحی سیستم · behavioral: رفتاری/تجربه · gap_probe: سنجش یک نقطه‌ی ضعف یا مهارت گم‌شده",
+            "enum": [
+              "technical",
+              "problem_solving",
+              "system_design",
+              "behavioral",
+              "gap_probe"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "difficulty": {
+            "enum": [
+              "easy",
+              "medium",
+              "hard"
+            ],
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "estimated_minutes": {
+            "description": "زمان تقریبی پاسخ در مصاحبه",
+            "maximum": 30,
+            "minimum": 1,
+            "title": "Estimated Minutes",
+            "type": "integer"
+          },
+          "evaluation_points": {
+            "description": "نکاتی که پاسخ خوب باید پوشش دهد (معیار نمره‌دهی)",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Evaluation Points",
+            "type": "array"
+          },
+          "expected_answer": {
+            "description": "کلید پاسخ: پاسخ مورد انتظار",
+            "maxLength": 2500,
+            "minLength": 10,
+            "title": "Expected Answer",
+            "type": "string"
+          },
+          "follow_ups": {
+            "description": "سؤال‌های پیگیری برای عمیق‌تر کردن بحث",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Follow Ups",
+            "type": "array"
+          },
+          "purpose": {
+            "description": "چرا این سؤال برای این کارجو — ارجاع به نقطه‌ی قوت یا ضعف مشخص پروفایل",
+            "maxLength": 600,
+            "minLength": 5,
+            "title": "Purpose",
+            "type": "string"
+          },
+          "question": {
+            "description": "متن سؤال، خطاب به کارجو",
+            "maxLength": 1200,
+            "minLength": 10,
+            "title": "Question",
+            "type": "string"
+          },
+          "red_flags": {
+            "description": "نشانه‌های پاسخ ضعیف یا نادرست",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Red Flags",
+            "type": "array"
+          },
+          "skill": {
+            "description": "مهارت اصلی که سؤال می‌سنجد",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Skill",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "skill",
+          "difficulty",
+          "question",
+          "purpose",
+          "expected_answer",
+          "evaluation_points",
+          "red_flags",
+          "follow_ups",
+          "estimated_minutes"
+        ],
+        "title": "GeneratedQuestion",
+        "type": "object"
+      },
+      "maxItems": 15,
+      "minItems": 1,
+      "title": "Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "focus_summary",
+    "questions"
+  ],
+  "title": "GeneratedQuestionSet",
+  "type": "object"
+}

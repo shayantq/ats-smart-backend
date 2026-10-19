@@ -1,0 +1,24 @@
+سارا محمدی
+sara.mohammadi.dev@example.com
+0912 345 6789
+linkedin.com/in/sara-mohammadi-sample
+
+خلاصه
+توسعه‌دهنده‌ی بک‌اند با تمرکز بر طراحی API و سرویس‌های مقیاس‌پذیر.
+
+سوابق کاری
+Backend Developer - شرکت پرداخت نوین
+2021 - 2025
+طراحی و پیاده‌سازی API های پرداخت با Python و FastAPI، بهینه‌سازی کوئری‌های PostgreSQL،
+کش با Redis، استقرار سرویس‌ها با Docker و خط لوله‌ی CI/CD در GitLab.
+
+Junior Python Developer - شرکت داده‌پردازان آریا
+2019 - 2021
+توسعه‌ی پنل‌های داخلی با Django، نوشتن تست‌های خودکار با pytest، کار با Git و Linux.
+
+مهارت‌ها
+Python, FastAPI, Django, PostgreSQL, Redis, Docker, Git, Linux, REST, pytest
+
+تحصیلات
+کارشناسی مهندسی کامپیوتر - دانشگاه صنعتی اصفهان
+معدل: 17.2

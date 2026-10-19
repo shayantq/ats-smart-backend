@@ -1,0 +1,28 @@
+# =============================================================================
+# فقط محیط لوکال (اختیاری): سرور مدل زبانی داخل کلاستر با پروتکل Chat Completions
+#
+# برای اجرای PoC و توسعه بدون کلید API و بدون فرستادن داده‌ی رزومه به بیرون از سرور. سرویس برنامه فقط
+# به آدرس آن (GENAI_BASE_URL در secrets/genai.env) وابسته است؛ در Production همین آدرس به هر سرویس
+# سازگار دیگری (ابری یا GPU داخلی) اشاره می‌کند و این پوشه استفاده نمی‌شود.
+#
+#   ۱. model.env را از روی model.env.example بسازید (نشانی فایل وزن‌های مدل با قالب GGUF)
+#   ۲. bash k8s/deploy.sh  (یا: kubectl apply -k k8s/overlays/local/genai-inference)
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ats-smart
+
+# برچسب جدا از ats-smart: Prune استقرار اصلی (deploy.sh) به منابع این پوشه دست نمی‌زند
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ats-smart-genai
+    includeSelectors: false
+
+resources:
+  - inference.yaml
+
+secretGenerator:
+  - name: genai-inference-model
+    envs:
+      - model.env

@@ -1,5 +1,6 @@
 from app.models.base import Base
 from app.models.core import Candidate, Company, Job, User
+from app.models.genai import InterviewQuestion, InterviewQuestionSet
 from app.models.process import Application, Interview, Resume, Skill
 from app.models.security import (
     Audit,
@@ -26,4 +27,6 @@ __all__ = [
     "Log",
     "Audit",
     "StatusHistory",
+    "InterviewQuestionSet",
+    "InterviewQuestion",
 ]

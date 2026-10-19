@@ -80,6 +80,10 @@ spec:
                 name: ats-config
             - secretRef:
                 name: ats-backend-secrets  # DATABASE_URL، SECRET_KEY، OPS_WEBHOOK_TOKEN، SMTP_*، S3_*
+            # GENAI_* — API فقط فعال بودن قابلیت را می‌سنجد؛ فراخوانی مدل زبانی در genai-worker است
+            - secretRef:
+                name: ats-genai-secrets
+                optional: true
           # /api/v1/health عمداً به دیتابیس/Redis وابسته نیست: قطعی موقت آن‌ها نباید همه‌ی
           # Pod ها را از سرویس خارج یا ری‌استارت کند (برنامه در نبود Redis هم کار می‌کند).
           # بررسی عمیق اتصال‌ها: /api/v1/health/ready (k8s/verify.sh)

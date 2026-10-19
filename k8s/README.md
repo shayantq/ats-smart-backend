@@ -8,6 +8,7 @@ bash k8s/verify.sh        # بررسی خودکار معیارهای پذیرش 
 bash k8s/hpa-stress.sh    # تست بار + بررسی Scale Up / Scale Down و توزیع بار Ingress — [HPA & INGRESS PASS]
 bash k8s/queue-stress.sh  # ایمیل انبوه + پردازش رزومه هم‌زمان، بدون از دست رفتن کار — [QUEUE STRESS PASS]
 bash k8s/search-benchmark.sh  # سنجش ایندکس‌های GIN جستجوی کارجویان روی ۲۰٬۰۰۰ رزومه — [GIN INDEX PASS]
+bash k8s/genai-poc.sh     # اثبات مفهوم تولید سؤال مصاحبه از مسیر کامل API — [GENAI POC PASS]
 ```
 
 | آدرس (محیط لوکال) | سرویس |
@@ -50,6 +51,7 @@ bash k8s/search-benchmark.sh  # سنجش ایندکس‌های GIN جستجوی 
 | 1 | `backend_api` | Deployment `backend-api` + Service + HPA + PDB | ۲ تا ۶ (HPA) | PVC `media` (RWX) |
 | 2 | `worker` | Deployment `worker` (صف‌های notifications ← bulk ← default) + HPA | ۱ تا ۴ (HPA) | — |
 | 2′ | (همان worker) | Deployment `resume-worker` (صف resumes، پردازش سنگین رزومه) + HPA | ۱ تا ۴ (HPA) | PVC `media` |
+| 2″ | (همان worker) | Deployment `genai-worker` (صف genai، تولید سؤال مصاحبه با مدل زبانی) | ۱ | — |
 | 3 | `scheduler` | Deployment `scheduler` (Recreate) | همیشه ۱ | — |
 | 4 | `frontend` | Deployment `frontend` + Service + HPA + PDB | ۲ تا ۴ (HPA) | — |
 | 5 | `postgres_db` | **StatefulSet** `postgres` + Service + Headless Service | ۱ | volumeClaimTemplates: `data`، `wal-archive` |
@@ -62,6 +64,7 @@ bash k8s/search-benchmark.sh  # سنجش ایندکس‌های GIN جستجوی 
 | — | `node_exporter` | **DaemonSet** (یک نسخه روی هر Node) | — | — |
 | — | (جدید) | `kube-state-metrics` — وضعیت اشیای کلاستر برای Prometheus | ۱ | — |
 | — | (فقط لوکال) | `mailpit` — سرور SMTP آزمایشی (`overlays/local/mailpit.yaml`) | ۱ | — |
+| — | (فقط لوکال، اختیاری) | `genai-inference` — سرور مدل زبانی متن‌باز روی CPU (`overlays/local/genai-inference`؛ نشانی وزن‌ها در `model.env` محلی) | ۱ | PVC `genai-models` |
 | — | `gateway` (Nginx لبه) | **NGINX Ingress Controller** (`k8s/addons/nginx-ingress`) + Ingress `ats-smart` | ۲ تا ۴ (HPA) | — |
 | — | `migrate` | **Job** یک‌باره (پیش از بالا آمدن API/Worker) | — | — |
 | — | `backup_restore` | CronJob معلق `backup-drill` (فقط اجرای دستی) | — | — |
@@ -168,6 +171,7 @@ kubectl patch pv <pv-name> -p '{"spec":{"claimRef":null}}'                    # 
 | `ats-backend-secrets` | `DATABASE_URL`، `SECRET_KEY`، `OPS_WEBHOOK_TOKEN`، `SMTP_*`، `S3_*` | backend-api، worker، migrate (و فقط کلید توکن در alertmanager) |
 | `ats-grafana-secrets` | `GF_SECURITY_ADMIN_USER/PASSWORD` | grafana |
 | `ats-backup-secrets` | `BACKUP_AGE_RECIPIENT`، کلیدهای Offsite | backup، backup-drill |
+| `ats-genai-secrets` | `GENAI_BASE_URL`، `GENAI_MODEL`، `GENAI_API_KEY` (اختیاری — خالی = غیرفعال) | backend-api، genai-worker |
 
 نام ConfigMap و Secret ها پسوند هش دارد. با تغییر هر مقدار و اجرای دوباره‌ی `deploy.sh`، Pod های مصرف‌کننده خودکار با مقدار جدید Rollout می‌شوند.
 

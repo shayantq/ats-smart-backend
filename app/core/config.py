@@ -65,6 +65,23 @@ class Settings(BaseSettings):
     # در صندوق اعلان‌های داخل سایت دریافت می‌کنند (جداشده با کاما)
     OPS_ALERT_RECIPIENT_ROLES: str = "Admin"
 
+    # ---- هوش مصنوعی مولد (تولید سؤال مصاحبه — app/genai) ----
+    # هر سرویس سازگار با پروتکل Chat Completions (ابری یا داخل کلاستر)؛ ارائه‌دهنده و مدل فقط با همین
+    # تنظیمات انتخاب می‌شوند و در کد نامی از آن‌ها نیست. خالی بودن آدرس یا مدل = قابلیت غیرفعال (503).
+    GENAI_BASE_URL: str = ""
+    GENAI_API_KEY: str = ""
+    GENAI_MODEL: str = ""
+    GENAI_TIMEOUT_SECONDS: float = 240.0
+    GENAI_MAX_OUTPUT_TOKENS: int = 4096
+    GENAI_TEMPERATURE: float = 0.3
+    # json_schema: خروجی مقید به JSON Schema سمت سرویس (پیش‌فرض)؛ json_object: فقط JSON معتبر و
+    # اعتبارسنجی Schema سمت ما — برای سرویس‌هایی که response_format از نوع json_schema را ندارند
+    GENAI_STRUCTURED_OUTPUT: str = "json_schema"
+
+    @property
+    def genai_enabled(self) -> bool:
+        return bool(self.GENAI_BASE_URL and self.GENAI_MODEL)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

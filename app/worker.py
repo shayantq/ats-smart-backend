@@ -14,6 +14,7 @@ threading.Timer به‌جای سیگنال یونیکسی) استفاده می�
     python -m app.worker                          همه‌ی صف‌ها به ترتیب اولویت (Docker Compose / توسعه)
     python -m app.worker notifications bulk default   فقط ایمیل‌ها و کارهای عمومی (Kubernetes: worker)
     python -m app.worker resumes                  فقط پردازش سنگین رزومه (Kubernetes: resume-worker)
+    python -m app.worker genai                    فقط تولید سؤال مصاحبه با مدل زبانی (Kubernetes: genai-worker)
 
 ترتیب نام صف‌ها همان اولویت است: Worker همیشه اول از صف اول برمی‌دارد.
 """

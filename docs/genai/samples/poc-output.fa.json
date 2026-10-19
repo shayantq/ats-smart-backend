@@ -1,0 +1,158 @@
+{
+  "prompt_version": "interview-questions/v1",
+  "fit_analysis": {
+    "strengths": [
+      "Has required skills: Python, FastAPI, PostgreSQL",
+      "Extra skills mentioned in the job description: Docker, Redis",
+      "6 years of net experience meets the Senior level (minimum 5)"
+    ],
+    "gaps": [
+      "Required skill Kubernetes is not mentioned directly; only related experience in DevOps",
+      "Required skill not found in resume: Kafka"
+    ],
+    "matched_required_skills": [
+      "Python",
+      "FastAPI",
+      "PostgreSQL"
+    ],
+    "partially_matched_required_skills": {
+      "Kubernetes": "DevOps"
+    },
+    "missing_required_skills": [
+      "Kafka"
+    ],
+    "additional_relevant_skills": [
+      "Docker",
+      "Redis"
+    ]
+  },
+  "focus_summary": "توسعه‌دهنده‌ی بک‌اند پلتفرم‌های استفاده هوشمند: طراحی API با FastAPI، مدل‌سازی داده و بهینه‌سازی PostgreSQL، پردازش رویدادمحور با Kafka، استقرار روی Kubernetes و پایش با Prometheus",
+  "questions": [
+    {
+      "category": "technical",
+      "skill": "Python",
+      "difficulty": "easy",
+      "question": "چگونه به طور کامل از Python API‌های پرداخت با FastAPI استفاده کنید؟",
+      "purpose": "Strength: required skill Python is in the resume",
+      "expected_answer": "پیاده‌سازی API‌های پرداخت با FastAPI و Python",
+      "evaluation_points": [
+        "پیاده‌سازی API‌های پرداخت با FastAPI و Python",
+        "توضیح‌های دقیق در مورد API‌های پرداخت با FastAPI و Python"
+      ],
+      "red_flags": [
+        "پیاده‌سازی API‌های پرداخت با FastAPI و Python",
+        "پیش‌بینی‌های دقیق در مورد API‌های پرداخت با FastAPI و Python"
+      ],
+      "follow_ups": [
+        "پیاده‌سازی API‌های پرداخت با FastAPI و Python را به طور کامل توضیح دهید",
+        "پیش‌بینی‌های دقیق در مورد API‌های پرداخت با FastAPI و Python را توضیح دهید"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "technical",
+      "skill": "FastAPI",
+      "difficulty": "hard",
+      "question": "چگونه به طور کامل از FastAPI API‌های پرداخت با Python استفاده کنید؟",
+      "purpose": "Strength: required skill FastAPI is in the resume",
+      "expected_answer": "پیاده‌سازی API‌های پرداخت با FastAPI و Python",
+      "evaluation_points": [
+        "پیاده‌سازی API‌های پرداخت با FastAPI و Python",
+        "توضیح‌های دقیق در مورد API‌های پرداخت با FastAPI و Python"
+      ],
+      "red_flags": [
+        "پیاده‌سازی API‌های پرداخت با FastAPI و Python",
+        "پیش‌بینی‌های دقیق در مورد API‌های پرداخت با FastAPI و Python"
+      ],
+      "follow_ups": [
+        "پیاده‌سازی API‌های پرداخت با FastAPI و Python را به طور کامل توضیح دهید",
+        "پیش‌بینی‌های دقیق در مورد API‌های پرداخت با FastAPI و Python را توضیح دهید"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "technical",
+      "skill": "PostgreSQL",
+      "difficulty": "hard",
+      "question": "چگونه به طور کامل از PostgreSQL داده‌های پرداخت با Python استفاده کنید؟",
+      "purpose": "Strength: required skill PostgreSQL is in the resume",
+      "expected_answer": "پیاده‌سازی داده‌های پرداخت با PostgreSQL و Python",
+      "evaluation_points": [
+        "پیاده‌سازی داده‌های پرداخت با PostgreSQL و Python",
+        "توضیح‌های دقیق در مورد داده‌های پرداخت با PostgreSQL و Python"
+      ],
+      "red_flags": [
+        "پیاده‌سازی داده‌های پرداخت با PostgreSQL و Python",
+        "پیش‌بینی‌های دقیق در مورد داده‌های پرداخت با PostgreSQL و Python"
+      ],
+      "follow_ups": [
+        "پیاده‌سازی داده‌های پرداخت با PostgreSQL و Python را به طور کامل توضیح دهید",
+        "پیش‌بینی‌های دقیق در مورد داده‌های پرداخت با PostgreSQL و Python را توضیح دهید"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "system_design",
+      "skill": "System Design",
+      "difficulty": "hard",
+      "question": "چگونه به طور کامل از Kubernetes پلتفرم‌های استفاده هوشمند با Python استفاده کنید؟",
+      "purpose": "Seniority: the role is senior",
+      "expected_answer": "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kubernetes و Python",
+      "evaluation_points": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kubernetes و Python",
+        "توضیح‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kubernetes و Python"
+      ],
+      "red_flags": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kubernetes و Python",
+        "پیش‌بینی‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kubernetes و Python"
+      ],
+      "follow_ups": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kubernetes و Python را به طور کامل توضیح دهید",
+        "پیش‌بینی‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kubernetes و Python را توضیح دهید"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "gap_probe",
+      "skill": "Kubernetes",
+      "difficulty": "medium",
+      "question": "چگونه به طور کامل از Kubernetes پلتفرم‌های استفاده هوشمند با Python استفاده کنید؟",
+      "purpose": "Gap: Kubernetes is not in the resume; only related experience in DevOps",
+      "expected_answer": "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kubernetes و Python",
+      "evaluation_points": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kubernetes و Python",
+        "توضیح‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kubernetes و Python"
+      ],
+      "red_flags": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kubernetes و Python",
+        "پیش‌بینی‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kubernetes و Python"
+      ],
+      "follow_ups": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kubernetes و Python را به طور کامل توضیح دهید",
+        "پیش‌بینی‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kubernetes و Python را توضیح دهید"
+      ],
+      "estimated_minutes": 15
+    },
+    {
+      "category": "gap_probe",
+      "skill": "Kafka",
+      "difficulty": "medium",
+      "question": "چگونه به طور کامل از Kafka پلتفرم‌های استفاده هوشمند با Python استفاده کنید؟",
+      "purpose": "Gap: Required skill Kafka was not found in the resume",
+      "expected_answer": "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kafka و Python",
+      "evaluation_points": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kafka و Python",
+        "توضیح‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kafka و Python"
+      ],
+      "red_flags": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kafka و Python",
+        "پیش‌بینی‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kafka و Python"
+      ],
+      "follow_ups": [
+        "پیاده‌سازی پلتفرم‌های استفاده هوشمند با Kafka و Python را به طور کامل توضیح دهید",
+        "پیش‌بینی‌های دقیق در مورد پلتفرم‌های استفاده هوشمند با Kafka و Python را توضیح دهید"
+      ],
+      "estimated_minutes": 15
+    }
+  ]
+}

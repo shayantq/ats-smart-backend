@@ -1,0 +1,9 @@
+{
+  "title": "Senior Backend Engineer",
+  "department": "فنی",
+  "required_seniority": "Senior",
+  "required_education": "کارشناسی",
+  "skills_required": ["Python", "FastAPI", "PostgreSQL", "Kubernetes", "Kafka"],
+  "location": "تهران",
+  "description": "توسعه و نگهداری سرویس‌های بک‌اند پلتفرم استخدام هوشمند: طراحی API با FastAPI، مدل‌سازی داده و بهینه‌سازی PostgreSQL، پردازش رویدادمحور با Kafka، استقرار روی Kubernetes و پایش با Prometheus. آشنایی با Redis و Docker و تجربه‌ی راهبری فنی تیم‌های کوچک مزیت است."
+}

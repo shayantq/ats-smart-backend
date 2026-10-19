@@ -34,6 +34,7 @@ resources:
   - backend/backend-api.yaml
   - backend/worker.yaml
   - backend/scheduler.yaml
+  - backend/genai-worker.yaml
   - frontend/frontend.yaml
   - hpa.yaml
   - ingress.yaml

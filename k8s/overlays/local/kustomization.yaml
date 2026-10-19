@@ -65,6 +65,10 @@ secretGenerator:
   - name: ats-backup-secrets
     envs:
       - secrets/backup.env
+  # هوش مصنوعی مولد: GENAI_BASE_URL، GENAI_MODEL، GENAI_API_KEY (خالی = قابلیت غیرفعال)
+  - name: ats-genai-secrets
+    envs:
+      - secrets/genai.env
 
 patches:
   # همه‌ی PVC ها (و PVC های StatefulSet پستگرس) روی StorageClass با Retain

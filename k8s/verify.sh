@@ -86,7 +86,8 @@ printf 'context: %s · namespace: %s · %s\n' "$(kubectl config current-context)
 section "معیار ۱: استقرار همه‌ی سرویس‌ها و وضعیت Running همه‌ی Pod ها"
 # =============================================================================
 printf '  %-26s %-12s %-8s %s\n' SERVICE KIND READY IMAGE
-for workload in deployment/backend-api deployment/worker deployment/resume-worker deployment/scheduler deployment/frontend \
+for workload in deployment/backend-api deployment/worker deployment/resume-worker deployment/genai-worker \
+    deployment/scheduler deployment/frontend \
     statefulset/postgres deployment/redis deployment/prometheus deployment/alertmanager deployment/grafana \
     deployment/kube-state-metrics deployment/backup; do
     data="$(k get "$workload" -o jsonpath='{.spec.replicas}|{.status.readyReplicas}|{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"

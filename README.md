@@ -16,6 +16,7 @@
 - [متغیرهای محیطی](#متغیرهای-محیطی)
 - [API و امکانات](#api-و-امکانات)
 - [خط لوله‌ی هوش مصنوعی رزومه](#خط-لولهی-هوش-مصنوعی-رزومه)
+- [تولید سؤال مصاحبه با هوش مصنوعی مولد](#تولید-سؤال-مصاحبه-با-هوش-مصنوعی-مولد)
 - [تست بار و امنیت](#تست-بار-و-امنیت)
 - [پشتیبان‌گیری و بازیابی فاجعه (DR)](#پشتیبانگیری-و-بازیابی-فاجعه-dr)
 - [زیرساخت: Docker، مانیتورینگ، CI/CD و استقرار](#زیرساخت-docker-مانیتورینگ-cicd-و-استقرار)
@@ -115,6 +116,7 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 | `SMTP_*` | سرویس ایمیل (برای تست بدون ایمیل واقعی: Mailtrap یا یک SMTP Debug Server محلی) |
 | `OPS_WEBHOOK_TOKEN` | توکن مشترک Alertmanager و CI برای `/api/v1/ops/*` — خالی = غیرفعال |
 | `OPS_ALERT_RECIPIENT_ROLES` | نقش‌های «تیم فنی» که هشدارها را می‌گیرند (پیش‌فرض `Admin`) |
+| `GENAI_BASE_URL` · `GENAI_MODEL` · `GENAI_API_KEY` | سرویس مدل زبانی سازگار با Chat Completions برای تولید سؤال مصاحبه — خالی = غیرفعال (`503`)؛ `GENAI_STRUCTURED_OUTPUT`، `GENAI_TIMEOUT_SECONDS`، `GENAI_MAX_OUTPUT_TOKENS`، `GENAI_TEMPERATURE` |
 | `POSTGRES_*` · `PUBLIC_BASE_URL` · `GRAFANA_ADMIN_*` · `GATEWAY_HTTP_PORT` | فقط Docker Compose / سرور |
 
 ---
@@ -293,6 +295,23 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 | فاکتورهای تکمیلی | ۲۰٪ | ۸٪ تحصیلات · ۸٪ موقعیت مکانی · ۴٪ کلمات کلیدی ثانویه‌ی توضیحات آگهی |
 
 تقسیم‌های داخلی انتخاب طراحی و قابل‌تغییر در ثابت‌های همان فایل‌اند. نبود داده (مثلاً `location` یا `required_education`) در هر دو طرف جریمه نمی‌شود. تست کلیدی: `tests/test_matching_engine.py::test_no_required_skill_match_deducts_exactly_fifty_percent`. (نام فیلد در تسک `ai_score` بود؛ برای حفظ یکپارچگی با بورد کانبان و فرانت‌اند، همان `score_ai` موجود حفظ شد.)
+
+---
+
+## تولید سؤال مصاحبه با هوش مصنوعی مولد
+
+فاز ۲ نقشه‌ی راه — قرارداد کامل API، JSON Schema، طراحی Prompt و جداول: [`docs/genai/API_CONTRACT.md`](docs/genai/API_CONTRACT.md) (+ [`openapi.json`](docs/genai/openapi.json) و [`interview-question-set.schema.json`](docs/genai/interview-question-set.schema.json)، تولیدشده از کد با `python -m app.genai.contract`).
+
+| مسیر | دسترسی | توضیح |
+|---|---|---|
+| `POST /genai/interview-questions` | `Admin`, `HR_Manager` | `{application_id, question_count (۳ تا ۱۵), difficulty, focus_skills[], language}` → `202` + `status_url` (ناهمگام، صف `genai`) |
+| `GET /genai/interview-questions/{id}` · `GET /genai/interview-questions?application_id=` | مدیران + مصاحبه‌کننده‌ی همان درخواست | وضعیت `pending → processing → completed / failed` و سؤال‌ها با کلید پاسخ، معیارها، نشانه‌های خطر و سؤال پیگیری |
+| `PATCH /genai/interview-questions/{id}/questions/{qid}` | همان‌ها | ویرایش، تأیید برای بانک سؤال، یادداشت مصاحبه‌کننده |
+| `GET /genai/question-bank?skill=&difficulty=&category=` | مدیران + `Interviewer` | سؤال‌های تأییدشده‌ی مشترک |
+
+- **مستقل از ارائه‌دهنده:** پروتکل استاندارد Chat Completions با خروجی مقید به JSON Schema؛ سرویس (ابری یا سرور مدل داخل کلاستر) فقط با `GENAI_*` انتخاب می‌شود.
+- **Prompt:** نقاط قوت و شکاف‌های کارجو با کد و از خروجی همین خط لوله محاسبه می‌شوند (مهارت دقیق/جزئی/گم‌شده، سابقه نسبت به ارشدیت، تحصیلات، دوره‌های مشکوک). بدون نام/ایمیل/تلفن، با دفاع در برابر Prompt Injection، منع سؤال درباره‌ی ویژگی‌های حمایت‌شده و نسخه‌بندی (`interview-questions/v1`).
+- **اثبات مفهوم:** `python -m app.genai.poc --resume docs/genai/samples/resume-backend.txt --job docs/genai/samples/job-senior-backend.json` (خط فرمان، بدون دیتابیس) و `bash k8s/genai-poc.sh` (مسیر کامل API داخل کلاستر).
 
 ---
 
@@ -518,7 +537,8 @@ bash k8s/hpa-stress.sh    # تست بار: Scale Up / Scale Down خودکار و
 │   │   ├── text_extraction · resume_parser · skill_graph · experience_analyzer · skill_engine · matching_engine
 │   │   ├── email_service · email_templates · offer_letter · notification_service · status_notifier
 │   │   └── interview_scheduler · candidate_utils · ops_notifier
-│   ├── tasks/               # کارهای Worker: resume_processing (خط لوله‌ی AI)، notifications (ایمیل‌ها)
+│   ├── genai/               # هوش مصنوعی مولد: prompts، client (Chat Completions)، service، contract، poc
+│   ├── tasks/               # کارهای Worker: resume_processing (خط لوله‌ی AI)، notifications (ایمیل‌ها)، genai
 │   ├── templates/emails/    # قالب‌های HTML ایمیل
 │   └── db/session.py        # اتصال Async به دیتابیس
 ├── alembic/                 # مایگریشن‌های دیتابیس

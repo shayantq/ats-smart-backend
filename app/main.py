@@ -24,6 +24,7 @@ from app.routers import (
     applications,
     auth,
     candidates,
+    genai,
     health,
     interviews,
     jobs,
@@ -83,6 +84,7 @@ app.include_router(interviews.router, prefix=f"{settings.API_V1_PREFIX}/intervie
 app.include_router(analytics.router, prefix=f"{settings.API_V1_PREFIX}/analytics")
 app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notifications")
 app.include_router(ops.router, prefix=f"{settings.API_V1_PREFIX}/ops")
+app.include_router(genai.router, prefix=f"{settings.API_V1_PREFIX}/genai")
 
 # متریک‌های Prometheus (GET /metrics) — عمداً آخرین Middleware اضافه می‌شود تا
 # بیرونی‌ترین لایه باشد و پاسخ‌های CORS/Rate Limit (429) را هم بشمارد.
