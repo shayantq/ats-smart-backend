@@ -155,12 +155,15 @@ async def main() -> int:
         ok(f"پاسخ 202 — بانک سؤال {accepted['id']} در صف genai")
 
         step("۴. پیگیری وضعیت تا پایان تولید (genai-worker ← مدل زبانی)")
-        started, last_status, result = time.monotonic(), None, None
+        print("          (مدل روی CPU: ۶ سؤال حدود ۵ تا ۹ دقیقه طول می‌کشد)", flush=True)
+        started, last_status, last_print, result = time.monotonic(), None, 0.0, None
         while time.monotonic() - started < 900:
             result = (await client.get(accepted["status_url"].removeprefix("/api/v1"), headers=headers(hr_id))).json()
-            if result["status"] != last_status:
-                print(f"          {time.monotonic() - started:5.0f}s  وضعیت: {result['status']}", flush=True)
-                last_status = result["status"]
+            elapsed = time.monotonic() - started
+            # هر ۳۰ ثانیه یک خط پیشرفت، تا انتظار طولانی با گیر کردن اشتباه گرفته نشود
+            if result["status"] != last_status or elapsed - last_print >= 30:
+                print(f"          {elapsed:5.0f}s  وضعیت: {result['status']}", flush=True)
+                last_status, last_print = result["status"], elapsed
             if result["status"] in {"completed", "failed"}:
                 break
             await asyncio.sleep(5)
