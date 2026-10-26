@@ -341,11 +341,15 @@ jobs:
           tar czf - docker-compose.yml deploy monitoring backup \
             | ssh production "mkdir -p '${DEPLOY_PATH}' && tar xzf - -C '${DEPLOY_PATH}'"
 
+      # نام ایمیج‌ها همین‌جا از SHA کامیت ساخته می‌شود، نه از خروجی Job قبلی: نام کاربری Docker Hub یک
+      # Secret است و GitHub هر خروجی Job را که مقدار یک Secret در آن باشد، عمداً خالی می‌کند
       - name: Zero-downtime rollout
         env:
-          BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend_image }}
-          FRONTEND_IMAGE: ${{ needs.build-and-push.outputs.frontend_image }}
+          IMAGE_NAMESPACE: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
+          tag="sha-${GITHUB_SHA::7}"
+          BACKEND_IMAGE="${IMAGE_NAMESPACE}/ats-smart-backend:${tag}"
+          FRONTEND_IMAGE="${IMAGE_NAMESPACE}/ats-smart-frontend:${tag}"
           ssh production "cd '${DEPLOY_PATH}' && BACKEND_IMAGE='${BACKEND_IMAGE}' FRONTEND_IMAGE='${FRONTEND_IMAGE}' bash ./deploy/deploy.sh"
 
       # تست سلامت روی دامنه‌ی اصلی، از بیرون سرور (متغیر مخزن PRODUCTION_URL، مثلاً https://ats.example.com)
@@ -471,7 +475,8 @@ jobs:
           BUILD: ${{ needs.build-and-push.result }}
           DEPLOY: ${{ needs.deploy.result }}
           DEPLOY_SELF_HOSTED: ${{ needs.deploy-self-hosted.result }}
-          BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend_image }}
+          # فقط تگ نسخه (sha-…)؛ نام کامل ایمیج شامل نام کاربری Docker Hub (Secret) است و GitHub خالی‌اش می‌کند
+          RELEASE_VERSION: ${{ needs.build-and-push.outputs.version }}
           EVENT: ${{ github.event_name }}
           BRANCH: ${{ github.head_ref || github.ref_name }}
           ACTOR: ${{ github.actor }}
@@ -503,7 +508,7 @@ jobs:
             echo "| Deploy | $(icon "$DEPLOY") $DEPLOY |"
             echo ""
             echo "**برنچ:** \`$BRANCH\` · **Commit:** \`$short_sha\` · **توسط:** $ACTOR"
-            [[ -n "$BACKEND_IMAGE" ]] && echo "" && echo "**ایمیج:** \`$BACKEND_IMAGE\`"
+            [[ -n "$RELEASE_VERSION" ]] && echo "" && echo "**نسخه:** \`$RELEASE_VERSION\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
           # ۲) صندوق اعلان‌های داخل سایت (فقط برای Push روی برنچ اصلی، نه هر PR)
