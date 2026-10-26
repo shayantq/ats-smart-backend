@@ -108,7 +108,8 @@ def call(method, path, body=None, token=None):
         return json.loads(response.read() or b"null")
 
 email, password = f"loadtest-hr-{secrets.token_hex(4)}@example.com", secrets.token_urlsafe(16)
-call("POST", "/auth/register", {"email": email, "password": password, "role": "HR_Manager"})
+# چندمستاجری: HR ثبت‌نام عمومی ندارد؛ Admin یک سازمان آزمایشی می‌سازد (Admin هم آگهی می‌سازد)
+call("POST", "/auth/register", {"email": email, "password": password, "role": "Admin", "company_name": "HPA Load Test Org"})
 token = call("POST", "/auth/login", {"email": email, "password": password})["access_token"]
 departments = ["فنی", "مالی", "فروش", "منابع انسانی", "پشتیبانی"]
 for index in range(40):
@@ -230,7 +231,10 @@ fi
 section "پاک‌سازی"
 # =============================================================================
 if [[ "${KEEP_DATA:-0}" != "1" ]]; then
-    printf '%s\n' "delete from jobs where title like '[LoadTest]%';" "delete from users where email like 'loadtest-hr-%@example.com';" \
+    printf '%s\n' "delete from jobs where title like '[LoadTest]%';" \
+        "update users set tenant_id = null where email like 'loadtest-hr-%@example.com';" \
+        "delete from companies where owner_id in (select id from users where email like 'loadtest-hr-%@example.com');" \
+        "delete from users where email like 'loadtest-hr-%@example.com';" \
         | k exec -i postgres-0 -c postgres -- sh -c 'psql -X -q -U "$POSTGRES_USER" -d smart_ats_db' >/dev/null 2>&1 \
         && info "آگهی‌ها و کاربر آزمایشی حذف شدند" || info "پاک‌سازی داده‌ی آزمایشی انجام نشد (KEEP_DATA=1 برای نگه‌داشتن)"
 fi

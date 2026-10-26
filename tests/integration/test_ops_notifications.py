@@ -34,15 +34,18 @@ ALERTMANAGER_PAYLOAD = {
 
 
 @pytest.fixture
-async def env(client, make_user, monkeypatch):
-    admin = await make_user(role="Admin", email="admin@example.com")
-    await make_user(role="Admin", email="admin2@example.com")
-    await make_user(role="Admin", email="old-admin@example.com", is_active=False)
+async def env(client, make_user, make_tenant, monkeypatch):
+    operator_org, _ = await make_tenant("Platform Operator")  # مالکش هم یک Admin فعال همین سازمان است
+    admin = await make_user(role="Admin", email="admin@example.com", tenant=operator_org)
+    await make_user(role="Admin", email="old-admin@example.com", is_active=False, tenant=operator_org)
+    customer_org, _ = await make_tenant("Customer Org")
+    customer_admin = await make_user(role="Admin", email="customer-admin@example.com", tenant=customer_org)
     candidate = await make_user(role="Candidate", email="candidate@example.com")
 
     monkeypatch.setattr(settings, "OPS_WEBHOOK_TOKEN", OPS_TOKEN)
     monkeypatch.setattr(settings, "OPS_ALERT_RECIPIENT_ROLES", "Admin")
-    return {"client": client, "admin": admin, "candidate": candidate}
+    monkeypatch.setattr(settings, "OPS_ALERT_TENANT_ID", str(operator_org.id))
+    return {"client": client, "admin": admin, "candidate": candidate, "customer_admin": customer_admin}
 
 
 def _bearer(token: str) -> dict:
@@ -71,8 +74,10 @@ async def test_alert_is_delivered_only_to_active_tech_team(env):
 
     response = await client.post("/api/v1/ops/alerts", json=ALERTMANAGER_PAYLOAD, headers=_bearer(OPS_TOKEN))
     assert response.status_code == 200
-    # دو Admin فعال؛ Admin غیرفعال و Candidate نباید اعلان بگیرند
+    # دو Admin فعال سازمان گرداننده؛ Admin غیرفعال، Candidate و Admin سازمان مشتری نباید اعلان بگیرند
     assert response.json() == {"delivered_notifications": 2, "recipients": 2}
+    customer_inbox = (await client.get("/api/v1/notifications/me", headers=_user_auth(env["customer_admin"]))).json()
+    assert customer_inbox["unread_count"] == 0
 
     admin_inbox = (await client.get("/api/v1/notifications/me", headers=_user_auth(env["admin"]))).json()
     assert admin_inbox["unread_count"] == 1

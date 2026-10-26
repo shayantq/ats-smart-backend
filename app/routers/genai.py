@@ -133,7 +133,7 @@ async def request_question_set(
     application = await db.get(Application, payload.application_id)
     if application is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="درخواست شغلی پیدا نشد.")
-    if await latest_processed_resume(db, application.candidate_id) is None:
+    if await latest_processed_resume(db, application.candidate_id, application.tenant_id) is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="رزومه‌ی این کارجو هنوز تحلیل نشده؛ پس از پایان پردازش رزومه دوباره تلاش کنید.",

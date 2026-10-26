@@ -56,17 +56,23 @@ async def test_hr_schedules_interview_and_assigned_interviewer_evaluates_it(
     assert interview.evaluated_at is not None
 
 
-async def test_interviewer_must_have_interviewer_or_hr_role(client, make_user, make_application):
+async def test_interviewer_must_have_interviewer_or_hr_role(client, make_user, make_tenant, make_application):
     application, candidate_user, _ = await make_application()
     hr_manager = await make_user(role="HR_Manager")
+    admin = await make_user(role="Admin")
 
-    response = await client.post(
-        "/api/v1/interviews/",
-        json=_interview_payload(application.id, candidate_user.id),
-        headers=auth_headers(hr_manager),
-    )
+    async def assign(interviewer_id):
+        return await client.post(
+            "/api/v1/interviews/",
+            json=_interview_payload(application.id, interviewer_id),
+            headers=auth_headers(hr_manager),
+        )
 
-    assert response.status_code == 422
+    assert (await assign(admin.id)).status_code == 422  # عضو همین سازمان ولی با نقش نامعتبر
+    # کارجو یا مصاحبه‌کننده‌ی سازمان دیگر عضو این سازمان نیست → مثل کاربر ناموجود 404 (بدون افشای وجودش)
+    assert (await assign(candidate_user.id)).status_code == 404
+    other_org, _ = await make_tenant("Other Org")
+    assert (await assign((await make_user(role="Interviewer", tenant=other_org)).id)).status_code == 404
 
 
 async def test_other_interviewer_cannot_evaluate_and_invalid_criteria_are_rejected(client, make_user, make_application):

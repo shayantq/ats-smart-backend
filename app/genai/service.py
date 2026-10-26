@@ -141,7 +141,7 @@ async def build_profile_for_application(session: AsyncSession, application: Appl
     """پروفایل بدون اطلاعات شخصی از آخرین رزومه‌ی پردازش‌شده‌ی کارجو و آگهی همین درخواست."""
     job = await session.get(Job, application.job_id)
     candidate = await session.get(Candidate, application.candidate_id)
-    resume = await latest_processed_resume(session, application.candidate_id)
+    resume = await latest_processed_resume(session, application.candidate_id, application.tenant_id)
     return build_input_profile(
         skill_analysis=resume.skill_analysis if resume else None,
         parsed_data=resume.parsed_data if resume else None,
@@ -160,15 +160,24 @@ async def build_profile_for_application(session: AsyncSession, application: Appl
     )
 
 
-async def latest_processed_resume(session: AsyncSession, candidate_id: uuid.UUID) -> Resume | None:
+async def latest_processed_resume(
+    session: AsyncSession, candidate_id: uuid.UUID, tenant_id: uuid.UUID
+) -> Resume | None:
     """
     رزومه‌ی پردازش‌شده‌ی کارجو با کامل‌ترین تحلیل مهارت. جدول resumes ستون زمانی ندارد (شناسه‌ها UUID
     تصادفی‌اند)، پس «جدیدترین» قابل تشخیص نیست؛ رزومه‌ای که بیشترین مهارت از آن استخراج شده انتخاب می‌شود.
+
+    tenant_id صریح است چون Worker در حالت system (بدون فیلتر خودکار سازمان) اجرا می‌شود: کارجویی که به
+    چند سازمان درخواست داده، رزومه‌ی ارسالی به سازمان دیگر هرگز وارد Prompt این سازمان نمی‌شود.
     """
     skill_count = func.coalesce(func.jsonb_array_length(Resume.skill_analysis["skills"]), 0)
     result = await session.execute(
         select(Resume)
-        .where(Resume.candidate_id == candidate_id, Resume.skill_analysis.is_not(None))
+        .where(
+            Resume.candidate_id == candidate_id,
+            Resume.tenant_id == tenant_id,
+            Resume.skill_analysis.is_not(None),
+        )
         .order_by(skill_count.desc(), Resume.id)
         .limit(1)
     )
@@ -227,6 +236,7 @@ async def run_question_set_job(question_set_id: uuid.UUID, session_factory: asyn
             session.add(
                 InterviewQuestion(
                     question_set_id=question_set.id,
+                    tenant_id=question_set.tenant_id,
                     position=position,
                     category=item.category,
                     skill=item.skill,

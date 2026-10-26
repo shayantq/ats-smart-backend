@@ -143,6 +143,7 @@ import httpx
 
 from app.core.queue import enqueue_bulk
 from app.core.security import create_access_token
+from app.core.tenant_provisioning import provision_tenant
 from app.db.session import AsyncSessionLocal
 from app.models import Job, User
 from app.tasks.notifications import send_status_update_email_task
@@ -154,10 +155,9 @@ PDF = base64.b64decode(os.environ["PDF_B64"])
 async def main() -> None:
     async with AsyncSessionLocal() as session:
         hr = User(email=f"qstress-hr-{RUN}@example.com", password_hash="!", role="HR_Manager")
-        session.add(hr)
-        await session.flush()
+        tenant = await provision_tenant(session, name=f"QueueStress Org {RUN}", owner=hr)
         job = Job(
-            created_by=hr.id, title=f"[QueueStress {RUN}] برنامه‌نویس ارشد بک‌اند", department="فنی",
+            created_by=hr.id, tenant_id=tenant.id, title=f"[QueueStress {RUN}] برنامه‌نویس ارشد بک‌اند", department="فنی",
             description="Python FastAPI PostgreSQL Docker Kubernetes", skills_required=["Python", "FastAPI", "Docker"],
             status="Active", required_seniority="Senior", location="تهران",
         )
@@ -349,6 +349,8 @@ async def main() -> None:
             f"delete from resumes where candidate_id in {CANDIDATES}",
             f"delete from candidates where user_id in {USERS}",
             f"delete from jobs where title like '[QueueStress {RUN}]%'",
+            f"update users set tenant_id = null where email like 'qstress-%-{RUN}%@example.com'",
+            f"delete from companies where name = 'QueueStress Org {RUN}'",
             f"delete from users where email like 'qstress-%-{RUN}%@example.com'",
         ):
             await session.execute(text(statement))

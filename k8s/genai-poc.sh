@@ -55,6 +55,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.core.tenant_provisioning import provision_tenant
 from app.db.session import AsyncSessionLocal
 from app.models import Application, Job, User
 
@@ -77,8 +78,9 @@ def fail(message: str) -> None:
     print(f"  ✘ FAIL  {message}", flush=True)
 
 
-def headers(user_id) -> dict:
-    return {"Authorization": f"Bearer {create_access_token(str(user_id))[0]}"}
+def headers(user_id, tenant_id=None) -> dict:
+    # چندمستاجری: توکن کارمند سازمانش را (Claim «tid») دارد؛ توکن کارجو ندارد
+    return {"Authorization": f"Bearer {create_access_token(str(user_id), tenant_id=tenant_id)[0]}"}
 
 
 def resume_upload(name: str, data: bytes) -> tuple[str, bytes, str]:
@@ -108,11 +110,16 @@ async def main() -> int:
         hr = User(email=f"genai-poc-hr-{RUN}@example.com", password_hash="!", role="HR_Manager")
         candidate = User(email=f"genai-poc-cand-{RUN}@example.com", password_hash="!", role="Candidate")
         session.add_all([hr, candidate])
-        await session.flush()
-        job = Job(created_by=hr.id, status="Active", **{**job_spec, "title": f"[GenAI-PoC {RUN}] {job_spec['title']}"})
+        tenant = await provision_tenant(session, name=f"GenAI PoC Org {RUN}", owner=hr)
+        job = Job(
+            created_by=hr.id,
+            tenant_id=tenant.id,
+            status="Active",
+            **{**job_spec, "title": f"[GenAI-PoC {RUN}] {job_spec['title']}"},
+        )
         session.add(job)
         await session.commit()
-        hr_id, candidate_id, job_id = hr.id, candidate.id, job.id
+        hr_id, candidate_id, job_id, tenant_id = hr.id, candidate.id, job.id, tenant.id
 
     async with httpx.AsyncClient(base_url=API, timeout=60) as client:
         step("۱. آپلود رزومه‌ی نمونه از مسیر واقعی API")
@@ -146,7 +153,7 @@ async def main() -> int:
             "/genai/interview-questions",
             json={"application_id": str(application_id), "question_count": int(os.environ["QUESTIONS"]),
                   "language": os.environ["LANGUAGE"], "difficulty": "mixed"},
-            headers=headers(hr_id),
+            headers=headers(hr_id, tenant_id),
         )
         if response.status_code != 202:
             fail(f"درخواست تولید: {response.status_code} {response.text[:300]}")
@@ -158,7 +165,7 @@ async def main() -> int:
         print("          (مدل روی CPU: ۶ سؤال حدود ۵ تا ۹ دقیقه طول می‌کشد)", flush=True)
         started, last_status, last_print, result = time.monotonic(), None, 0.0, None
         while time.monotonic() - started < 900:
-            result = (await client.get(accepted["status_url"].removeprefix("/api/v1"), headers=headers(hr_id))).json()
+            result = (await client.get(accepted["status_url"].removeprefix("/api/v1"), headers=headers(hr_id, tenant_id))).json()
             elapsed = time.monotonic() - started
             # هر ۳۰ ثانیه یک خط پیشرفت، تا انتظار طولانی با گیر کردن اشتباه گرفته نشود
             if result["status"] != last_status or elapsed - last_print >= 30:
@@ -194,9 +201,9 @@ async def main() -> int:
         patched = await client.patch(
             f"/genai/interview-questions/{result['id']}/questions/{first['id']}",
             json={"is_approved": True, "interviewer_notes": "تأیید در اجرای PoC"},
-            headers=headers(hr_id),
+            headers=headers(hr_id, tenant_id),
         )
-        bank = (await client.get("/genai/question-bank", params={"skill": first["skill"]}, headers=headers(hr_id))).json()
+        bank = (await client.get("/genai/question-bank", params={"skill": first["skill"]}, headers=headers(hr_id, tenant_id))).json()
         if patched.status_code == 200 and any(item["id"] == first["id"] for item in bank["items"]):
             ok(f"سؤال ۱ تأیید شد و در بانک سؤال مشترک با مهارت «{first['skill']}» پیدا شد")
         else:
@@ -214,6 +221,8 @@ async def main() -> int:
                 f"delete from resumes where candidate_id in {candidates}",
                 f"delete from candidates where user_id in {users}",
                 f"delete from jobs where id = '{job_id}'",
+                f"update users set tenant_id = null where id in {users}",
+                f"delete from companies where id = '{tenant_id}'",
                 f"delete from users where email like 'genai-poc-%-{RUN}@example.com'",
             ):
                 await session.execute(text(statement))

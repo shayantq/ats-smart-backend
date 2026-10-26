@@ -2,6 +2,7 @@
 ابزار رمزنگاری گذرواژه (Bcrypt) و صدور توکن‌های امنیتی (JWT).
 """
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from jose import jwt
@@ -52,7 +53,9 @@ async def verify_login_password_async(plain_password: str, password_hash: str | 
     return await verify_password_async(plain_password, password_hash)
 
 
-def _create_token(subject: str, expires_delta: timedelta, token_type: str) -> tuple[str, int]:
+def _create_token(
+    subject: str, expires_delta: timedelta, token_type: str, extra_claims: dict | None = None
+) -> tuple[str, int]:
     """
     تابع مشترک داخلی برای ساخت هر دو نوع توکن.
     subject: معمولاً شناسه‌ی (id) کاربر است.
@@ -60,15 +63,20 @@ def _create_token(subject: str, expires_delta: timedelta, token_type: str) -> tu
     خروجی: (خودِ توکن، طول عمر توکن به ثانیه)
     """
     expire_at = datetime.now(timezone.utc) + expires_delta
-    payload = {"sub": subject, "exp": expire_at, "type": token_type}
+    payload = {"sub": subject, "exp": expire_at, "type": token_type, **(extra_claims or {})}
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm=JWT_ALGORITHM)
     return token, int(expires_delta.total_seconds())
 
 
-def create_access_token(subject: str) -> tuple[str, int]:
-    """توکن دسترسی با طول عمر کوتاه (پیش‌فرض ۱۵ دقیقه، طبق تنظیمات .env)."""
+def create_access_token(subject: str, tenant_id: uuid.UUID | str | None = None) -> tuple[str, int]:
+    """
+    توکن دسترسی با طول عمر کوتاه (پیش‌فرض ۱۵ دقیقه، طبق تنظیمات .env).
+    tenant_id: سازمان کارمند، به‌صورت Claim «tid» — منبع Context چندمستاجری (app/core/tenancy.py).
+    چون توکن امضاشده است، کاربر نمی‌تواند سازمانش را عوض کند؛ کارجو این Claim را ندارد.
+    """
     expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    return _create_token(subject, expires_delta, token_type="access")
+    claims = {"tid": str(tenant_id)} if tenant_id else None
+    return _create_token(subject, expires_delta, token_type="access", extra_claims=claims)
 
 
 def create_refresh_token(subject: str) -> tuple[str, int]:

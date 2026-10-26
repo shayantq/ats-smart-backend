@@ -110,6 +110,7 @@ async def test_hr_search_combines_full_text_skills_and_score(client, db_session,
     db_session.add(
         Resume(
             candidate_id=application.candidate_id,
+            tenant_id=application.tenant_id,
             file_url="http://test/media/cv.pdf",
             raw_text="Senior backend engineer: Python, Django and Node.js microservices",
             skill_analysis={"skills": ["Python", "Django", "Node.js"], "total_experience_years": 6.0},
@@ -142,18 +143,21 @@ async def test_skill_filter_is_case_insensitive_requires_every_skill_and_tolerat
         [
             Resume(
                 candidate_id=application.candidate_id,
+                tenant_id=application.tenant_id,
                 file_url="http://test/media/a.pdf",
                 skill_analysis={"skills": ["FastAPI", "PostgreSQL"], "total_experience_years": 3.0},
             ),
             # مهارت دوم در رزومه‌ی دیگرِ همان کارجو — هر مهارت کافی است در یکی از رزومه‌هایش باشد
             Resume(
                 candidate_id=application.candidate_id,
+                tenant_id=application.tenant_id,
                 file_url="http://test/media/b.pdf",
                 skill_analysis={"skills": ["Kubernetes"], "total_experience_years": 1.0},
             ),
             # ساختار نامعتبر (skills غیرآرایه) نه درج را خراب می‌کند نه جستجو را
             Resume(
                 candidate_id=application.candidate_id,
+                tenant_id=application.tenant_id,
                 file_url="http://test/media/c.pdf",
                 skill_analysis={"skills": "x"},
             ),

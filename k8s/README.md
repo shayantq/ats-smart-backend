@@ -9,6 +9,7 @@ bash k8s/hpa-stress.sh    # تست بار + بررسی Scale Up / Scale Down و 
 bash k8s/queue-stress.sh  # ایمیل انبوه + پردازش رزومه هم‌زمان، بدون از دست رفتن کار — [QUEUE STRESS PASS]
 bash k8s/search-benchmark.sh  # سنجش ایندکس‌های GIN جستجوی کارجویان روی ۲۰٬۰۰۰ رزومه — [GIN INDEX PASS]
 bash k8s/genai-poc.sh     # اثبات مفهوم تولید سؤال مصاحبه از مسیر کامل API — [GENAI POC PASS]
+bash k8s/tenant-isolation-check.sh  # ایزوله‌سازی چندمستاجری (RLS) روی کلاستر زنده — [TENANT ISOLATION PASS]
 ```
 
 | آدرس (محیط لوکال) | سرویس |

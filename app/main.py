@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.metrics import setup_metrics
 from app.core.redis_client import check_redis_connection, close_redis_connection
+from app.core.tenancy import TenantContextMiddleware
 from app.routers import (
     admin,
     analytics,
@@ -31,6 +32,7 @@ from app.routers import (
     notifications,
     ops,
     resumes,
+    tenants,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +68,10 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
+# چندمستاجری: سازمان کاربر از توکن JWT استخراج و روی Context درخواست قرار می‌گیرد؛ هر تراکنش
+# دیتابیس همین درخواست با آن نقش ats_app و متغیرهای RLS را می‌گیرد — بنگرید app/core/tenancy.py
+app.add_middleware(TenantContextMiddleware)
+
 # فقط در حالت ذخیره‌سازی محلی (STORAGE_BACKEND=local) لازم است: فایل‌های آپلودشده
 # (مثل رزومه‌ها) از مسیر MEDIA_BASE_URL در دسترس قرار می‌گیرند. در حالت S3 این
 # mount بلااستفاده می‌ماند چون فایل‌ها مستقیماً از Object Storage سرو می‌شوند.
@@ -85,6 +91,7 @@ app.include_router(analytics.router, prefix=f"{settings.API_V1_PREFIX}/analytics
 app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notifications")
 app.include_router(ops.router, prefix=f"{settings.API_V1_PREFIX}/ops")
 app.include_router(genai.router, prefix=f"{settings.API_V1_PREFIX}/genai")
+app.include_router(tenants.router, prefix=f"{settings.API_V1_PREFIX}/tenant")
 
 # متریک‌های Prometheus (GET /metrics) — عمداً آخرین Middleware اضافه می‌شود تا
 # بیرونی‌ترین لایه باشد و پاسخ‌های CORS/Rate Limit (429) را هم بشمارد.

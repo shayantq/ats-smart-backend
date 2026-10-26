@@ -6,7 +6,9 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.core.sanitize import strip_html_tags
 
@@ -21,11 +23,35 @@ class UserRole(str, Enum):
 
 
 class RegisterRequest(BaseModel):
-    """بدنه‌ی درخواست ثبت‌نام. Pydantic خودکار فرمت ایمیل و طول گذرواژه را اعتبارسنجی می‌کند."""
+    """
+    بدنه‌ی درخواست ثبت‌نام. Pydantic خودکار فرمت ایمیل و طول گذرواژه را اعتبارسنجی می‌کند.
+
+    چندمستاجری: ثبت‌نام Admin یک سازمان (Tenant) تازه با نام company_name می‌سازد و Admin مالک آن
+    می‌شود. حساب HR_Manager و Interviewer ثبت‌نام عمومی ندارد؛ Admin همان سازمان آن را از مسیر
+    POST /api/v1/tenant/users می‌سازد تا هیچ کارمندی بدون سازمان در سیستم نباشد.
+    """
 
     email: EmailStr
     password: str = Field(min_length=8, max_length=128, description="حداقل ۸ کاراکتر")
     role: UserRole
+    company_name: Optional[str] = Field(
+        default=None, min_length=2, max_length=255, description="فقط برای Admin: نام سازمان جدید"
+    )
+
+    @field_validator("company_name", mode="before")
+    @classmethod
+    def sanitize_company_name(cls, value):
+        return strip_html_tags(value).strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def check_tenant_onboarding(self) -> "RegisterRequest":
+        if self.role in (UserRole.HR_MANAGER, UserRole.INTERVIEWER):
+            raise ValueError("حساب HR و مصاحبه‌کننده را Admin سازمان از مسیر POST /api/v1/tenant/users می‌سازد.")
+        if self.role == UserRole.ADMIN and not self.company_name:
+            raise ValueError("برای ثبت‌نام Admin، نام سازمان (company_name) الزامی است.")
+        if self.role == UserRole.CANDIDATE and self.company_name:
+            raise ValueError("کارجو عضو سازمان نیست؛ company_name را نفرستید.")
+        return self
 
     @field_validator("email", mode="before")
     @classmethod
@@ -39,6 +65,7 @@ class RegisterResponseData(BaseModel):
     email: EmailStr
     role: str
     created_at: datetime
+    tenant_id: Optional[uuid.UUID] = None
 
 
 class RegisterResponse(BaseModel):
@@ -127,3 +154,4 @@ class CurrentUserResponse(BaseModel):
     user_id: uuid.UUID
     email: EmailStr
     role: str
+    tenant_id: Optional[uuid.UUID] = None

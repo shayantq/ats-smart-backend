@@ -11,7 +11,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.models.base import Base, TenantMixin
 
 
 class User(Base):
@@ -25,13 +25,18 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="Candidate")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # سازمانی که کارمند (Admin / HR_Manager / Interviewer) عضو آن است؛ برای کارجو خالی است.
+    # در توکن دسترسی به‌صورت Claim «tid» می‌آید — بنگرید app/core/tenancy.py
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True, index=True
+    )
 
-    owned_companies: Mapped[list["Company"]] = relationship(back_populates="owner")
+    owned_companies: Mapped[list["Company"]] = relationship(back_populates="owner", foreign_keys="Company.owner_id")
     candidate_profile: Mapped["Candidate"] = relationship(back_populates="user", uselist=False)
 
 
 class Company(Base):
-    """جدول شرکت‌ها: مشخصات سازمان‌های خریدار پلتفرم."""
+    """جدول شرکت‌ها: مشخصات سازمان‌های خریدار پلتفرم — هر شرکت یک Tenant مستقل است."""
 
     __tablename__ = "companies"
 
@@ -41,8 +46,8 @@ class Company(Base):
     logo_url: Mapped[str] = mapped_column(String(500), nullable=True)
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
-    owner: Mapped["User"] = relationship(back_populates="owned_companies")
-    jobs: Mapped[list["Job"]] = relationship(back_populates="company")
+    owner: Mapped["User"] = relationship(back_populates="owned_companies", foreign_keys=[owner_id])
+    jobs: Mapped[list["Job"]] = relationship(back_populates="company", foreign_keys="Job.company_id")
 
 
 class Candidate(Base):
@@ -63,7 +68,7 @@ class Candidate(Base):
     user: Mapped["User"] = relationship(back_populates="candidate_profile")
 
 
-class Job(Base):
+class Job(TenantMixin, Base):
     """
     جدول مشاغل: آگهی‌های شغلی.
 
@@ -71,6 +76,8 @@ class Job(Base):
     company_id فعلاً اختیاری (nullable) است. در عوض created_by اضافه شده که
     شناسه‌ی کاربری (HR/ادمین) که آگهی را ساخته نگه می‌دارد و طبق معیار پذیرش
     تسک Job Service، در پاسخ ساخت آگهی برگردانده می‌شود.
+
+    مالکیت آگهی از تسک چندمستاجری با tenant_id (TenantMixin) تعیین می‌شود، نه company_id.
     """
 
     __tablename__ = "jobs"
@@ -97,5 +104,5 @@ class Job(Base):
     location: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    company: Mapped[Optional["Company"]] = relationship(back_populates="jobs")
+    company: Mapped[Optional["Company"]] = relationship(back_populates="jobs", foreign_keys=[company_id])
     creator: Mapped["User"] = relationship()

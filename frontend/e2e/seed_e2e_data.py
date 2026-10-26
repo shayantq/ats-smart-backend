@@ -15,6 +15,7 @@ import sys
 from sqlalchemy import delete, select
 
 from app.core.security import hash_password
+from app.core.tenant_provisioning import delete_owned_tenants, provision_tenant
 from app.db.session import AsyncSessionLocal
 from app.models import Application, Candidate, Job, StatusHistory, User
 
@@ -35,8 +36,7 @@ def _email(role: str, run_id: str, index: int = 0) -> str:
 async def seed(run_id: str) -> dict:
     async with AsyncSessionLocal() as db:
         hr_user = User(email=_email("hr", run_id), password_hash=hash_password(E2E_PASSWORD), role="HR_Manager")
-        db.add(hr_user)
-        await db.flush()
+        tenant = await provision_tenant(db, name=f"E2E Org {run_id}", owner=hr_user)
 
         job = Job(
             title=f"E2E Backend Developer {run_id}",
@@ -44,6 +44,7 @@ async def seed(run_id: str) -> dict:
             skills_required=["Python", "FastAPI"],
             status="Active",
             created_by=hr_user.id,
+            tenant_id=tenant.id,
         )
         db.add(job)
         await db.flush()
@@ -58,7 +59,11 @@ async def seed(run_id: str) -> dict:
             candidate = Candidate(user_id=candidate_user.id, first_name=first_name, last_name=last_name)
             db.add(candidate)
             await db.flush()
-            db.add(Application(job_id=job.id, candidate_id=candidate.id, current_status=status, score_ai=score))
+            db.add(
+                Application(
+                    job_id=job.id, candidate_id=candidate.id, tenant_id=tenant.id, current_status=status, score_ai=score
+                )
+            )
 
         await db.commit()
         return {"hrEmail": hr_user.email, "password": E2E_PASSWORD, "jobTitle": job.title, "jobId": str(job.id)}
@@ -80,6 +85,7 @@ async def cleanup(run_id: str) -> dict:
         await db.execute(delete(Application).where(Application.id.in_(application_ids)))
         await db.execute(delete(Candidate).where(Candidate.id.in_(candidate_ids)))
         await db.execute(delete(Job).where(Job.created_by.in_(user_ids)))
+        await delete_owned_tenants(db, user_ids)
         await db.execute(delete(User).where(User.id.in_(user_ids)))
         await db.commit()
         return {"deletedUsers": len(user_ids), "deletedApplications": len(application_ids)}

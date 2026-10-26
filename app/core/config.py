@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # (POOL_SIZE + MAX_OVERFLOW) × تعداد کانتینرهای بک‌اند — باید زیر max_connections پستگرس بماند
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 10
+    # نقش دیتابیسی که درخواست‌های API در هر تراکنش به آن سوئیچ می‌کنند (SET LOCAL ROLE) تا پالیسی‌های
+    # Row-Level Security چندمستاجری اعمال شوند — بنگرید app/core/tenancy.py و مایگریشن d2f6b8a41c37
+    DB_RLS_ROLE: str = "ats_app"
 
     SECRET_KEY: str = "changeme-in-env-file"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
@@ -64,6 +67,9 @@ class Settings(BaseSettings):
     # نقش‌هایی که «تیم فنی» حساب می‌شوند و هشدارهای سرور/گزارش‌های استقرار را
     # در صندوق اعلان‌های داخل سایت دریافت می‌کنند (جداشده با کاما)
     OPS_ALERT_RECIPIENT_ROLES: str = "Admin"
+    # چندمستاجری: تیم فنی = کارمندانِ سازمانِ گرداننده‌ی پلتفرم، نه Admin سازمان‌های مشتری (هشدار
+    # زیرساخت نباید به مشتری‌ها نشت کند). خالی = سازمانِ قدیمی‌ترین کاربر Admin (سازمان گرداننده)
+    OPS_ALERT_TENANT_ID: str = ""
 
     # ---- هوش مصنوعی مولد (تولید سؤال مصاحبه — app/genai) ----
     # هر سرویس سازگار با پروتکل Chat Completions (ابری یا داخل کلاستر)؛ ارائه‌دهنده و مدل فقط با همین

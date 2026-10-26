@@ -5,6 +5,8 @@
   بنگرید app/core/storage.py)، و ثبت اولیه‌ی درخواست کارجو (Application) با
   وضعیت پیش‌فرض Draft.
 
+- GET  /api/v1/resumes/{resume_id}   جزئیات رزومه برای HR/Admin همان سازمان.
+
 فقط کاربرانی با نقش Candidate اجازه‌ی آپلود رزومه‌ی خودشان را دارند.
 """
 
@@ -21,7 +23,7 @@ from app.core.queue import enqueue_task
 from app.core.storage import get_storage_backend
 from app.db.session import get_db
 from app.models import Application, Job, Resume, User
-from app.schemas.resumes import ResumeUploadResponse
+from app.schemas.resumes import ResumeDetailResponse, ResumeUploadResponse
 from app.tasks.resume_processing import process_resume_task
 
 router = APIRouter()
@@ -32,6 +34,7 @@ _ALLOWED_CONTENT_TYPES = {
 }
 _ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 _MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # ۱۰ مگابایت
+RESUME_VIEWER_ROLES = ("Admin", "HR_Manager")
 
 
 @router.post(
@@ -100,12 +103,14 @@ async def upload_resume(
     )
 
     try:
-        resume = Resume(candidate_id=candidate.id, file_url=file_url)
+        # چندمستاجری: رزومه و درخواست متعلق به سازمانِ صاحب آگهی‌اند (کارجو خودش سازمانی ندارد)
+        resume = Resume(candidate_id=candidate.id, file_url=file_url, tenant_id=job.tenant_id)
         db.add(resume)
 
         application = Application(
             job_id=job.id,
             candidate_id=candidate.id,
+            tenant_id=job.tenant_id,
             current_status="Draft",
         )
         db.add(application)
@@ -129,3 +134,23 @@ async def upload_resume(
         status=application.current_status,
         message="رزومه با موفقیت آپلود شد و درخواست شما ثبت گردید.",
     )
+
+
+@router.get(
+    "/{resume_id}",
+    response_model=ResumeDetailResponse,
+    tags=["Resumes"],
+    summary="جزئیات یک رزومه (فقط HR/Admin همان سازمان)",
+    responses={404: {"description": "رزومه وجود ندارد یا متعلق به سازمان دیگری است"}},
+    dependencies=[Depends(require_roles(*RESUME_VIEWER_ROLES))],
+)
+async def get_resume(resume_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> ResumeDetailResponse:
+    """
+    کوئری هیچ شرط سازمانی ندارد و عمداً هم نباید داشته باشد: فیلتر خودکار TenantMixin و پالیسی RLS
+    جدول resumes، رزومه‌ی سازمان دیگر را نامرئی می‌کنند. پاسخ برای «وجود ندارد» و «مال سازمان دیگری
+    است» یکسان (404) است تا وجود رزومه افشا نشود.
+    """
+    resume = (await db.execute(select(Resume).where(Resume.id == resume_id))).scalar_one_or_none()
+    if resume is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رزومه یافت نشد.")
+    return ResumeDetailResponse.model_validate(resume)

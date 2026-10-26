@@ -23,6 +23,8 @@ from app.core.security import (
     hash_password_async,
     verify_login_password_async,
 )
+from app.core.tenancy import system_scope
+from app.core.tenant_provisioning import provision_tenant
 from app.db.session import get_db
 from app.models import User
 from app.schemas.auth import (
@@ -80,8 +82,15 @@ async def register_user(
         role=payload.role.value,
     )
 
-    db.add(new_user)
-    await db.commit()
+    if payload.company_name:
+        # ثبت‌نام Admin = ساخت سازمان (Tenant) تازه. ساخت سازمان کار سطح پلتفرم است و هیچ پالیسی
+        # RLS ی اجازه‌اش را به نقش درخواست‌ها نمی‌دهد؛ پس فقط همین بخش صریحاً در حالت system اجرا می‌شود.
+        async with system_scope(db):
+            await provision_tenant(db, name=payload.company_name, owner=new_user)
+            await db.commit()
+    else:
+        db.add(new_user)
+        await db.commit()
     await db.refresh(new_user)
 
     # محرک (Trigger) زیرسیستم اطلاع‌رسانی: ارسال ایمیل خوش‌آمدگویی/تأیید اصالت.
@@ -97,6 +106,7 @@ async def register_user(
             email=new_user.email,
             role=new_user.role,
             created_at=new_user.created_at,
+            tenant_id=new_user.tenant_id,
         ),
     )
 
@@ -133,7 +143,8 @@ async def login_user(
             detail="ایمیل یا گذرواژه نادرست است.",
         )
 
-    access_token, expires_in = create_access_token(subject=str(user.id))
+    # tid (سازمان کارمند) داخل توکن امضاشده — منبع Context چندمستاجری هر درخواست بعدی
+    access_token, expires_in = create_access_token(subject=str(user.id), tenant_id=user.tenant_id)
     refresh_token, refresh_max_age = create_refresh_token(subject=str(user.id))
 
     # تنظیم Refresh Token در قالب کوکی امن (نه در دسترس جاوااسکریپت فرانت‌اند)
@@ -164,7 +175,9 @@ async def login_user(
 )
 async def get_me(current_user: User = Depends(get_current_user)) -> CurrentUserResponse:
     """فقط با access_token معتبر؛ بدون توکن یا با توکن نامعتبر/منقضی → 401."""
-    return CurrentUserResponse(user_id=current_user.id, email=current_user.email, role=current_user.role)
+    return CurrentUserResponse(
+        user_id=current_user.id, email=current_user.email, role=current_user.role, tenant_id=current_user.tenant_id
+    )
 
 
 def _generate_otp_code() -> str:

@@ -282,6 +282,8 @@ async def respond_to_offer(
 
     history_entry = StatusHistory(
         application_id=application.id,
+        # کارجو عضو سازمان نیست (Context بدون tenant)؛ سازمانِ تاریخچه همان سازمانِ درخواست است
+        tenant_id=application.tenant_id,
         old_status=previous_status,
         new_status=new_status,
         changed_by=current_user.id,
@@ -387,6 +389,11 @@ async def search_candidates(
         best_ai_score_subquery.label("best_ai_score"),
         best_experience_subquery.label("best_experience_years"),
     ).join(User, User.id == Candidate.user_id)
+
+    # چندمستاجری: کارجو موجودیت سراسری است (می‌تواند به چند سازمان درخواست بدهد)؛ HR فقط کارجویانی را
+    # می‌بیند که دست‌کم یک درخواست در سازمان خودش دارند. Application مدل TenantMixin است، پس این
+    # زیرکوئری خودکار به سازمان جاری محدود می‌شود — پالیسی RLS جدول candidates هم همین را تضمین می‌کند.
+    query = query.where(select(Application.id).where(Application.candidate_id == Candidate.id).exists())
 
     # --- فیلتر ۱: جستجوی تمام‌متن (raw_text) با پشتیبانی از AND/OR ---
     # عبارت to_tsvector از app/core/search_query.py می‌آید (نه اینجا Inline

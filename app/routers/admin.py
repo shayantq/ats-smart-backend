@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_roles
+from app.core.tenancy import current_tenant_id
 from app.db.session import get_db
 from app.models import Company, Job, User
 
@@ -27,7 +28,11 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db)) -> dict:
     محافظت این مسیر کاملاً روی dependencies=[Depends(require_roles("Admin"))]
     در دکوراتور بالا انجام شده، نه داخل بدنه‌ی تابع.
     """
-    users_count = (await db.execute(select(func.count()).select_from(User))).scalar_one()
+    # آمار سازمان خود ادمین: jobs/companies با فیلتر خودکار سازمان و RLS محدود می‌شوند؛ جدول users
+    # سراسری است، پس شرطش صریح است (کارمندان همین سازمان)
+    users_count = (
+        await db.execute(select(func.count()).select_from(User).where(User.tenant_id == current_tenant_id()))
+    ).scalar_one()
     companies_count = (await db.execute(select(func.count()).select_from(Company))).scalar_one()
     jobs_count = (await db.execute(select(func.count()).select_from(Job))).scalar_one()
 

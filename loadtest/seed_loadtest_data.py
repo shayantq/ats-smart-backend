@@ -4,7 +4,7 @@
     docker compose exec -T backend_api python - seed 5000 < loadtest/seed_loadtest_data.py
     docker compose exec -T backend_api python - cleanup   < loadtest/seed_loadtest_data.py
 
-seed:    یک کاربر HR + یک آگهی فعال + N کارجو با ایمیل loadtest-candidate-<i>@example.com
+seed:    یک سازمان (Tenant) با کاربر HR + یک آگهی فعال + N کارجو با ایمیل loadtest-candidate-<i>@example.com
          (همه با یک هش Bcrypt مشترک — ساختن ۵۰۰۰ هش جدا ~۱۷ دقیقه CPU می‌گرفت).
 cleanup: حذف همه‌ی کاربران/کارجویان/درخواست‌ها/رزومه‌های تست بار و فایل‌های آپلودشده‌شان.
 """
@@ -19,6 +19,7 @@ from sqlalchemy import delete, insert, select
 
 from app.core.config import settings
 from app.core.security import hash_password
+from app.core.tenant_provisioning import delete_owned_tenants, provision_tenant
 from app.db.session import AsyncSessionLocal
 from app.models import Application, Candidate, Job, Resume, StatusHistory, User
 
@@ -32,9 +33,14 @@ async def seed(candidate_count: int) -> dict:
         password_hash = hash_password(PASSWORD)
 
         hr_user = User(email=f"{EMAIL_PREFIX}hr@example.com", password_hash=password_hash, role="HR_Manager")
-        db.add(hr_user)
-        await db.flush()
-        job = Job(title=JOB_TITLE, skills_required=["Python", "FastAPI"], status="Active", created_by=hr_user.id)
+        tenant = await provision_tenant(db, name="Load Test Org", owner=hr_user)
+        job = Job(
+            title=JOB_TITLE,
+            skills_required=["Python", "FastAPI"],
+            status="Active",
+            created_by=hr_user.id,
+            tenant_id=tenant.id,
+        )
         db.add(job)
         await db.flush()
 
@@ -82,6 +88,7 @@ async def cleanup() -> dict:
         await db.execute(delete(Resume).where(Resume.candidate_id.in_(candidate_ids)))
         await db.execute(delete(Candidate).where(Candidate.id.in_(candidate_ids)))
         await db.execute(delete(Job).where(Job.id.in_(job_ids)))
+        await delete_owned_tenants(db, user_ids)
         await db.execute(delete(User).where(User.id.in_(user_ids)))
         await db.commit()
 

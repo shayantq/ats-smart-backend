@@ -28,6 +28,8 @@ bearer_scheme = HTTPBearer(auto_error=False)
 # (حداکثر بعد از این بازه) روی درخواست‌های بعدی همان کاربر اعمال شود.
 USER_SESSION_CACHE_TTL_SECONDS = 300
 
+CANDIDATE_ROLE = "Candidate"
+
 
 def _session_cache_key(user_id: uuid.UUID) -> str:
     return f"session:user:{user_id}"
@@ -73,34 +75,55 @@ async def get_current_user(
     except ValueError:
         raise unauthorized
 
+    token_tenant = payload.get("tid")
+
     cache_key = _session_cache_key(user_uuid)
     cached_user = await get_cached_json(cache_key)
-    if cached_user is not None:
-        return User(
+    if cached_user is not None and "tenant_id" in cached_user:
+        tenant_id = cached_user["tenant_id"]
+        user = User(
             id=uuid.UUID(cached_user["id"]),
             email=cached_user["email"],
             role=cached_user["role"],
             is_active=cached_user["is_active"],
+            tenant_id=uuid.UUID(tenant_id) if tenant_id else None,
+        )
+    else:
+        result = await db.execute(select(User).where(User.id == user_uuid))
+        user = result.scalar_one_or_none()
+
+        if user is None:
+            raise unauthorized
+
+        await set_cached_json(
+            cache_key,
+            {
+                "id": str(user.id),
+                "email": user.email,
+                "role": user.role,
+                "is_active": user.is_active,
+                "tenant_id": str(user.tenant_id) if user.tenant_id else None,
+            },
+            ttl_seconds=USER_SESSION_CACHE_TTL_SECONDS,
         )
 
-    result = await db.execute(select(User).where(User.id == user_uuid))
-    user = result.scalar_one_or_none()
-
-    if user is None:
-        raise unauthorized
-
-    await set_cached_json(
-        cache_key,
-        {
-            "id": str(user.id),
-            "email": user.email,
-            "role": user.role,
-            "is_active": user.is_active,
-        },
-        ttl_seconds=USER_SESSION_CACHE_TTL_SECONDS,
-    )
-
+    _ensure_token_tenant_matches(user, token_tenant, unauthorized)
     return user
+
+
+def _ensure_token_tenant_matches(user: User, token_tenant: str | None, unauthorized: HTTPException) -> None:
+    """
+    سازمان داخل توکن (Claim «tid» — همان که TenantContextMiddleware روی Context دیتابیس گذاشته)
+    باید دقیقاً سازمان فعلی کاربر باشد: کارمند بدون سازمان، توکن قدیمی بدون tid، یا کاربری که به
+    سازمان دیگری منتقل شده → 401 (ورود دوباره). کارجو هرگز tid ندارد.
+    """
+    expected = str(user.tenant_id) if user.tenant_id else None
+    if user.role == CANDIDATE_ROLE:
+        if token_tenant is not None:
+            raise unauthorized
+        return
+    if expected is None or token_tenant != expected:
+        raise unauthorized
 
 
 def require_roles(*allowed_roles: str):

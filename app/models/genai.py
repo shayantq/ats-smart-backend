@@ -15,10 +15,10 @@ from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, In
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.models.base import Base, TenantMixin
 
 
-class InterviewQuestionSet(Base):
+class InterviewQuestionSet(TenantMixin, Base):
     __tablename__ = "interview_question_sets"
     __table_args__ = (
         Index("ix_interview_question_sets_application_id_created_at", "application_id", "created_at"),
@@ -63,7 +63,7 @@ class InterviewQuestionSet(Base):
     )
 
 
-class InterviewQuestion(Base):
+class InterviewQuestion(TenantMixin, Base):
     __tablename__ = "interview_questions"
     __table_args__ = (
         Index("uq_interview_questions_set_position", "question_set_id", "position", unique=True),

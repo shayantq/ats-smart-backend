@@ -68,6 +68,7 @@ async def _processed_application(db_session, make_application):
     db_session.add(
         Resume(
             candidate_id=application.candidate_id,
+            tenant_id=application.tenant_id,
             file_url="http://test/media/cv.pdf",
             raw_text="Sara Ahmadi sara@example.com Python developer",
             parsed_data={"personal_info": {"name": "Sara Ahmadi", "email": "sara@example.com"}},
@@ -163,7 +164,9 @@ async def test_access_control(
             headers=auth_headers(interviewer),
         )
     ).status_code == 403
-    db_session.add(Interview(application_id=application.id, interviewer_id=interviewer.id))
+    db_session.add(
+        Interview(application_id=application.id, interviewer_id=interviewer.id, tenant_id=application.tenant_id)
+    )
     await db_session.commit()
     assert (await client.get(set_url, headers=auth_headers(interviewer))).status_code == 200
 

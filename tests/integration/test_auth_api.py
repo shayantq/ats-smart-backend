@@ -68,7 +68,9 @@ async def test_protected_route_rejects_wrong_role_and_missing_token(client, make
     assert (await client.get("/api/v1/admin/stats", headers=auth_headers(hr_manager))).status_code == 403
     stats = await client.get("/api/v1/admin/stats", headers=auth_headers(admin))
     assert stats.status_code == 200
-    assert stats.json()["total_users"] == 2
+    # آمار فقط برای سازمان خود ادمین: مالک سازمان تست + همین دو کارمند؛ یک سازمان
+    assert stats.json()["total_users"] == 3
+    assert stats.json()["total_companies"] == 1
 
 
 async def test_password_reset_with_otp_end_to_end(client, db_session, make_user, fake_cache, enqueued_tasks):
@@ -116,5 +118,10 @@ async def test_me_returns_current_user_role(client, make_user):
     response = await client.get("/api/v1/auth/me", headers=auth_headers(user))
 
     assert response.status_code == 200
-    assert response.json() == {"user_id": str(user.id), "email": user.email, "role": "HR_Manager"}
+    assert response.json() == {
+        "user_id": str(user.id),
+        "email": user.email,
+        "role": "HR_Manager",
+        "tenant_id": str(user.tenant_id),
+    }
     assert (await client.get("/api/v1/auth/me")).status_code == 401

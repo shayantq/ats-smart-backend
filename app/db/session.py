@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
+from app.core import tenancy  # noqa: F401  -> ثبت رویدادهای چندمستاجری (نقش/متغیرهای RLS و فیلتر ORM)
 
 engine = create_async_engine(
     settings.DATABASE_URL,

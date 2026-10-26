@@ -12,7 +12,7 @@ from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Strin
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.models.base import Base, TenantMixin
 
 if TYPE_CHECKING:
     # فقط برای type-checker/linter؛ در زمان اجرا SQLAlchemy نام‌های رشته‌ای
@@ -82,7 +82,7 @@ class Audit(Base):
     user: Mapped["User"] = relationship()
 
 
-class StatusHistory(Base):
+class StatusHistory(TenantMixin, Base):
     """جدول تاریخچه وضعیت‌ها: مسیر حرکت کارجو روی بورد کانبان برای گزارش‌گیری."""
 
     __tablename__ = "status_history"

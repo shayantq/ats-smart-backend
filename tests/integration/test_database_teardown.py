@@ -17,9 +17,14 @@ async def test_tests_run_on_a_separate_temporary_database(db_session):
 async def test_schema_comes_from_real_alembic_migrations(db_session):
     """اسکیمای دیتابیس تست همان اسکیمای Production است (کل زنجیره‌ی مایگریشن‌ها اجرا شده)."""
     version = (await db_session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-    assert version == "a7c3e91f0b42"
+    assert version == "d2f6b8a41c37"
     tables = await db_session.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
     assert {"interview_question_sets", "interview_questions"} <= set(tables.scalars())  # بانک سؤال GenAI
+    # چندمستاجری: RLS روی جدول‌های عملیاتی فعال است
+    rls_tables = await db_session.execute(
+        text("SELECT relname FROM pg_class WHERE relrowsecurity AND relnamespace = 'public'::regnamespace")
+    )
+    assert {"jobs", "applications", "resumes", "interviews", "candidates", "skills"} <= set(rls_tables.scalars())
     indexes = await db_session.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'resumes'"))
     names = set(indexes.scalars())
     assert {"ix_resumes_raw_text_fts_v2", "ix_resumes_skill_keys_gin", "ix_resumes_experience_years"} <= names
@@ -34,7 +39,7 @@ async def test_each_test_starts_with_empty_tables_and_leaves_no_data(db_session,
     assert (await db_session.execute(select(func.count()).select_from(Job))).scalar_one() == 0
 
     creator = await make_user(role="HR_Manager")
-    db_session.add(Job(title=f"Teardown probe ({run})", created_by=creator.id))
+    db_session.add(Job(title=f"Teardown probe ({run})", created_by=creator.id, tenant_id=creator.tenant_id))
     await db_session.commit()
 
     assert (await db_session.execute(select(func.count()).select_from(Job))).scalar_one() == 1

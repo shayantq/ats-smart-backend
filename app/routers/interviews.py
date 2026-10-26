@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
+from app.core.tenancy import current_tenant_id
 from app.core.interview_scheduler import cancel_interview_reminder, schedule_interview_reminder
 from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
 from app.db.session import get_db
@@ -54,7 +55,9 @@ async def _get_valid_interviewer(db: AsyncSession, interviewer_id: uuid.UUID) ->
     نداشت -> 404. اگر وجود داشت ولی نقشش Interviewer یا HR_Manager نبود
     (طبق معیار پذیرش اصلی این تسک) -> 422 (خطای اعتبارسنجی).
     """
-    result = await db.execute(select(User).where(User.id == interviewer_id))
+    # چندمستاجری: جدول users سراسری است (کارجو سازمان ندارد)، پس شرط سازمان این‌جا صریح است؛
+    # مصاحبه‌کننده‌ی سازمان دیگر مثل کاربر ناموجود 404 می‌گیرد تا وجودش افشا نشود.
+    result = await db.execute(select(User).where(User.id == interviewer_id, User.tenant_id == current_tenant_id()))
     user = result.scalar_one_or_none()
 
     if user is None:

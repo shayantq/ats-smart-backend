@@ -15,6 +15,7 @@
 - [تست و کیفیت کد](#تست-و-کیفیت-کد)
 - [متغیرهای محیطی](#متغیرهای-محیطی)
 - [API و امکانات](#api-و-امکانات)
+- [چندمستاجری (Multi-Tenancy)](#چندمستاجری-multi-tenancy)
 - [خط لوله‌ی هوش مصنوعی رزومه](#خط-لولهی-هوش-مصنوعی-رزومه)
 - [تولید سؤال مصاحبه با هوش مصنوعی مولد](#تولید-سؤال-مصاحبه-با-هوش-مصنوعی-مولد)
 - [تست بار و امنیت](#تست-بار-و-امنیت)
@@ -116,6 +117,8 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 | `SMTP_*` | سرویس ایمیل (برای تست بدون ایمیل واقعی: Mailtrap یا یک SMTP Debug Server محلی) |
 | `OPS_WEBHOOK_TOKEN` | توکن مشترک Alertmanager و CI برای `/api/v1/ops/*` — خالی = غیرفعال |
 | `OPS_ALERT_RECIPIENT_ROLES` | نقش‌های «تیم فنی» که هشدارها را می‌گیرند (پیش‌فرض `Admin`) |
+| `OPS_ALERT_TENANT_ID` | سازمان گرداننده‌ی پلتفرم که تیم فنی عضو آن است — خالی = سازمانِ قدیمی‌ترین Admin (هشدار زیرساخت به Admin سازمان‌های مشتری نمی‌رسد) |
+| `DB_RLS_ROLE` | نقش دیتابیسی که درخواست‌های API به آن سوئیچ می‌کنند تا RLS اعمال شود (پیش‌فرض `ats_app`) |
 | `GENAI_BASE_URL` · `GENAI_MODEL` · `GENAI_API_KEY` | سرویس مدل زبانی سازگار با Chat Completions برای تولید سؤال مصاحبه — خالی = غیرفعال (`503`)؛ `GENAI_STRUCTURED_OUTPUT`، `GENAI_TIMEOUT_SECONDS`، `GENAI_MAX_OUTPUT_TOKENS`، `GENAI_TEMPERATURE` |
 | `POSTGRES_*` · `PUBLIC_BASE_URL` · `GRAFANA_ADMIN_*` · `GATEWAY_HTTP_PORT` | فقط Docker Compose / سرور |
 
@@ -129,12 +132,13 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 
 | مسیر | دسترسی | توضیح |
 |---|---|---|
-| `POST /auth/register` | عمومی | `{email, password (حداقل ۸), role}` — نقش‌ها: `Admin`, `HR_Manager`, `Interviewer`, `Candidate` · ایمیل تکراری → `400` |
-| `POST /auth/login` | عمومی | خروجی: `access_token` (۱۵ دقیقه)، `refresh_token` (۷ روز؛ هم در بدنه هم کوکی `HttpOnly`+`Secure`+`SameSite=Strict`) · اشتباه → `401` |
+| `POST /auth/register` | عمومی | `{email, password (حداقل ۸), role}` — `Candidate`، یا `Admin` با `company_name` (سازمان تازه می‌سازد). HR و Interviewer را Admin سازمان می‌سازد (`422`) · ایمیل تکراری → `400` |
+| `POST /auth/login` | عمومی | خروجی: `access_token` (۱۵ دقیقه؛ برای کارمند شامل سازمان `tid`)، `refresh_token` (۷ روز؛ هم در بدنه هم کوکی `HttpOnly`+`Secure`+`SameSite=Strict`) · اشتباه → `401` |
 | `POST /auth/forgot-password` | عمومی | ارسال کد OTP شش‌رقمی به ایمیل (پاسخ همیشه یکسان، ضد User Enumeration) |
 | `POST /auth/reset-password` | عمومی | `{email, otp_code, new_password}` — OTP ده دقیقه‌ای و یک‌بارمصرف |
 | `GET /auth/me` | هر کاربر لاگین‌شده | شناسه، ایمیل و نقش کاربر جاری (فرانت‌اند بعد از ورود با آن پورتال مناسب را انتخاب می‌کند) |
-| `GET /admin/stats` | `Admin` | آمار کلان پلتفرم (نمونه‌ی RBAC) |
+| `GET /admin/stats` | `Admin` | آمار سازمان خود ادمین (نمونه‌ی RBAC) |
+| `GET /tenant` · `GET/POST /tenant/users` | کارمندان · `Admin` | مشخصات سازمان، فهرست و ساخت حساب HR/Interviewer در همان سازمان |
 
 - **RBAC:** با `Depends(require_roles(...))` — بدون توکن/نامعتبر `401`، نقش غیرمجاز `403`. نشست کاربر ۵ دقیقه در Redis کش می‌شود.
 - **امنیت شبکه:** CORS فقط برای `FRONTEND_ORIGIN` · Rate Limit پنج درخواست در دقیقه برای هر IP روی مسیرهای auth (`429`) · پاکسازی تگ‌های HTML از ورودی‌ها (`app/core/sanitize.py`) · گذرواژه فقط به‌صورت هش Bcrypt.
@@ -263,6 +267,19 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 - `GET /api/v1/health` — بررسی سلامت · `GET /metrics` — متریک‌های Prometheus (بیرون از `/api/v1`؛ در Production از بیرون بسته است).
 - **کش و صف (Redis):** نشست کاربر ۵ دقیقه کش می‌شود (`app/core/cache.py`)؛ کارهای سنگین با RQ (`app/core/queue.py`) به‌صورت fire-and-forget به صف می‌روند. قطعی Redis سرور را از کار نمی‌اندازد — فقط کش/صف موقتاً غیرفعال می‌مانند.
 - **صف‌های پس‌زمینه** (به ترتیب اولویت Worker): `notifications` (ایمیل‌های تراکنشی: OTP، وضعیت، پیشنهاد، یادآور — Timeout ۲ دقیقه) · `resumes` (پردازش سنگین رزومه — Timeout ۵ دقیقه) · `bulk` (ایمیل انبوه با `enqueue_bulk`: هر ۵۰۰ کار با یک Pipeline) · `default`. همه‌ی کارها تلاش مجدد با فاصله دارند (کار «رهاشده» توسط Worker ازکارافتاده هم دوباره در صف قرار می‌گیرد)، نتیجه‌ی کار موفق ۱۰ دقیقه و کار ناموفق ۷ روز نگه داشته می‌شود. Redis: AOF با `appendfsync everysec` و `maxmemory-policy noeviction` (هیچ کاری بی‌صدا حذف نمی‌شود). تست استرس: `bash k8s/queue-stress.sh`.
+
+---
+
+## چندمستاجری (Multi-Tenancy)
+
+هر سازمان مشتری (`companies`) یک Tenant است و داده‌ی عملیاتی‌اش با `tenant_id` کاملاً از بقیه جداست. معماری کامل: [`docs/multitenancy/ARCHITECTURE.md`](docs/multitenancy/ARCHITECTURE.md).
+
+- **منبع سازمان:** Claim امضاشده‌ی `tid` در JWT. `TenantContextMiddleware` آن را روی Context درخواست قرار می‌دهد و `get_current_user` با `users.tenant_id` تطبیقش می‌دهد. شناسه‌ی سازمان هیچ‌وقت در پارامتر یا بدنه‌ی درخواست نمی‌آید.
+- **لایه‌ی ۱، ORM:** مدل‌های `TenantMixin` (آگهی، درخواست، رزومه، مصاحبه، تاریخچه‌ی وضعیت، بانک سؤال) روی هر SELECT/UPDATE/DELETE خودکار شرط سازمان می‌گیرند و ردیف جدید خودکار `tenant_id` می‌گیرد. مهارت‌ها (`SharedTenantMixin`) استاندارد یا سفارشی سازمان‌اند.
+- **لایه‌ی ۲، PostgreSQL RLS:** هر تراکنش API با نقش `ats_app` (بدون `BYPASSRLS`) و متغیرهای `SET LOCAL` اجرا می‌شود. حتی SQL خام بدون شرط هم ردیف سازمان دیگر را نمی‌بیند (Fail-Closed).
+- **رکورد سازمان دیگر ← `404`،** عیناً مثل شناسه‌ی ناموجود.
+- **مایگریشن بدون قفل طولانی:** Backfill دسته‌ای، قیدهای `NOT VALID` ← `VALIDATE`، ایندکس `CONCURRENTLY`، و `lock_timeout` سه‌ثانیه‌ای با تلاش دوباره. داده‌ی پیشین به «سازمان پیش‌فرض» منتقل می‌شود.
+- **راستی‌آزمایی:** `tests/integration/test_tenant_isolation.py`، `test_tenancy_migration.py` و `bash k8s/tenant-isolation-check.sh` (کلاستر زنده ← `[TENANT ISOLATION PASS]`).
 
 ---
 
@@ -526,7 +543,7 @@ bash k8s/hpa-stress.sh    # تست بار: Scale Up / Scale Down خودکار و
 ├── app/
 │   ├── main.py              # نقطه‌ی ورود (Middlewareها، روترها، /metrics، بررسی Redis در startup)
 │   ├── worker.py            # Worker صف RQ (سازگار با ویندوز)
-│   ├── routers/             # health, auth, admin, jobs, applications, resumes, candidates, interviews, analytics, notifications, ops
+│   ├── routers/             # health, auth, admin, jobs, applications, resumes, candidates, interviews, analytics, notifications, ops, genai, tenants
 │   ├── schemas/             # اسکیماهای Pydantic (یک فایل به‌ازای هر روتر + resume_parsing, skill_analysis)
 │   ├── models/              # ۱۴ جدول ORM: core (User, Company, Candidate, Job) · process (Application, Interview, Resume, Skill)
 │   │                        #   · security (Role, Permission, Notification, Log, Audit, StatusHistory)
@@ -536,7 +553,8 @@ bash k8s/hpa-stress.sh    # تست بار: Scale Up / Scale Down خودکار و
 │   │   ├── redis_client · cache · queue · metrics                 # Redis، کش، صف RQ، متریک‌های Prometheus
 │   │   ├── text_extraction · resume_parser · skill_graph · experience_analyzer · skill_engine · matching_engine
 │   │   ├── email_service · email_templates · offer_letter · notification_service · status_notifier
-│   │   └── interview_scheduler · candidate_utils · ops_notifier
+│   │   ├── interview_scheduler · candidate_utils · ops_notifier
+│   │   └── tenancy · tenant_provisioning                           # چندمستاجری: Context، RLS، فیلتر خودکار ORM
 │   ├── genai/               # هوش مصنوعی مولد: prompts، client (Chat Completions)، service، contract، poc
 │   ├── tasks/               # کارهای Worker: resume_processing (خط لوله‌ی AI)، notifications (ایمیل‌ها)، genai
 │   ├── templates/emails/    # قالب‌های HTML ایمیل

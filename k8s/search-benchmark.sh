@@ -58,12 +58,23 @@ sql <<SQL
 -- ۳۰ مهارت پرکاربرد هر کدام با احتمال ۱۵٪ در هر رزومه، و «Elixir» نادر (۰.۵٪) — مثل یک مهارت تخصصی
 -- که کارشناس منابع انسانی دنبالش می‌گردد. ارجاع 0 * g زیرپرس‌وجو را برای هر ردیف جداگانه اجرا می‌کند.
 create temporary table bench_seed as select g from generate_series(1, ${RESUMES}) as g;
+-- چندمستاجری: یک سازمان آزمایشی با HR و یک آگهی؛ هر کارجو یک درخواست به همین آگهی دارد تا در جستجوی HR دیده شود
 insert into users (id, email, password_hash, role, is_active)
-select gen_random_uuid(), 'bench-' || g || '@example.com', '!', 'Candidate', true from bench_seed;
+values (gen_random_uuid(), 'bench-hr@example.com', '!', 'HR_Manager', true);
+insert into companies (id, name, owner_id) select gen_random_uuid(), 'Bench Org', id from users where email = 'bench-hr@example.com';
+update users set tenant_id = c.id from companies c where c.owner_id = users.id and users.email = 'bench-hr@example.com';
+insert into jobs (id, title, status, created_by, tenant_id)
+select gen_random_uuid(), '[Bench] search', 'Active', id, tenant_id from users where email = 'bench-hr@example.com';
+insert into users (id, email, password_hash, role, is_active)
+select gen_random_uuid(), 'bench-cand-' || g || '@example.com', '!', 'Candidate', true from bench_seed;
 insert into candidates (id, user_id, first_name, last_name)
-select gen_random_uuid(), u.id, 'کارجو', 'آزمایشی' from users u where u.email like 'bench-%@example.com';
-insert into resumes (id, candidate_id, file_url, raw_text, skill_analysis)
-select gen_random_uuid(), c.id, 'bench://resume',
+select gen_random_uuid(), u.id, 'کارجو', 'آزمایشی' from users u where u.email like 'bench-cand-%@example.com';
+insert into applications (id, job_id, candidate_id, tenant_id, current_status)
+select gen_random_uuid(), j.id, c.id, j.tenant_id, 'Applied'
+from candidates c join users u on u.id = c.user_id cross join jobs j
+where u.email like 'bench-cand-%@example.com' and j.title = '[Bench] search';
+insert into resumes (id, candidate_id, tenant_id, file_url, raw_text, skill_analysis)
+select gen_random_uuid(), c.id, (select tenant_id from users where email = 'bench-hr@example.com'), 'bench://resume',
        'Experienced engineer working with distributed systems, APIs and databases',
        jsonb_build_object(
            'skills', coalesce((
@@ -76,7 +87,7 @@ select gen_random_uuid(), c.id, 'bench://resume',
            ), '[]'::jsonb) || case when random() < 0.005 then '["Elixir"]'::jsonb else '[]'::jsonb end,
            'total_experience_years', round((random() * 20)::numeric, 1)
        )
-from candidates c join users u on u.id = c.user_id where u.email like 'bench-%@example.com';
+from candidates c join users u on u.id = c.user_id where u.email like 'bench-cand-%@example.com';
 analyze resumes;
 SQL
 seeded="$(echo "select count(*) from resumes where file_url = 'bench://resume'" | sql)"
@@ -150,15 +161,15 @@ import asyncio, statistics, time
 import httpx
 from app.core.security import create_access_token
 from app.db.session import AsyncSessionLocal
+from sqlalchemy import select
+
 from app.models import User
 
 
 async def main() -> None:
     async with AsyncSessionLocal() as session:
-        hr = User(email=f"bench-hr-{int(time.time())}@example.com", password_hash="!", role="HR_Manager")
-        session.add(hr)
-        await session.commit()
-        token, _ = create_access_token(str(hr.id))
+        hr = (await session.execute(select(User).where(User.email == "bench-hr@example.com"))).scalar_one()
+        token, _ = create_access_token(str(hr.id), tenant_id=hr.tenant_id)
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(base_url="http://127.0.0.1:8000", timeout=60) as client:
         for params, label in (({"skills": ["Elixir"]}, "skills=Elixir"),
@@ -184,7 +195,11 @@ section "پاک‌سازی"
 if [[ "${KEEP_DATA:-0}" != "1" ]]; then
     sql <<'SQL'
 delete from resumes where file_url = 'bench://resume';
+delete from applications where job_id in (select id from jobs where title = '[Bench] search');
 delete from candidates where user_id in (select id from users where email like 'bench-%@example.com');
+delete from jobs where title = '[Bench] search';
+update users set tenant_id = null where email = 'bench-hr@example.com';
+delete from companies where name = 'Bench Org';
 delete from users where email like 'bench-%@example.com';
 analyze resumes;
 SQL

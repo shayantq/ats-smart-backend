@@ -40,9 +40,10 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.security import create_access_token, hash_password
 from app.core.storage import LocalStorageBackend
+from app.core.tenancy import SYSTEM_CONTEXT, apply_current_context, use_tenant_context
 from app.db.session import get_db
 from app.main import app
-from app.models import Application, Candidate, Job, User
+from app.models import Application, Candidate, Company, Job, User
 from app.routers import applications as applications_router
 from app.routers import auth as auth_router
 from app.routers import interviews as interviews_router
@@ -151,7 +152,15 @@ def enqueued_tasks() -> list[tuple]:
 @pytest_asyncio.fixture
 async def client(db_session, fake_cache, enqueued_tasks, monkeypatch, tmp_path):
     async def override_get_db():
-        yield db_session
+        # همه‌ی درخواست‌های یک تست یک Session مشترک دارند؛ اگر درخواست قبلی commit نکرده باشد، تراکنشش هنوز
+        # باز است و after_begin دوباره اجرا نمی‌شود. پس نقش/متغیرهای RLS همین درخواست صریحاً اعمال و در پایان
+        # به حالت system (کد خود تست) برمی‌گردند — مثل برنامه‌ی واقعی که هر درخواست Session جدا دارد.
+        await apply_current_context(db_session)
+        try:
+            yield db_session
+        finally:
+            with use_tenant_context(SYSTEM_CONTEXT):
+                await apply_current_context(db_session)
 
     async def fake_enqueue(func, *args, **kwargs):
         enqueued_tasks.append((func.__name__, args))
@@ -196,13 +205,51 @@ async def client(db_session, fake_cache, enqueued_tasks, monkeypatch, tmp_path):
 # ساخت کاربر و هدر احراز هویت
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def make_user(db_session):
-    async def _make_user(role: str = "Candidate", email: str | None = None, is_active: bool = True) -> User:
+def make_tenant(db_session):
+    """یک سازمان (Tenant) کامل: ردیف companies + Admin مالک آن. خروجی: (company, owner)"""
+
+    async def _make_tenant(name: str | None = None) -> tuple[Company, User]:
+        owner = User(
+            email=f"owner-{uuid.uuid4().hex[:8]}@example.com",
+            password_hash=hash_password(TEST_PASSWORD),
+            role="Admin",
+        )
+        db_session.add(owner)
+        await db_session.flush()
+        company = Company(name=name or f"Org {uuid.uuid4().hex[:6]}", owner_id=owner.id)
+        db_session.add(company)
+        await db_session.flush()
+        owner.tenant_id = company.id
+        await db_session.commit()
+        return company, owner
+
+    return _make_tenant
+
+
+@pytest.fixture
+def make_user(db_session, make_tenant):
+    """
+    کاربر تست. کارمندان (هر نقشی جز Candidate) عضو یک سازمان‌اند: اگر tenant داده نشود، همه‌ی کارمندان
+    یک تست در یک «سازمان پیش‌فرض همین تست» قرار می‌گیرند (رفتار تست‌های قبل از چندمستاجری حفظ می‌شود).
+    """
+    default_tenant: list[Company] = []
+
+    async def _make_user(
+        role: str = "Candidate", email: str | None = None, is_active: bool = True, tenant: Company | None = None
+    ) -> User:
+        tenant_id = None
+        if role != "Candidate":
+            if tenant is None:
+                if not default_tenant:
+                    default_tenant.append((await make_tenant("Default Test Org"))[0])
+                tenant = default_tenant[0]
+            tenant_id = tenant.id
         user = User(
             email=email or f"{role.lower()}-{uuid.uuid4().hex[:8]}@example.com",
             password_hash=hash_password(TEST_PASSWORD),
             role=role,
             is_active=is_active,
+            tenant_id=tenant_id,
         )
         db_session.add(user)
         # commit (نه فقط flush): داده‌ی آماده‌سازی تست از SAVEPOINT جاری بیرون می‌آید تا اگر خودِ
@@ -215,7 +262,7 @@ def make_user(db_session):
 
 
 def auth_headers(user: User) -> dict[str, str]:
-    access_token, _ = create_access_token(str(user.id))
+    access_token, _ = create_access_token(str(user.id), tenant_id=user.tenant_id)
     return {"Authorization": f"Bearer {access_token}"}
 
 
@@ -229,14 +276,21 @@ def make_application(db_session, make_user):
     async def _make_application(status: str = "Draft", score_ai: int | None = None, job: Job | None = None):
         if job is None:
             creator = await make_user(role="HR_Manager")
-            job = Job(title="Backend Developer", skills_required=["Python"], created_by=creator.id)
+            job = Job(
+                title="Backend Developer",
+                skills_required=["Python"],
+                created_by=creator.id,
+                tenant_id=creator.tenant_id,
+            )
             db_session.add(job)
         candidate_user = await make_user(role="Candidate")
         candidate = Candidate(user_id=candidate_user.id, first_name="Sara", last_name="Ahmadi")
         db_session.add(candidate)
         await db_session.flush()
 
-        application = Application(job_id=job.id, candidate_id=candidate.id, current_status=status, score_ai=score_ai)
+        application = Application(
+            job_id=job.id, candidate_id=candidate.id, tenant_id=job.tenant_id, current_status=status, score_ai=score_ai
+        )
         db_session.add(application)
         await db_session.commit()  # همان دلیل make_user
         return application, candidate_user, job

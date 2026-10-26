@@ -8,11 +8,11 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.models.base import Base, SharedTenantMixin, TenantMixin
 
 if TYPE_CHECKING:
     # فقط برای type-checker/linter؛ در زمان اجرا SQLAlchemy نام‌های رشته‌ای
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from app.models.security import StatusHistory
 
 
-class Application(Base):
+class Application(TenantMixin, Base):
     """
     جدول درخواست‌ها: حلقه‌ی وصل کارجو به پوزیشن شغلی و بورد کانبان.
 
@@ -53,7 +53,7 @@ class Application(Base):
     status_history: Mapped[list["StatusHistory"]] = relationship(back_populates="application")
 
 
-class Interview(Base):
+class Interview(TenantMixin, Base):
     """جدول مصاحبه‌ها: تنظیمات و اطلاعات مربوط به جلسات ارزیابی."""
 
     __tablename__ = "interviews"
@@ -83,7 +83,7 @@ class Interview(Base):
     interviewer: Mapped["User"] = relationship()
 
 
-class Resume(Base):
+class Resume(TenantMixin, Base):
     """جدول رزومه‌ها: مدیریت فایل‌های فیزیکی آپلود شده."""
 
     __tablename__ = "resumes"
@@ -103,10 +103,22 @@ class Resume(Base):
     candidate: Mapped["Candidate"] = relationship()
 
 
-class Skill(Base):
-    """جدول مهارت‌ها: بانک اطلاعاتی مهارت‌های استاندارد بازار کار."""
+class Skill(SharedTenantMixin, Base):
+    """
+    جدول مهارت‌ها: بانک اطلاعاتی مهارت‌های استاندارد بازار کار (tenant_id خالی) به‌علاوه‌ی
+    مهارت‌های سفارشی هر سازمان (tenant_id = همان سازمان، فقط برای خودش قابل مشاهده).
+    """
 
     __tablename__ = "skills"
+    __table_args__ = (
+        # نام مهارت در هر دامنه یکتاست: یک‌بار بین مهارت‌های استاندارد، یک‌بار در هر سازمان
+        Index(
+            "uq_skills_tenant_name",
+            text("COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid)"),
+            text("lower(name)"),
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)

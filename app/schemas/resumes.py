@@ -1,8 +1,9 @@
-"""اسکیمای خروجی مسیر آپلود رزومه (POST /api/v1/resumes/upload)."""
+"""اسکیمای خروجی مسیرهای رزومه (POST /api/v1/resumes/upload و GET /api/v1/resumes/{resume_id})."""
 
 import uuid
+from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ResumeUploadResponse(BaseModel):
@@ -17,3 +18,16 @@ class ResumeUploadResponse(BaseModel):
     application_id: uuid.UUID
     status: str
     message: str
+
+
+class ResumeDetailResponse(BaseModel):
+    """جزئیات یک رزومه برای HR (GET /api/v1/resumes/{resume_id})."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    candidate_id: uuid.UUID
+    tenant_id: uuid.UUID
+    file_url: str
+    parsed_data: Optional[dict[str, Any]] = None
+    skill_analysis: Optional[dict[str, Any]] = None
