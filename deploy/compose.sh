@@ -7,6 +7,8 @@
 #   ./deploy/compose.sh ps
 #   ./deploy/compose.sh logs -f backend_api
 #   ./deploy/compose.sh exec postgres_db psql -U ats smart_ats_db
+#
+# EDGE_NETWORK در .env (سرور مشترک با Reverse Proxy دیگر) ← deploy/docker-compose.edge.yml هم اضافه می‌شود.
 # =============================================================================
 set -euo pipefail
 
@@ -22,4 +24,10 @@ if [[ -f "${RELEASE_ENV_FILE}" ]]; then
     env_args+=(--env-file "${RELEASE_ENV_FILE}")
 fi
 
-exec docker compose "${env_args[@]}" -f docker-compose.yml -f deploy/docker-compose.prod.yml "$@"
+compose_files=(-f docker-compose.yml -f deploy/docker-compose.prod.yml)
+# سرور مشترک: Gateway پشت Reverse Proxy بیرونی و بدون پورت باز (deploy/docker-compose.edge.yml)
+if grep -qE '^EDGE_NETWORK=.+' "${ENV_FILE}" 2>/dev/null; then
+    compose_files+=(-f deploy/docker-compose.edge.yml)
+fi
+
+exec docker compose "${env_args[@]}" "${compose_files[@]}" "$@"

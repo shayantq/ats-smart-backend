@@ -490,6 +490,24 @@ sudo mkdir -p /opt/ats-smart && sudo chown $USER /opt/ats-smart
 
 از آن به بعد هر Merge روی `main` (بعد از سبز شدن تست‌ها) خودکار مستقر می‌شود: CI فایل‌های زیرساخت را منتقل و `deploy/deploy.sh` را اجرا می‌کند.
 
+**سرور مشترک با پروژه‌ی دیگر (یک سرور، چند دامنه):** وقتی پورت ۸۰/۴۴۳ و HTTPS دست Reverse Proxy دیگری است (مثلاً Caddy یک پروژه‌ی دیگر):
+1. یک‌بار روی سرور یک شبکه‌ی مشترک بسازید: `docker network create edge`. Caddy آن پروژه را هم عضو همین شبکه کنید (`networks: [default, edge]` و `edge: {external: true}` در Compose همان پروژه).
+2. در `.env` همین پروژه: `EDGE_NETWORK=edge`. `deploy/compose.sh` فایل `deploy/docker-compose.edge.yml` را خودکار اضافه می‌کند: Gateway هیچ پورتی روی سرور باز نمی‌کند و در شبکه‌ی `edge` با نام `ats-gateway` در دسترس است.
+3. یک بلاک در Caddyfile همان Caddy:
+   ```
+   www.ats.example.com {
+       redir https://ats.example.com{uri} permanent
+   }
+   ats.example.com {
+       encode zstd gzip
+       request_body {
+           max_size 12MB
+       }
+       reverse_proxy ats-gateway:80
+   }
+   ```
+Gateway فقط از شبکه‌ی خصوصی Docker (همان Proxy) `X-Forwarded-For` و `X-Forwarded-Proto` را می‌پذیرد، پس IP واقعی کاربر به Rate Limit بک‌اند می‌رسد و قابل جعل نیست.
+
 **سرور بدون دسترسی SSH از بیرون (یا Production محلی):** یک GitHub Runner خودمیزبان روی خود سرور با برچسب `ats-production` (Settings ← Actions ← Runners ← New self-hosted runner) و متغیرهای مخزن (Settings ← Secrets and variables ← Actions ← Variables):
 
 | متغیر | مثال |

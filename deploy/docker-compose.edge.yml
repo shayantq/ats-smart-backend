@@ -1,0 +1,22 @@
+# =============================================================================
+# سرور مشترک با Reverse Proxy بیرونی (مثلاً Caddy پروژه‌ی دیگری که پورت ۸۰/۴۴۳ و HTTPS را دارد)
+#
+# Gateway هیچ پورتی روی سرور باز نمی‌کند؛ فقط عضو شبکه‌ی Docker مشترک EDGE_NETWORK می‌شود و
+# Reverse Proxy درخواست‌های دامنه‌ی ATS را به نام ats-gateway:80 می‌فرستد.
+#
+# فعال‌سازی: EDGE_NETWORK=edge در .env سرور (deploy/compose.sh این فایل را خودکار اضافه می‌کند)
+# و یک‌بار روی سرور:  docker network create edge
+# =============================================================================
+services:
+  gateway:
+    ports: !reset []
+    networks:
+      ats_network: {}
+      edge:
+        aliases:
+          - ats-gateway
+
+networks:
+  edge:
+    name: ${EDGE_NETWORK:-edge}
+    external: true
