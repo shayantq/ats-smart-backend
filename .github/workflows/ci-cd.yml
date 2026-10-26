@@ -329,7 +329,9 @@ jobs:
             IdentityFile ~/.ssh/deploy_key
             IdentitiesOnly yes
             StrictHostKeyChecking yes
-            ServerAliveInterval 30
+            # سرور اتصال بی‌صدا را حدود ۴۰ ثانیه بعد می‌بندد (مثلاً حین pull ایمیج‌ها)؛ Keepalive کوتاه‌تر از آن
+            ServerAliveInterval 15
+            ServerAliveCountMax 8
           EOF
 
       # فقط فایل‌های زیرساخت (compose، اسکریپت‌های استقرار، پیکربندی مانیتورینگ، ابزار بک‌آپ) —
