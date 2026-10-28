@@ -12,6 +12,10 @@
 #   - ایمیج‌ها از Docker Hub کشیده می‌شوند (BACKEND_IMAGE/FRONTEND_IMAGE در
 #     deploy/release.env که deploy.sh می‌نویسد)، نه این‌که روی سرور بیلد شوند.
 #   - رازها (رمز دیتابیس، توکن عملیاتی، رمز Grafana) اجباری‌اند؛ پیش‌فرض توسعه ندارند.
+#   - Zero-Trust: Worker پروفایل کارجو را با توکن سرویس امضاشده (ES256، هدر X-Internal-Auth) از API
+#     می‌گیرد. کلید خصوصی Worker فقط به‌صورت Secret فایلی (/run/secrets/...) به همان کانتینر می‌رسد و API
+#     فقط کلید عمومی را دارد. کلیدها را deploy/deploy.sh یک‌بار روی خود سرور در secrets/service-auth/
+#     می‌سازد (هرگز در ریپو یا .env نیستند) — بنگرید docs/zero-trust/ARCHITECTURE.md.
 #
 # نیازمند Docker Compose نسخه‌ی 2.24.4 به بالا (برای !reset و !override).
 # =============================================================================
@@ -31,10 +35,20 @@ services:
       # هدر X-Forwarded-For قابل اعتماد است — Rate Limit روی IP واقعی کاربر اعمال می‌شود
       FORWARDED_ALLOW_IPS: "*"
       OPS_WEBHOOK_TOKEN: ${OPS_WEBHOOK_TOKEN:?OPS_WEBHOOK_TOKEN را در .env سرور تنظیم کنید}
+      SERVICE_NAME: backend-api
+      SERVICE_AUTH_PUBLIC_KEYS_DIR: /run/service-auth/public
+    volumes:
+      # فقط کلیدهای عمومی سرویس‌های مجاز (محرمانه نیستند)
+      - ./secrets/service-auth/public:/run/service-auth/public:ro
 
   worker:
     environment:
       ENVIRONMENT: production
+      SERVICE_NAME: worker
+      SERVICE_AUTH_PRIVATE_KEY_FILE: /run/secrets/worker_service_key
+      INTERNAL_API_URL: http://backend_api:8000
+    secrets:
+      - worker_service_key
 
   scheduler:
     environment:
@@ -96,3 +110,8 @@ services:
       retries: 3
     networks:
       - ats_network
+
+# کلید خصوصی سرویس Worker — فایل روی خود سرور (deploy/deploy.sh می‌سازد)، به کانتینر فقط به‌صورت فایل
+secrets:
+  worker_service_key:
+    file: ./secrets/service-auth/worker.key

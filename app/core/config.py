@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     # Row-Level Security چندمستاجری اعمال شوند — بنگرید app/core/tenancy.py و مایگریشن d2f6b8a41c37
     DB_RLS_ROLE: str = "ats_app"
 
+    # ---- Zero-Trust: احراز هویت سرویس‌به‌سرویس (app/core/service_auth.py) ----
+    # نام همین سرویس در توکن‌های داخلی (iss برای فرستنده، aud برای گیرنده)، مثلاً backend-api / worker
+    SERVICE_NAME: str = "backend-api"
+    # فرستنده: مسیر فایل کلید خصوصی ES256 همین سرویس (Secret مانت‌شده؛ هرگز متغیر محیطی یا فایل تنظیمات)
+    SERVICE_AUTH_PRIVATE_KEY_FILE: str = ""
+    # گیرنده: پوشه‌ی کلیدهای عمومی سرویس‌های مجاز — هر فایل <نام-سرویس>.pem
+    SERVICE_AUTH_PUBLIC_KEYS_DIR: str = ""
+    # نشانی داخلی بک‌اند برای فراخوانی سرویس‌به‌سرویس (مثلاً http://backend_api:8000)؛ خالی = مسیر قدیمی
+    INTERNAL_API_URL: str = ""
+
     SECRET_KEY: str = "changeme-in-env-file"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -83,6 +93,11 @@ class Settings(BaseSettings):
     # json_schema: خروجی مقید به JSON Schema سمت سرویس (پیش‌فرض)؛ json_object: فقط JSON معتبر و
     # اعتبارسنجی Schema سمت ما — برای سرویس‌هایی که response_format از نوع json_schema را ندارند
     GENAI_STRUCTURED_OUTPUT: str = "json_schema"
+
+    @property
+    def internal_api_enabled(self) -> bool:
+        """این پردازه می‌تواند درخواست داخلی امضاشده به بک‌اند بفرستد."""
+        return bool(self.INTERNAL_API_URL and self.SERVICE_AUTH_PRIVATE_KEY_FILE)
 
     @property
     def genai_enabled(self) -> bool:

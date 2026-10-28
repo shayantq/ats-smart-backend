@@ -34,3 +34,7 @@ k8s/loadtest/reports/
 
 # فقط محیط لوکال: نشانی وزن‌های مدل زبانی سرور داخل کلاستر (k8s/overlays/local/genai-inference)
 k8s/overlays/local/genai-inference/model.env
+
+# Zero-Trust: کلیدهای سرویس‌به‌سرویس (سرور: deploy/deploy.sh، کلاستر لوکال: k8s/deploy.sh) — هرگز در ریپو
+/secrets/
+k8s/overlays/*/secrets/service-auth/

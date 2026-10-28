@@ -1,0 +1,381 @@
+# =============================================================================
+# Zero-Trust — NetworkPolicy های فضای نام ats-smart
+#
+# ۱. default-deny: هیچ ترافیک ورودی/خروجی‌ای بین Pod ها مجاز نیست، مگر صریحاً در ادامه.
+# ۲. برای هر سرویس فقط پورت‌ها و طرف‌های لازم باز می‌شوند؛ مثلاً PostgreSQL فقط از API، Worker ها،
+#    Job مایگریشن و بک‌آپ روی 5432 — Pod دیگری (حتی داخل همین فضای نام) در لایه‌ی شبکه رد می‌شود.
+#
+# ⚠️ اجرای این پالیسی‌ها به CNI پشتیبان NetworkPolicy نیاز دارد (Calico، Cilium، ...). شبکه‌ی پیش‌فرض
+# Docker Desktop آن‌ها را می‌پذیرد ولی اعمال نمی‌کند — بنگرید docs/zero-trust/ARCHITECTURE.md.
+# جدول کامل ماتریس ارتباطات: همان مستند.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# همه‌ی Pod ها: فقط DNS داخلی کلاستر
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# ---------------------------------------------------------------------------- لایه‌ی داده
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: backend-api}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: worker}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: resume-worker}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: genai-worker}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: migrate}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: backup}}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+      ports:
+        - {protocol: TCP, port: 9187}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: backend-api}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: worker}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: resume-worker}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: genai-worker}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: scheduler}}
+      ports:
+        - {protocol: TCP, port: 6379}
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+      ports:
+        - {protocol: TCP, port: 9121}
+---
+# ---------------------------------------------------------------------------- لایه‌ی برنامه
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: backend-api
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # کاربران از Ingress Controller؛ فرانت‌اند؛ هشدارهای Alertmanager؛ متریک Prometheus؛ فراخوانی داخلی
+    # امضاشده‌ی genai-worker (مسیرهای /api/v1/internal علاوه بر این توکن سرویس می‌خواهند)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nginx-ingress
+        - podSelector: {matchLabels: {app.kubernetes.io/name: frontend}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: alertmanager}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: genai-worker}}
+      ports:
+        - {protocol: TCP, port: 8000}
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: postgres}}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: redis}}
+      ports:
+        - {protocol: TCP, port: 6379}
+    # Object Storage بیرونی (STORAGE_BACKEND=s3) — فقط HTTPS به اینترنت، نه به شبکه‌های خصوصی
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nginx-ingress
+      ports:
+        - {protocol: TCP, port: 80}
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: backend-api}}
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+# Worker های صف: داده + Redis؛ worker ایمیل‌ها را هم می‌فرستد (Mailpit لوکال یا SMTP بیرونی)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: postgres}}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: redis}}
+      ports:
+        - {protocol: TCP, port: 6379}
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: mailpit}}
+      ports:
+        - {protocol: TCP, port: 1025}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - {protocol: TCP, port: 25}
+        - {protocol: TCP, port: 465}
+        - {protocol: TCP, port: 587}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: resume-worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: resume-worker
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: postgres}}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: redis}}
+      ports:
+        - {protocol: TCP, port: 6379}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}
+---
+# سرویس هوش مصنوعی: پروفایل کارجو را فقط از API (با توکن سرویس) می‌گیرد، پاسخ مدل را از سرور مدل
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: genai-worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-worker
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: backend-api}}
+      ports:
+        - {protocol: TCP, port: 8000}
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: genai-inference}}
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: postgres}}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: redis}}
+      ports:
+        - {protocol: TCP, port: 6379}
+    # سرویس مدل زبانی ابری (GENAI_BASE_URL بیرونی)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: scheduler
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: scheduler
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: redis}}
+      ports:
+        - {protocol: TCP, port: 6379}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: migrate
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: migrate
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: postgres}}
+      ports:
+        - {protocol: TCP, port: 5432}
+---
+# بک‌آپ: خواندن از پستگرس و ارسال رمزنگاری‌شده به Offsite (S3 / SFTP)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: backup
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+      ports:
+        - {protocol: TCP, port: 9100}
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: postgres}}
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 22}
+---
+# ---------------------------------------------------------------------------- مانیتورینگ
+# Prometheus اهداف را از API کوبرنتیز کشف و از Pod ها/Node ها/Ingress جمع می‌کند — خروجی آزاد،
+# ورودی فقط از Grafana
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: grafana}}
+      ports:
+        - {protocol: TCP, port: 9090}
+  egress:
+    - {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+      ports:
+        - {protocol: TCP, port: 9093}
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: backend-api}}
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+# Grafana از Service نوع LoadBalancer (پورت 3030 سیستم) در دسترس است — مبدأ ترافیک IP های Node است
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - {protocol: TCP, port: 3000}
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+      ports:
+        - {protocol: TCP, port: 9090}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: exporters
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [node-exporter, kube-state-metrics]
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+      ports:
+        - {protocol: TCP, port: 9100}
+        - {protocol: TCP, port: 8080}
+        - {protocol: TCP, port: 8081}
+  # kube-state-metrics وضعیت منابع را از API Server کوبرنتیز می‌خواند
+  egress:
+    - ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 6443}

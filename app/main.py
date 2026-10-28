@@ -27,6 +27,7 @@ from app.routers import (
     candidates,
     genai,
     health,
+    internal,
     interviews,
     jobs,
     notifications,
@@ -92,6 +93,8 @@ app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notif
 app.include_router(ops.router, prefix=f"{settings.API_V1_PREFIX}/ops")
 app.include_router(genai.router, prefix=f"{settings.API_V1_PREFIX}/genai")
 app.include_router(tenants.router, prefix=f"{settings.API_V1_PREFIX}/tenant")
+# مسیرهای سرویس‌به‌سرویس (Zero-Trust): فقط از داخل شبکه و با توکن سرویس — app/routers/internal.py
+app.include_router(internal.router, prefix=f"{settings.API_V1_PREFIX}/internal")
 
 # متریک‌های Prometheus (GET /metrics) — عمداً آخرین Middleware اضافه می‌شود تا
 # بیرونی‌ترین لایه باشد و پاسخ‌های CORS/Rate Limit (429) را هم بشمارد.

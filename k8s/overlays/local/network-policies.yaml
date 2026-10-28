@@ -1,0 +1,20 @@
+# Zero-Trust — پالیسی سرویس‌های فقط-لوکال (پایه: k8s/base/network-policies.yaml)
+# Mailpit: SMTP فقط از Worker ها؛ رابط وب (LoadBalancer پورت 8025 سیستم) از بیرون
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailpit
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: worker}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: resume-worker}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: genai-worker}}
+      ports:
+        - {protocol: TCP, port: 1025}
+    - ports:
+        - {protocol: TCP, port: 8025}

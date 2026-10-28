@@ -28,6 +28,7 @@ resources:
   - storageclass.yaml
   - offsite-pvc.yaml
   - mailpit.yaml
+  - network-policies.yaml
 
 # ایمیج‌های ساخته‌شده روی همین سیستم (docker compose build یا k8s/deploy.sh). Docker Desktop
 # از همان Image Store موتور داکر استفاده می‌کند؛ با تگ غیر latest، imagePullPolicy پیش‌فرض
@@ -69,6 +70,14 @@ secretGenerator:
   - name: ats-genai-secrets
     envs:
       - secrets/genai.env
+  # Zero-Trust: کلید خصوصی ES256 سرویس هوش مصنوعی (فقط به genai-worker، به‌صورت فایل) و کلید عمومی آن
+  # برای API — deploy.sh یک‌بار می‌سازد (secrets/service-auth؛ در .gitignore)
+  - name: ats-service-auth-genai-worker
+    files:
+      - genai-worker.key=secrets/service-auth/genai-worker.key
+  - name: ats-service-auth-public
+    files:
+      - genai-worker.pem=secrets/service-auth/genai-worker.pem
 
 patches:
   # همه‌ی PVC ها (و PVC های StatefulSet پستگرس) روی StorageClass با Retain

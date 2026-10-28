@@ -40,6 +40,25 @@ if [[ ! -f "${ENV_FILE:-.env}" ]]; then
     fail "فایل ${ENV_FILE:-.env} در ${PROJECT_DIR} وجود ندارد (بنگرید .env.example و README بخش استقرار)."
 fi
 
+# Zero-Trust: کلید سرویس‌به‌سرویس Worker (ES256) — فقط یک‌بار و فقط روی خود سرور ساخته می‌شود؛ هرگز در
+# ریپو، .env یا خروجی CI نیست. پوشه‌ی secrets فقط برای کاربر استقرار باز است؛ خود فایل‌ها برای کاربر
+# داخل کانتینر (uid 10001) خواندنی‌اند. چرخش کلید: هر دو فایل را پاک و دوباره مستقر کنید.
+ensure_service_keys() {
+    local dir="secrets/service-auth"
+    if [[ -f "${dir}/worker.key" && -f "${dir}/public/worker.pem" ]]; then
+        return 0
+    fi
+    command -v openssl >/dev/null 2>&1 || fail "openssl روی سرور نصب نیست (برای ساخت کلید سرویس‌ها لازم است)."
+    mkdir -p "${dir}/public"
+    chmod 700 secrets "${dir}"
+    (umask 077 && openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "${dir}/worker.key" 2>/dev/null)
+    openssl pkey -in "${dir}/worker.key" -pubout -out "${dir}/public/worker.pem" 2>/dev/null
+    chmod 444 "${dir}/worker.key" "${dir}/public/worker.pem"
+    chmod 755 "${dir}/public"
+    log "کلید سرویس Worker ساخته شد (secrets/service-auth) — فقط کلید عمومی در اختیار API است"
+}
+ensure_service_keys
+
 # نسخه‌ی کاندید جدا نوشته می‌شود؛ فقط بعد از موفقیت کامل جای release.env را می‌گیرد،
 # تا هر دستور دستی بعدی (deploy/compose.sh) همیشه نسخه‌ی «سالم» آخر را ببیند
 cat > "${CANDIDATE_RELEASE_ENV}" <<EOF

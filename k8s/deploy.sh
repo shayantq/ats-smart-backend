@@ -89,6 +89,16 @@ GENAI_STRUCTURED_OUTPUT=json_schema
 EOF
     ok "genai.env (خالی — تولید سؤال مصاحبه غیرفعال؛ راهنما: genai.env.example)"
 fi
+# Zero-Trust: جفت‌کلید ES256 سرویس هوش مصنوعی (genai-worker ← API با X-Internal-Auth) — یک‌بار و فقط
+# روی همین سیستم ساخته می‌شود (در .gitignore)؛ چرخش کلید: هر دو فایل را پاک و دوباره مستقر کنید
+SERVICE_AUTH_DIR="${SECRETS_DIR}/service-auth"
+if [[ ! -f "${SERVICE_AUTH_DIR}/genai-worker.key" || ! -f "${SERVICE_AUTH_DIR}/genai-worker.pem" ]]; then
+    command -v openssl >/dev/null 2>&1 || { echo "openssl پیدا نشد (برای ساخت کلید سرویس‌ها لازم است)" >&2; exit 1; }
+    mkdir -p "${SERVICE_AUTH_DIR}"
+    (umask 077 && openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "${SERVICE_AUTH_DIR}/genai-worker.key" 2>/dev/null)
+    openssl pkey -in "${SERVICE_AUTH_DIR}/genai-worker.key" -pubout -out "${SERVICE_AUTH_DIR}/genai-worker.pem" 2>/dev/null
+    ok "کلید سرویس genai-worker ساخته شد (secrets/service-auth) — API فقط کلید عمومی را می‌گیرد"
+fi
 for name in postgres backend grafana; do
     [[ -f "${SECRETS_DIR}/${name}.env" ]] || die "فایل ${SECRETS_DIR}/${name}.env وجود ندارد (نمونه: ${name}.env.example)"
 done

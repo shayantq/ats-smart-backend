@@ -21,6 +21,7 @@ labels:
 
 resources:
   - inference.yaml
+  - network-policy.yaml
 
 secretGenerator:
   - name: genai-inference-model

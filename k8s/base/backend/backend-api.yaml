@@ -123,13 +123,25 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          env:
+            # Zero-Trust: فقط کلیدهای عمومی سرویس‌های مجاز برای اعتبارسنجی X-Internal-Auth
+            - name: SERVICE_AUTH_PUBLIC_KEYS_DIR
+              value: /run/service-auth/public
           volumeMounts:
             - name: media
               mountPath: /app/media
+            - name: service-auth-public
+              mountPath: /run/service-auth/public
+              readOnly: true
       volumes:
         - name: media
           persistentVolumeClaim:
             claimName: media
+        - name: service-auth-public
+          secret:
+            secretName: ats-service-auth-public
+            defaultMode: 0444
+            optional: true
 ---
 # نام DNS «backend-api» — فرانت‌اند (Nginx) و Alertmanager درخواست‌ها را به این آدرس می‌فرستند.
 # kube-proxy بار را بین همه‌ی Pod های Ready پخش می‌کند.

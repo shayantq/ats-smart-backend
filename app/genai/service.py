@@ -18,11 +18,13 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+import httpx
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
+from app.core.service_auth import BACKEND_AUDIENCE, SERVICE_AUTH_HEADER, issue_service_token
 from app.genai.client import ChatCompletionsClient, CompletionResult, GenAIError, GenAIOutputError
 from app.genai.contract import LLM_SCHEMA_NAME, llm_output_json_schema
 from app.genai.prompts import (
@@ -184,6 +186,24 @@ async def latest_processed_resume(
     return result.scalar_one_or_none()
 
 
+async def load_interview_profile(session: AsyncSession, application: Application) -> dict:
+    """
+    Zero-Trust: وقتی INTERNAL_API_URL و کلید خصوصی همین سرویس تنظیم شده‌اند، پروفایل کارجو از سرویس
+    رزومه/بک‌اند (GET /api/v1/internal/applications/{id}/interview-profile) با توکن سرویس امضاشده و محدود
+    به سازمان همین درخواست گرفته می‌شود؛ Worker مستقیماً جدول‌های رزومه را نمی‌خواند. خطای شبکه/پاسخ
+    ناموفق استثنا پرتاب می‌کند تا صف کار را با فاصله تکرار کند. بدون تنظیمات ← همان مسیر قبلی (دیتابیس).
+    """
+    if not settings.internal_api_enabled:
+        return await build_profile_for_application(session, application)
+    token = issue_service_token(audience=BACKEND_AUDIENCE, tenant_id=application.tenant_id)
+    base_url = f"{settings.INTERNAL_API_URL.rstrip('/')}{settings.API_V1_PREFIX}/internal"
+    url = f"{base_url}/applications/{application.id}/interview-profile"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0)) as client:
+        response = await client.get(url, headers={SERVICE_AUTH_HEADER: token})
+    response.raise_for_status()
+    return response.json()["profile"]
+
+
 async def run_question_set_job(question_set_id: uuid.UUID, session_factory: async_sessionmaker[AsyncSession]) -> None:
     """
     کار Worker: یک بانک سؤال pending را تولید و ذخیره می‌کند.
@@ -200,7 +220,7 @@ async def run_question_set_job(question_set_id: uuid.UUID, session_factory: asyn
         question_set.status = "processing"
         question_set.attempts += 1
         question_set.error = None
-        profile = await build_profile_for_application(session, application)
+        profile = await load_interview_profile(session, application)
         question_set.input_profile = profile
         question_set.prompt_version = PROMPT_VERSION
         question_set.provider_model = settings.GENAI_MODEL or None

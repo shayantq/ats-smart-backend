@@ -16,6 +16,7 @@
 - [متغیرهای محیطی](#متغیرهای-محیطی)
 - [API و امکانات](#api-و-امکانات)
 - [چندمستاجری (Multi-Tenancy)](#چندمستاجری-multi-tenancy)
+- [Zero-Trust بین سرویس‌ها](#zero-trust-بین-سرویسها)
 - [خط لوله‌ی هوش مصنوعی رزومه](#خط-لولهی-هوش-مصنوعی-رزومه)
 - [تولید سؤال مصاحبه با هوش مصنوعی مولد](#تولید-سؤال-مصاحبه-با-هوش-مصنوعی-مولد)
 - [تست بار و امنیت](#تست-بار-و-امنیت)
@@ -118,6 +119,7 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 | `OPS_WEBHOOK_TOKEN` | توکن مشترک Alertmanager و CI برای `/api/v1/ops/*` — خالی = غیرفعال |
 | `OPS_ALERT_RECIPIENT_ROLES` | نقش‌های «تیم فنی» که هشدارها را می‌گیرند (پیش‌فرض `Admin`) |
 | `OPS_ALERT_TENANT_ID` | سازمان گرداننده‌ی پلتفرم که تیم فنی عضو آن است — خالی = سازمانِ قدیمی‌ترین Admin (هشدار زیرساخت به Admin سازمان‌های مشتری نمی‌رسد) |
+| `SERVICE_NAME` · `SERVICE_AUTH_PRIVATE_KEY_FILE` · `SERVICE_AUTH_PUBLIC_KEYS_DIR` · `INTERNAL_API_URL` | Zero-Trust: نام سرویس در توکن‌های داخلی، فایل کلید خصوصی (فقط سرویس فرستنده)، پوشه‌ی کلیدهای عمومی (فقط API)، نشانی داخلی API — خالی = مسیر قدیمی |
 | `DB_RLS_ROLE` | نقش دیتابیسی که درخواست‌های API به آن سوئیچ می‌کنند تا RLS اعمال شود (پیش‌فرض `ats_app`) |
 | `GENAI_BASE_URL` · `GENAI_MODEL` · `GENAI_API_KEY` | سرویس مدل زبانی سازگار با Chat Completions برای تولید سؤال مصاحبه — خالی = غیرفعال (`503`)؛ `GENAI_STRUCTURED_OUTPUT`، `GENAI_TIMEOUT_SECONDS`، `GENAI_MAX_OUTPUT_TOKENS`، `GENAI_TEMPERATURE` |
 | `POSTGRES_*` · `PUBLIC_BASE_URL` · `GRAFANA_ADMIN_*` · `GATEWAY_HTTP_PORT` | فقط Docker Compose / سرور |
@@ -280,6 +282,18 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 - **رکورد سازمان دیگر ← `404`،** عیناً مثل شناسه‌ی ناموجود.
 - **مایگریشن بدون قفل طولانی:** Backfill دسته‌ای، قیدهای `NOT VALID` ← `VALIDATE`، ایندکس `CONCURRENTLY`، و `lock_timeout` سه‌ثانیه‌ای با تلاش دوباره. داده‌ی پیشین به «سازمان پیش‌فرض» منتقل می‌شود.
 - **راستی‌آزمایی:** `tests/integration/test_tenant_isolation.py`، `test_tenancy_migration.py` و `bash k8s/tenant-isolation-check.sh` (کلاستر زنده ← `[TENANT ISOLATION PASS]`).
+
+---
+
+## Zero-Trust بین سرویس‌ها
+
+هیچ سرویسی صرفاً چون داخل شبکه است مورد اعتماد نیست. معماری کامل: [`docs/zero-trust/ARCHITECTURE.md`](docs/zero-trust/ARCHITECTURE.md).
+
+- **توکن سرویس‌به‌سرویس:** JWT نامتقارن ES256 در هدر `X-Internal-Auth`؛ هر سرویس فرستنده کلید خصوصی خودش را دارد و API فقط کلیدهای عمومی را. عمر ۶۰ ثانیه، `aud`، `jti` و محدود به سازمان (`tid` ← RLS). بدون توکن معتبر ← `401` (`app/core/service_auth.py`).
+- **مسیرهای داخلی** `/api/v1/internal/*` (`app/routers/internal.py`): از اینترنت وجود ندارند (درخواست عبوری از Gateway/Ingress ← `404`). مسیر واقعی: سرویس هوش مصنوعی پروفایل کارجو را از API می‌گیرد، نه مستقیم از دیتابیس.
+- **کلیدها:** فقط فایل Secret — Compose secret روی سرور (`deploy/deploy.sh` یک‌بار می‌سازد) و Secret کوبرنتیز (`k8s/deploy.sh`)؛ هرگز در ریپو، `.env` یا ConfigMap.
+- **تفکیک شبکه:** PostgreSQL و Redis فقط روی شبکه‌های `internal` خودشان (`ats_data`، `ats_cache`)؛ NetworkPolicy های default-deny در `k8s/base/network-policies.yaml`.
+- **راستی‌آزمایی:** `bash deploy/zero-trust-check.sh` روی سرور ← `[ZERO TRUST PASS]`.
 
 ---
 

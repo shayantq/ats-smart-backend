@@ -30,6 +30,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
+        # فایل‌های Secret کلید سرویس (حالت 0440) برای گروه کاربر برنامه خواندنی باشند
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -54,6 +56,15 @@ spec:
         - name: genai-worker
           image: ats-smart-backend
           command: ["python", "-m", "app.worker", "genai"]
+          # Zero-Trust: پروفایل کارجو از API با توکن سرویس امضاشده (X-Internal-Auth) خوانده می‌شود؛ کلید
+          # خصوصی فقط به‌صورت فایل از Secret (نه متغیر محیطی یا ConfigMap)
+          env:
+            - name: SERVICE_NAME
+              value: genai-worker
+            - name: SERVICE_AUTH_PRIVATE_KEY_FILE
+              value: /run/secrets/service-auth/genai-worker.key
+            - name: INTERNAL_API_URL
+              value: http://backend-api:8000
           envFrom:
             - configMapRef:
                 name: ats-config
@@ -69,7 +80,16 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          volumeMounts:
+            - name: service-auth-key
+              mountPath: /run/secrets/service-auth
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+      volumes:
+        - name: service-auth-key
+          secret:
+            secretName: ats-service-auth-genai-worker
+            defaultMode: 0440

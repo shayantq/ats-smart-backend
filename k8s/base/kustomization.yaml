@@ -48,6 +48,8 @@ resources:
   # پشتیبان‌گیری و بازیابی فاجعه
   - backup/backup.yaml
   - backup/backup-drill.yaml
+  # Zero-Trust: default-deny + اجازه‌ی صریح هر ارتباط (docs/zero-trust/ARCHITECTURE.md)
+  - network-policies.yaml
 
 configMapGenerator:
   # تنظیمات غیرحساس برنامه (معادل بخش غیرمحرمانه‌ی .env) — Overlay ها مقادیر

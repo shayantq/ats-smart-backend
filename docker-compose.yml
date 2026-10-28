@@ -91,7 +91,7 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - ats_network
+      - ats_data
 
   redis_cache:
     image: redis:7.4-alpine
@@ -121,7 +121,7 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - ats_network
+      - ats_cache
 
   # =========================================================================
   # لایه‌ی برنامه
@@ -136,6 +136,9 @@ services:
     depends_on:
       postgres_db:
         condition: service_healthy
+    networks:
+      - ats_data
+
 
   backend_api:
     <<: *backend-common
@@ -151,6 +154,13 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    networks:
+      - ats_network
+      - ats_data
+      - ats_cache
+      - ats_internal
+      - ats_monitoring
+
 
   worker:
     <<: *backend-common
@@ -168,6 +178,13 @@ services:
         condition: service_completed_successfully
 
   # یادآورهای مصاحبه (۲۴ ساعت پیش از جلسه) را در لحظه‌ی موعد وارد صف می‌کند
+    networks:
+      - ats_data
+      - ats_cache
+      - ats_internal
+      - ats_egress
+
+
   scheduler:
     <<: *backend-common
     command: ["rqscheduler", "--url", "redis://redis_cache:6379/0", "--interval", "30"]
@@ -176,6 +193,9 @@ services:
     depends_on:
       redis_cache:
         condition: service_healthy
+    networks:
+      - ats_cache
+
 
   frontend:
     image: ${FRONTEND_IMAGE:-ats-smart-frontend:local}
@@ -210,7 +230,7 @@ services:
     depends_on:
       - alertmanager
     networks:
-      - ats_network
+      - ats_monitoring
 
   alertmanager:
     image: prom/alertmanager:v0.27.0
@@ -232,7 +252,7 @@ services:
     ports:
       - "9093:9093"
     networks:
-      - ats_network
+      - ats_monitoring
 
   grafana:
     image: grafana/grafana:11.2.0
@@ -253,6 +273,7 @@ services:
       - prometheus
     networks:
       - ats_network
+      - ats_monitoring
 
   # متریک‌های سخت‌افزاری میزبان: CPU، RAM، دیسک، شبکه
   # + متریک‌های سرویس backup (زمان/حجم آخرین بک‌آپ موفق) از طریق textfile collector
@@ -270,7 +291,7 @@ services:
       - /sys:/host/sys:ro
       - backup_metrics:/backup_metrics:ro
     networks:
-      - ats_network
+      - ats_monitoring
 
   # متریک‌های PostgreSQL: کانکشن‌های فعال، تراکنش‌ها، حجم دیتابیس
   postgres_exporter:
@@ -282,7 +303,8 @@ services:
       postgres_db:
         condition: service_healthy
     networks:
-      - ats_network
+      - ats_data
+      - ats_monitoring
 
   # متریک‌های Redis: حافظه، کلاینت‌های متصل، کلیدها
   redis_exporter:
@@ -294,7 +316,8 @@ services:
       redis_cache:
         condition: service_healthy
     networks:
-      - ats_network
+      - ats_cache
+      - ats_monitoring
 
   # =========================================================================
   # پشتیبان‌گیری و بازیابی فاجعه (Disaster Recovery) — کد و پیکربندی در پوشه‌ی backup/
@@ -343,7 +366,7 @@ services:
       postgres_db:
         condition: service_healthy
     networks:
-      - ats_network
+      - ats_data
       - offsite_network
 
   # فقط محیط لوکال: شبیه‌ساز «سرور Offsite» — یک SFTP با Volume و شبکه‌ی جدای خودش که فقط
@@ -399,13 +422,30 @@ volumes:
   offsite_data:
 
 # ---------------------------------------------------------------------------
-# شبکه‌ی داخلی ایزوله: کانتینرها با نام سرویس یکدیگر را پیدا می‌کنند و
-# PostgreSQL/Redis هیچ پورتی به بیرون از این شبکه باز نمی‌کنند
+# شبکه‌های داخلی ایزوله: کانتینرها با نام سرویس یکدیگر را پیدا می‌کنند و PostgreSQL/Redis هیچ پورتی
+# به بیرون باز نمی‌کنند — و فقط از سرویس‌هایی که عضو همان شبکه‌اند در دسترس‌اند (docs/zero-trust)
 # ---------------------------------------------------------------------------
 networks:
+  # لایه‌ی وب: Gateway/فرانت‌اند/API/Grafana. نام قابل تغییر: محیط Production می‌تواند کنار محیط
+  # توسعه/Staging روی یک ماشین اجرا شود
   ats_network:
-    # نام قابل تغییر: محیط Production می‌تواند کنار محیط توسعه/Staging روی یک ماشین اجرا شود
     name: ${ATS_NETWORK_NAME:-ats_network}
+    driver: bridge
+  # Zero-Trust — تفکیک شبکه: هر سرویس فقط عضو شبکه‌هایی است که واقعاً لازم دارد. Docker بسته‌های بین
+  # شبکه‌های جدا را در لایه‌ی IP دور می‌ریزد؛ پس کانتینری بیرون از ats_data (مثلاً فرانت‌اند یا یک کانتینر
+  # ناشناس) حتی اتصال TCP به PostgreSQL را برقرار نمی‌کند. internal: true = بدون دسترسی به اینترنت.
+  ats_data:
+    internal: true
+  ats_cache:
+    internal: true
+  # فراخوانی سرویس‌به‌سرویس امضاشده (Worker ← API با X-Internal-Auth)
+  ats_internal:
+    internal: true
+  # جمع‌آوری متریک و هشدار (Prometheus/Alertmanager/Exporter ها ← API)
+  ats_monitoring:
+    driver: bridge
+  # خروجی اینترنت Worker (SMTP، سرویس مدل زبانی بیرونی)
+  ats_egress:
     driver: bridge
   # شبکه‌ی جدای مسیر بک‌آپ: سرور Offsite از هیچ سرویس دیگری (API، دیتابیس، ...) در دسترس نیست
   offsite_network:
