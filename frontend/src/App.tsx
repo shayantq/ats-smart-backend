@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import ActiveSessionsPanel from "./components/security/ActiveSessionsPanel";
 import { ToastProvider } from "./context/ToastContext";
 import HRDashboard from "./pages/HRDashboard";
 import CandidatePortal from "./pages/CandidatePortal";
 import LoginPage from "./pages/LoginPage";
 import { UNAUTHORIZED_EVENT } from "./services/apiClient";
 import { fetchCurrentUser } from "./services/authApi";
+import { logoutCurrentSession } from "./services/sessionsApi";
 import { clearToken, getToken } from "./services/tokenStorage";
 import { useAppDispatch, useAppSelector } from "./store/hooks";
 import { clearUser, setUser } from "./store/slices/authSlice";
@@ -23,6 +25,10 @@ function App() {
   const user = useAppSelector((state) => state.auth.user);
   // اگر از قبل توکنی ذخیره شده، پیش از تصمیم‌گیری بین «صفحه‌ی ورود» و «پورتال» اعتبارش سنجیده می‌شود
   const [isRestoringSession, setIsRestoringSession] = useState(() => Boolean(getToken()));
+  // لینک «مشاهده‌ی نشست‌های فعال» در ایمیل هشدار ورود: /?view=sessions
+  const [showSessions, setShowSessions] = useState(
+    () => new URLSearchParams(window.location.search).get("view") === "sessions",
+  );
 
   useEffect(() => {
     if (!isRestoringSession) return;
@@ -43,7 +49,10 @@ function App() {
   }, [dispatch, queryClient]);
 
   function handleLogout() {
+    // نشست همین دستگاه سمت سرور هم باطل شود (کوکی Refresh Token دیگر قابل استفاده نیست)؛ خطای شبکه مانع خروج نمی‌شود
+    logoutCurrentSession().catch(() => undefined);
     clearToken();
+    setShowSessions(false);
     dispatch(clearUser());
     queryClient.clear(); // داده‌های کش‌شده‌ی کاربر قبلی برای کاربر بعدی نمی‌ماند
   }
@@ -66,6 +75,13 @@ function App() {
                   <span dir="ltr">{user.email}</span> · {ROLE_LABELS[user.role] ?? user.role}
                 </span>
                 <button
+                  onClick={() => setShowSessions((value) => !value)}
+                  aria-pressed={showSessions}
+                  className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  {showSessions ? "بازگشت" : "نشست‌های فعال"}
+                </button>
+                <button
                   onClick={handleLogout}
                   className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                 >
@@ -74,7 +90,7 @@ function App() {
               </div>
             </div>
           </header>
-          {user.role === "Candidate" ? <CandidatePortal /> : <HRDashboard />}
+          {showSessions ? <ActiveSessionsPanel /> : user.role === "Candidate" ? <CandidatePortal /> : <HRDashboard />}
         </>
       )}
     </ToastProvider>

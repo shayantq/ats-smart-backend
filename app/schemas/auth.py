@@ -3,7 +3,7 @@
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from typing import Optional
@@ -155,3 +155,77 @@ class CurrentUserResponse(BaseModel):
     email: EmailStr
     role: str
     tenant_id: Optional[uuid.UUID] = None
+
+
+class RefreshRequest(BaseModel):
+    """بدنه‌ی اختیاری POST /api/v1/auth/refresh — مرورگر توکن را از کوکی HttpOnly می‌فرستد."""
+
+    refresh_token: Optional[str] = None
+
+
+class RefreshResponse(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class SessionLocation(BaseModel):
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+    city: Optional[str] = None
+
+
+class SessionResponse(BaseModel):
+    """یک نشست فعال (دستگاه) کاربر — GET /api/v1/auth/sessions/"""
+
+    id: str
+    browser: str
+    browser_version: str
+    os: str
+    os_version: str
+    device_type: str
+    device: str
+    user_agent: str
+    ip: str
+    location: Optional[SessionLocation] = None
+    created_at: datetime
+    last_active_at: datetime
+    expires_at: datetime
+    is_current: bool
+    suspicious: bool
+
+    @classmethod
+    def from_store(cls, data: dict, current_session_id: str | None, mask_ip) -> "SessionResponse":
+        """ردیف Hash نشست در Redis (app/core/sessions.py) → پاسخ API. IP نشست‌های دیگر نیمه‌پنهان است."""
+
+        def timestamp(name: str) -> datetime:
+            return datetime.fromtimestamp(float(data[name]), tz=timezone.utc)
+
+        is_current = data["sid"] == current_session_id
+        location = None
+        if data.get("country_code"):
+            location = SessionLocation(
+                country=data.get("country") or None, country_code=data["country_code"], city=data.get("city") or None
+            )
+        return cls(
+            id=data["sid"],
+            browser=data.get("browser", ""),
+            browser_version=data.get("browser_version", ""),
+            os=data.get("os", ""),
+            os_version=data.get("os_version", ""),
+            device_type=data.get("device_type", ""),
+            device=data.get("device", ""),
+            user_agent=data.get("user_agent", ""),
+            ip=data.get("ip", "") if is_current else mask_ip(data.get("ip")),
+            location=location,
+            created_at=timestamp("created_at"),
+            last_active_at=timestamp("last_active_at"),
+            expires_at=timestamp("expires_at"),
+            is_current=is_current,
+            suspicious=data.get("suspicious") == "1",
+        )
+
+
+class SessionListResponse(BaseModel):
+    items: list[SessionResponse]

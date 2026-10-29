@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.core.tenancy import SCOPE_TENANT, TenantContext, TenantAccessError, use_tenant_context
 from app.models import Application, Candidate, Job, Resume, User
-from tests.integration.conftest import TEST_PASSWORD, auth_headers
+from tests.integration.conftest import TEST_PASSWORD, auth_headers, seed_session
 
 
 @pytest.fixture
@@ -203,8 +203,9 @@ async def test_candidate_applies_to_two_orgs_each_sees_only_its_application(clie
 
 async def test_token_tenant_must_match_user_tenant(client, two_orgs):
     hr_a = two_orgs["A"]["hr"]
-    legacy_token, _ = create_access_token(str(hr_a.id))  # توکن قدیمی بدون tid
-    forged_token, _ = create_access_token(str(hr_a.id), tenant_id=two_orgs["B"]["company"].id)
+    session_id = seed_session(hr_a.id)  # نشست معتبر — فقط ناهمخوانی سازمان باید رد شود
+    legacy_token, _ = create_access_token(str(hr_a.id), session_id=session_id)  # توکن قدیمی بدون tid
+    forged_token, _ = create_access_token(str(hr_a.id), tenant_id=two_orgs["B"]["company"].id, session_id=session_id)
     for token in (legacy_token, forged_token):
         response = await client.get("/api/v1/jobs/", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 200  # مسیر عمومی؛ ولی…

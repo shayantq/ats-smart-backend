@@ -2,26 +2,45 @@
 مسیرهای ارتباطی احراز هویت: ثبت‌نام (Public) و ورود (Public).
 هر دو مسیر تحت محدودیت نرخ درخواست (Rate Limit) هستند تا در برابر
 حملات حدس رمز عبور (Brute-Force) و DDOS محافظت شوند.
+
+مدیریت نشست‌ها (app/core/sessions.py): هر ورود یک نشست در Redis می‌سازد؛ نوسازی توکن (/refresh)،
+فهرست دستگاه‌ها (/sessions/)، خروج از دستگاه‌های دیگر (DELETE /sessions/{id}/) و خروج (/logout).
 """
 
 import asyncio
 import secrets
+import uuid
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
+from jose import JWTError
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import delete_cached, get_cached_json, set_cached_json
 from app.core.config import settings
-from app.core.deps import get_current_user
+from app.core.deps import get_current_session_id, get_current_user
 from app.core.limiter import limiter
 from app.core.notification_service import notify_new_user_registered
 from app.core.queue import enqueue_task
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    decode_token,
     hash_password_async,
     verify_login_password_async,
+)
+from app.core.sessions import (
+    CreatedSession,
+    SessionInvalid,
+    SessionStoreUnavailable,
+    create_session,
+    list_sessions,
+    mask_ip,
+    revoke_session,
+    rotate_refresh,
 )
 from app.core.tenancy import system_scope
 from app.core.tenant_provisioning import provision_tenant
@@ -33,19 +52,77 @@ from app.schemas.auth import (
     ForgotPasswordResponse,
     LoginRequest,
     LoginResponse,
+    RefreshRequest,
+    RefreshResponse,
     RegisterRequest,
     RegisterResponse,
     RegisterResponseData,
     ResetPasswordRequest,
     ResetPasswordResponse,
+    SessionListResponse,
+    SessionResponse,
 )
-from app.tasks.notifications import send_otp_email_task
+from app.tasks.notifications import (
+    send_new_signin_email_task,
+    send_otp_email_task,
+    send_suspicious_login_email_task,
+)
 
 router = APIRouter()
 
 # مدت اعتبار کد OTP بازیابی رمز عبور
 _OTP_TTL_SECONDS = 600  # ۱۰ دقیقه
 _OTP_CACHE_KEY_PREFIX = "password_reset_otp:"
+
+REFRESH_COOKIE_NAME = "refresh_token"
+# ساعت ایران (بدون ساعت تابستانی از ۱۴۰۱) برای زمان ورود در ایمیل هشدار
+_IRAN_TZ = timezone(timedelta(hours=3, minutes=30))
+
+
+def _session_store_unavailable() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="سرویس نشست موقتاً در دسترس نیست.")
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str, max_age: int) -> None:
+    """Refresh Token در کوکی HttpOnly + Secure (در دسترس جاوااسکریپت فرانت‌اند نیست)."""
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=max_age,
+        path=f"{settings.API_V1_PREFIX}/auth",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME, path=f"{settings.API_V1_PREFIX}/auth", secure=True, httponly=True, samesite="strict"
+    )
+
+
+async def _enqueue_login_alerts(email: str, created: CreatedSession) -> None:
+    """
+    ایمیل هشدار امنیتی ورود در صف Redis (ارسال واقعی با Worker؛ ورود هرگز معطل SMTP نمی‌ماند):
+    ورود مشکوک → «Suspicious Login»؛ وگرنه مرورگر/IP تازه → «ورود از دستگاه جدید». اولین ورود → هیچ.
+    """
+    assessment, data = created.assessment, created.data
+    if not (assessment.suspicious or assessment.should_alert_new_device):
+        return
+    signed_in_at = datetime.fromtimestamp(float(data["created_at"]), tz=_IRAN_TZ)
+    details = {
+        "signed_in_at": f"{signed_in_at:%Y-%m-%d %H:%M} (Tehran)",
+        "browser": f"{data['browser']} {data['browser_version']}".strip(),
+        "os": f"{data['os']} {data['os_version']}".strip(),
+        "ip": data["ip"],
+        "location": created.geo.label if created.geo else "نامشخص",
+        "sessions_url": f"{settings.FRONTEND_ORIGIN.rstrip('/')}/?view=sessions",
+    }
+    if assessment.suspicious:
+        await enqueue_task(send_suspicious_login_email_task, email, details, assessment.reasons)
+    else:
+        await enqueue_task(send_new_signin_email_task, email, details)
 
 
 @router.post(
@@ -143,20 +220,27 @@ async def login_user(
             detail="ایمیل یا گذرواژه نادرست است.",
         )
 
-    # tid (سازمان کارمند) داخل توکن امضاشده — منبع Context چندمستاجری هر درخواست بعدی
-    access_token, expires_in = create_access_token(subject=str(user.id), tenant_id=user.tenant_id)
-    refresh_token, refresh_max_age = create_refresh_token(subject=str(user.id))
+    # نشست تازه در Redis: IP، مرورگر، سیستم‌عامل، موقعیت، زمان — Refresh Token فقط با همین نشست معتبر است
+    try:
+        created = await create_session(
+            user_id=str(user.id),
+            tenant_id=str(user.tenant_id) if user.tenant_id else None,
+            ip=get_remote_address(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+    except SessionStoreUnavailable:
+        raise _session_store_unavailable()
 
-    # تنظیم Refresh Token در قالب کوکی امن (نه در دسترس جاوااسکریپت فرانت‌اند)
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        max_age=refresh_max_age,
-        path=f"{settings.API_V1_PREFIX}/auth",
+    # tid (سازمان کارمند) و sid (نشست) داخل توکن امضاشده — منبع Context چندمستاجری هر درخواست بعدی
+    access_token, expires_in = create_access_token(
+        subject=str(user.id), tenant_id=user.tenant_id, session_id=created.session_id
     )
+    refresh_token, refresh_max_age = create_refresh_token(
+        subject=str(user.id), session_id=created.session_id, jti=created.refresh_jti
+    )
+    _set_refresh_cookie(response, refresh_token, refresh_max_age)
+
+    await _enqueue_login_alerts(user.email, created)
 
     return LoginResponse(
         access_token=access_token,
@@ -164,6 +248,128 @@ async def login_user(
         token_type="bearer",
         expires_in=expires_in,
     )
+
+
+def _refresh_rejected(detail: str = "نشست شما پایان یافته است؛ لطفاً دوباره وارد شوید.") -> JSONResponse:
+    """401 همراه با پاک کردن کوکی — فرانت‌اند کاربر را به صفحه‌ی ورود می‌برد."""
+    rejected = JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": detail}, headers={"WWW-Authenticate": "Bearer"}
+    )
+    _clear_refresh_cookie(rejected)
+    return rejected
+
+
+@router.post(
+    "/refresh",
+    response_model=RefreshResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Auth"],
+    summary="نوسازی access_token با Refresh Token (کوکی یا بدنه) و چرخش Refresh Token",
+    responses={401: {"description": "نشست باطل، منقضی یا Refresh Token تکراری — ورود دوباره"}},
+)
+@limiter.limit("30/minute")
+async def refresh_access_token(
+    request: Request,
+    response: Response,
+    payload: RefreshRequest | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    - Refresh Token از کوکی HttpOnly (مرورگر) یا بدنه‌ی درخواست (کلاینت‌های دیگر) خوانده می‌شود.
+    - نشستش باید در Redis باشد و jti آن همان jti فعلی نشست باشد؛ jti قبلی در فهرست سیاه می‌رود و
+      Refresh Token تازه صادر می‌شود (Rotation).
+    - نشست باطل‌شده (DELETE /sessions/{id}/)، jti در فهرست سیاه، استفاده‌ی دوباره از توکن قدیمی (که کل
+      نشست را باطل می‌کند) یا توکن قدیمی بدون sid → 401 و پاک شدن کوکی.
+    """
+    token = (payload.refresh_token if payload else None) or request.cookies.get(REFRESH_COOKIE_NAME)
+    if not token:
+        return _refresh_rejected("Refresh Token ارسال نشده است.")
+    try:
+        claims = decode_token(token)
+    except JWTError:
+        return _refresh_rejected()
+    if claims.get("type") != "refresh" or not claims.get("sid") or not claims.get("jti") or not claims.get("sub"):
+        return _refresh_rejected()
+
+    try:
+        outcome = await rotate_refresh(session_id=claims["sid"], jti=claims["jti"], user_id=claims["sub"])
+    except SessionInvalid:
+        return _refresh_rejected()
+    except SessionStoreUnavailable:
+        raise _session_store_unavailable()
+
+    user = (await db.execute(select(User).where(User.id == uuid.UUID(claims["sub"])))).scalar_one_or_none()
+    if user is None:
+        await revoke_session(claims["sid"])
+        return _refresh_rejected()
+
+    access_token, expires_in = create_access_token(
+        subject=str(user.id), tenant_id=user.tenant_id, session_id=claims["sid"]
+    )
+    new_refresh_token = None
+    if outcome.new_refresh_jti:
+        new_refresh_token, refresh_max_age = create_refresh_token(
+            subject=str(user.id), session_id=claims["sid"], jti=outcome.new_refresh_jti
+        )
+        _set_refresh_cookie(response, new_refresh_token, refresh_max_age)
+    return RefreshResponse(access_token=access_token, refresh_token=new_refresh_token, expires_in=expires_in)
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Auth"],
+    summary="خروج: ابطال نشست همین دستگاه",
+)
+async def logout(
+    current_user: User = Depends(get_current_user),
+    session_id: str = Depends(get_current_session_id),
+) -> Response:
+    try:
+        await revoke_session(session_id, user_id=str(current_user.id))
+    except SessionStoreUnavailable:
+        raise _session_store_unavailable()
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_refresh_cookie(response)
+    return response
+
+
+@router.get(
+    "/sessions/",
+    response_model=SessionListResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Auth"],
+    summary="فهرست دستگاه‌ها و نشست‌های فعال کاربر (مرورگر، سیستم‌عامل، IP، موقعیت، آخرین فعالیت)",
+)
+async def get_my_sessions(
+    current_user: User = Depends(get_current_user),
+    session_id: str = Depends(get_current_session_id),
+) -> SessionListResponse:
+    try:
+        sessions = await list_sessions(str(current_user.id))
+    except SessionStoreUnavailable:
+        raise _session_store_unavailable()
+    return SessionListResponse(items=[SessionResponse.from_store(row, session_id, mask_ip) for row in sessions])
+
+
+@router.delete(
+    "/sessions/{session_id}/",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Auth"],
+    summary="خروج از یک دستگاه دیگر (Force Logout): ابطال فوری نشست و Refresh Token آن",
+)
+async def revoke_my_session(session_id: str, current_user: User = Depends(get_current_user)) -> Response:
+    """
+    Refresh Token آن نشست فوراً در فهرست سیاه Redis می‌رود: نوسازی بعدی همان دستگاه → 401 و access_token
+    فعلی‌اش هم در درخواست بعدی رد می‌شود. نشست کاربر دیگر یا ناموجود → 404.
+    """
+    try:
+        revoked = await revoke_session(session_id, user_id=str(current_user.id))
+    except SessionStoreUnavailable:
+        raise _session_store_unavailable()
+    if not revoked:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="نشست پیدا نشد.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

@@ -59,6 +59,11 @@ ensure_service_keys() {
 }
 ensure_service_keys
 
+# مدیریت نشست‌ها: دیتابیس GeoIP تشخیص ورود مشکوک — در پس‌زمینه و جدا از نشست SSH (استقرار منتظر
+# دانلود نمی‌ماند و شکستش استقرار را متوقف نمی‌کند). پوشه پیش از بالا آمدن API ساخته می‌شود (Mount).
+mkdir -p geoip
+nohup setsid bash deploy/geoip-update.sh > geoip/update.log 2>&1 < /dev/null &
+
 # نسخه‌ی کاندید جدا نوشته می‌شود؛ فقط بعد از موفقیت کامل جای release.env را می‌گیرد،
 # تا هر دستور دستی بعدی (deploy/compose.sh) همیشه نسخه‌ی «سالم» آخر را ببیند
 cat > "${CANDIDATE_RELEASE_ENV}" <<EOF

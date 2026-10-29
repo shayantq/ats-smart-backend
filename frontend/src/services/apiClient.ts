@@ -3,22 +3,59 @@
  * توکن دسترسی کاربر لاگین‌شده را از localStorage می‌خواند (بنگرید tokenStorage.ts).
  */
 
-import { clearToken, getToken } from "./tokenStorage";
+import { clearToken, getToken, setToken } from "./tokenStorage";
 
 /**
- * وقتی سرور یک درخواست احرازشده را با 401 رد کند (توکن منقضی/نامعتبر)، توکن پاک و این
- * رویداد روی window پخش می‌شود؛ App.tsx با شنیدنش کاربر را به صفحه‌ی ورود برمی‌گرداند.
+ * وقتی سرور یک درخواست احرازشده را با 401 رد کند (توکن منقضی/نامعتبر)، اول یک‌بار با Refresh Token
+ * (کوکی HttpOnly) توکن تازه گرفته و درخواست تکرار می‌شود. اگر نوسازی هم 401 بدهد (نشست این دستگاه
+ * باطل یا منقضی شده)، توکن پاک و این رویداد روی window پخش می‌شود؛ App.tsx با شنیدنش کاربر را به
+ * صفحه‌ی ورود برمی‌گرداند.
  */
 export const UNAUTHORIZED_EVENT = "ats:unauthorized";
 
-function handleUnauthorized(response: Response, usedAuth: boolean): void {
-  if (response.status === 401 && usedAuth && getToken()) {
-    clearToken();
-    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
-  }
+function forceLogin(): void {
+  clearToken();
+  window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+
+// چند درخواست هم‌زمانی که با 401 برگشته‌اند فقط یک نوسازی مشترک انجام می‌دهند (Refresh Token
+// چرخشی است؛ نوسازی‌های موازی با یک توکن، سرور را به «استفاده‌ی دوباره» مشکوک می‌کند)
+let refreshInFlight: Promise<boolean> | null = null;
+
+export function refreshAccessToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/refresh`, { method: "POST", credentials: "include" });
+        if (!response.ok) return false;
+        const body = (await response.json()) as { access_token: string };
+        setToken(body.access_token);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+/** درخواست احرازشده؛ 401 → یک‌بار نوسازی و تکرار؛ نوسازی ناموفق → صفحه‌ی ورود */
+async function fetchWithSession(send: () => Promise<Response>, usedAuth: boolean): Promise<Response> {
+  const response = await send();
+  if (response.status !== 401 || !usedAuth || !getToken()) {
+    return response;
+  }
+  if (await refreshAccessToken()) {
+    const retried = await send();
+    if (retried.status !== 401) return retried;
+  }
+  forceLogin();
+  return response;
+}
 
 /** خطای سرور را با کد وضعیت HTTP همراه نگه می‌دارد تا فراخوان بتواند 400 را از بقیه تشخیص دهد */
 export class ApiError extends Error {
@@ -60,25 +97,28 @@ interface ApiRequestOptions extends RequestInit {
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { auth = true, headers, ...rest } = options;
 
-  const finalHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(headers as Record<string, string> | undefined),
+  const send = () => {
+    const finalHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(headers as Record<string, string> | undefined),
+    };
+
+    if (auth) {
+      const token = getToken();
+      if (token) {
+        finalHeaders["Authorization"] = `Bearer ${token}`;
+      }
+    }
+
+    // credentials: کوکی HttpOnly نشست (فقط روی مسیرهای /auth) هنگام ورود ست و هنگام خروج پاک شود
+    return fetch(`${API_BASE_URL}${path}`, {
+      ...rest,
+      credentials: "include",
+      headers: finalHeaders,
+    });
   };
 
-  if (auth) {
-    const token = getToken();
-    if (token) {
-      finalHeaders["Authorization"] = `Bearer ${token}`;
-    }
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...rest,
-    headers: finalHeaders,
-  });
-
-  handleUnauthorized(response, auth);
-  return parseResponse<T>(response);
+  return parseResponse<T>(await fetchWithSession(send, auth));
 }
 
 /**
@@ -141,18 +181,19 @@ export async function fetchAllCursorPages<T>(
  * نمی‌شود، چون مرورگر خودش باید boundary درست را برای FormData بسازد.
  */
 export async function apiUploadFile<T>(path: string, formData: FormData): Promise<T> {
-  const headers: Record<string, string> = {};
-  const token = getToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  const send = () => {
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+    return fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+  };
 
-  handleUnauthorized(response, true);
-  return parseResponse<T>(response);
+  return parseResponse<T>(await fetchWithSession(send, true));
 }

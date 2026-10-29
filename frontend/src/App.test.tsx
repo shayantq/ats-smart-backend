@@ -46,6 +46,52 @@ test("کارجو به پورتال کارجو هدایت می‌شود", async (
   expect(await screen.findByRole("heading", { name: "پورتال کارجو" })).toBeInTheDocument();
 });
 
+test("access_token منقضی ولی نشست معتبر: نوسازی خودکار با کوکی و ادامه بدون صفحه‌ی ورود", async () => {
+  setToken("expired-token");
+  const fetchMock = mockFetchRoutes({
+    "/auth/refresh": () => jsonResponse({ access_token: "fresh-token", refresh_token: null, token_type: "bearer", expires_in: 900 }),
+    "/auth/me": () =>
+      fetchMock.mock.calls.some(([url]) => String(url).includes("/auth/refresh"))
+        ? jsonResponse({ user_id: "u-2", email: "sara@example.com", role: "Candidate" })
+        : jsonResponse({ detail: "expired" }, 401),
+    "/candidates/me": () =>
+      jsonResponse({ candidate_id: "c-1", email: "sara@example.com", first_name: "Sara", last_name: "", phone: null, location: null, skills: [] }),
+    "/jobs/": () => jsonResponse(emptyPage),
+  });
+  renderWithProviders(<App />);
+
+  expect(await screen.findByRole("heading", { name: "پورتال کارجو" })).toBeInTheDocument();
+  expect(getToken()).toBe("fresh-token");
+  const refreshCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/auth/refresh"));
+  expect(refreshCall?.[1]).toMatchObject({ method: "POST", credentials: "include" });
+});
+
+test("نشست این دستگاه از دستگاه دیگر باطل شده: نوسازی 401 → صفحه‌ی ورود", async () => {
+  setToken("revoked-session-token");
+  mockFetchRoutes({
+    "/auth/refresh": () => jsonResponse({ detail: "نشست شما پایان یافته است" }, 401),
+    "/auth/me": () => jsonResponse({ detail: "revoked" }, 401),
+  });
+  renderWithProviders(<App />);
+
+  expect(await screen.findByRole("button", { name: "ورود" })).toBeInTheDocument();
+  expect(getToken()).toBeNull();
+});
+
+test("لینک ایمیل هشدار (?view=sessions) مستقیم صفحه‌ی نشست‌های فعال را باز می‌کند", async () => {
+  window.history.pushState({}, "", "/?view=sessions");
+  setToken("valid-token");
+  mockFetchRoutes({
+    "/auth/me": () => jsonResponse({ user_id: "u-1", email: "hr@example.com", role: "HR_Manager" }),
+    "/auth/sessions/": () => jsonResponse({ items: [] }),
+  });
+  renderWithProviders(<App />);
+
+  expect(await screen.findByRole("heading", { name: "نشست‌های فعال" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "بازگشت" })).toHaveAttribute("aria-pressed", "true");
+  window.history.pushState({}, "", "/");
+});
+
 test("توکن منقضی‌شده: بازگشت خودکار به صفحه‌ی ورود", async () => {
   setToken("expired-token");
   mockFetchRoutes({ "/auth/me": () => jsonResponse({ detail: "expired" }, 401) });

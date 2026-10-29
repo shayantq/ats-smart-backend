@@ -110,6 +110,7 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 | `DATABASE_URL` · `REDIS_URL` | اتصال PostgreSQL (asyncpg) و Redis — داخل Docker خودکار با نام سرویس‌ها ساخته می‌شوند |
 | `SECRET_KEY` | کلید امضای JWT |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` · `REFRESH_TOKEN_EXPIRE_DAYS` | عمر توکن‌ها (پیش‌فرض ۱۵ دقیقه / ۷ روز) |
+| `GEOIP_DB_PATH` · `SUSPICIOUS_LOGIN_DISTANCE_KM` · `SUSPICIOUS_LOGIN_SPEED_KMH` | مدیریت نشست‌ها: فایل mmdb موقعیت IP (سرور: `deploy/geoip-update.sh`؛ خالی = بررسی جغرافیایی غیرفعال) و آستانه‌های ورود مشکوک (پیش‌فرض ۵۰۰ کیلومتر / ۹۰۰ کیلومتر بر ساعت) |
 | `FRONTEND_ORIGIN` | تنها Origin مجاز CORS |
 | `STORAGE_BACKEND` | `local` (دیسک، پیش‌فرض) یا `s3` (AWS S3، Liara، ArvanCloud، MinIO و ...) |
 | `MEDIA_ROOT` · `MEDIA_BASE_URL` | مسیر و آدرس فایل‌های آپلودی در حالت `local` |
@@ -135,7 +136,11 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 | مسیر | دسترسی | توضیح |
 |---|---|---|
 | `POST /auth/register` | عمومی | `{email, password (حداقل ۸), role}` — `Candidate`، یا `Admin` با `company_name` (سازمان تازه می‌سازد). HR و Interviewer را Admin سازمان می‌سازد (`422`) · ایمیل تکراری → `400` |
-| `POST /auth/login` | عمومی | خروجی: `access_token` (۱۵ دقیقه؛ برای کارمند شامل سازمان `tid`)، `refresh_token` (۷ روز؛ هم در بدنه هم کوکی `HttpOnly`+`Secure`+`SameSite=Strict`) · اشتباه → `401` |
+| `POST /auth/login` | عمومی | نشست تازه در Redis (IP، مرورگر، سیستم‌عامل، موقعیت) · خروجی: `access_token` (۱۵ دقیقه؛ شامل نشست `sid` و برای کارمند سازمان `tid`)، `refresh_token` (۷ روز؛ هم در بدنه هم کوکی `HttpOnly`+`Secure`+`SameSite=Strict`) · اشتباه → `401` · Redis در دسترس نیست → `503` |
+| `POST /auth/refresh` | کوکی یا `{refresh_token}` | `access_token` تازه + چرخش Refresh Token · نشست باطل/منقضی، jti در فهرست سیاه، استفاده‌ی دوباره از توکن قدیمی (کل نشست باطل می‌شود) → `401` و پاک شدن کوکی |
+| `GET /auth/sessions/` | هر کاربر لاگین‌شده | دستگاه‌های فعال: مرورگر و نسخه، سیستم‌عامل، نوع دستگاه، IP (دستگاه‌های دیگر نیمه‌پنهان)، موقعیت، زمان ورود و آخرین فعالیت، `is_current`، `suspicious` |
+| `DELETE /auth/sessions/{id}/` · `POST /auth/logout` | هر کاربر لاگین‌شده | خروج از دستگاه دیگر / همین دستگاه — Refresh Token فوراً در فهرست سیاه، access_token آن نشست هم دیگر پذیرفته نمی‌شود · نشست کاربر دیگر → `404` |
+| `GET/DELETE /admin/users/{id}/sessions/` · `DELETE …/sessions/{sid}/` | `Admin` | نشست‌های کارمندان سازمان خود: فهرست، ابطال یکی یا همه (کاربر سازمان دیگر → `404`) |
 | `POST /auth/forgot-password` | عمومی | ارسال کد OTP شش‌رقمی به ایمیل (پاسخ همیشه یکسان، ضد User Enumeration) |
 | `POST /auth/reset-password` | عمومی | `{email, otp_code, new_password}` — OTP ده دقیقه‌ای و یک‌بارمصرف |
 | `GET /auth/me` | هر کاربر لاگین‌شده | شناسه، ایمیل و نقش کاربر جاری (فرانت‌اند بعد از ورود با آن پورتال مناسب را انتخاب می‌کند) |
@@ -143,6 +148,7 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 | `GET /tenant` · `GET/POST /tenant/users` | کارمندان · `Admin` | مشخصات سازمان، فهرست و ساخت حساب HR/Interviewer در همان سازمان |
 
 - **RBAC:** با `Depends(require_roles(...))` — بدون توکن/نامعتبر `401`، نقش غیرمجاز `403`. نشست کاربر ۵ دقیقه در Redis کش می‌شود.
+- **مدیریت نشست‌ها** (`app/core/sessions.py`، معماری کامل: [`docs/sessions/ARCHITECTURE.md`](docs/sessions/ARCHITECTURE.md)): Refresh Token فقط با نشست زنده‌اش در Redis معتبر است و هر نوسازی آن را می‌چرخاند. ورود از مرورگر/IP تازه ← ایمیل «ورود از دستگاه جدید» در صف؛ کشور تازه یا جابه‌جایی ناممکن (بیش از ۵۰۰ کیلومتر با سرعت بیش از ۹۰۰ کیلومتر بر ساعت) ← ایمیل «Suspicious Login». فرانت‌اند با 401 خودکار نوسازی می‌کند و اگر نشست باطل شده باشد به صفحه‌ی ورود می‌رود. راستی‌آزمایی روی سرور: `bash deploy/session-check.sh` ← `[SESSIONS PASS]`.
 - **امنیت شبکه:** CORS فقط برای `FRONTEND_ORIGIN` · Rate Limit پنج درخواست در دقیقه برای هر IP روی مسیرهای auth (`429`) · پاکسازی تگ‌های HTML از ورودی‌ها (`app/core/sanitize.py`) · گذرواژه فقط به‌صورت هش Bcrypt.
 - کوکی `Secure` فقط روی Secure Context ذخیره می‌شود: `http://localhost:8000/docs` بله، `http://127.0.0.1:8000/docs` **خیر**.
 
@@ -294,6 +300,7 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 - **کلیدها:** فقط فایل Secret — Compose secret روی سرور (`deploy/deploy.sh` یک‌بار می‌سازد) و Secret کوبرنتیز (`k8s/deploy.sh`)؛ هرگز در ریپو، `.env` یا ConfigMap.
 - **تفکیک شبکه:** PostgreSQL و Redis فقط روی شبکه‌های `internal` خودشان (`ats_data`، `ats_cache`)؛ NetworkPolicy های default-deny در `k8s/base/network-policies.yaml`.
 - **راستی‌آزمایی:** `bash deploy/zero-trust-check.sh` روی سرور ← `[ZERO TRUST PASS]`.
+- **نشست کاربران:** نشست‌ها و فهرست سیاه Refresh Token در همان Redis داخلی (`ats_cache`) هستند — بنگرید [مدیریت نشست‌ها](docs/sessions/ARCHITECTURE.md).
 
 ---
 

@@ -183,3 +183,28 @@ def send_interview_reminder_email_task(
     except Exception as error:  # noqa: BLE001
         logger.error("ارسال ایمیل یادآور مصاحبه ناموفق بود | to=%s | error=%s", to_email, error)
         raise
+
+
+def _send_login_alert(to_email: str, details: dict, reasons: list[str]) -> None:
+    suspicious = bool(reasons)
+    html_body = render_email_template("login_alert.html", suspicious=suspicious, reasons=reasons, **details)
+    subject = "⚠️ هشدار: ورود مشکوک به حساب شما" if suspicious else "ورود به حساب شما از دستگاه جدید"
+
+    try:
+        send_email(to_email=to_email, subject=subject, html_body=html_body)
+    except Exception as error:  # noqa: BLE001
+        logger.error("ارسال ایمیل هشدار ورود ناموفق بود | to=%s | error=%s", to_email, error)
+        raise
+
+
+def send_new_signin_email_task(to_email: str, details: dict) -> None:
+    """
+    هشدار امنیتی «ورود از دستگاه جدید» — محرک: POST /api/v1/auth/login از مرورگر/سیستم‌عامل یا IP تازه
+    (بنگرید app/core/sessions.py). details: signed_in_at، browser، os، ip، location، sessions_url
+    """
+    _send_login_alert(to_email, details, [])
+
+
+def send_suspicious_login_email_task(to_email: str, details: dict, reasons: list[str]) -> None:
+    """هشدار «ورود مشکوک» — کشور تازه یا جابه‌جایی جغرافیایی ناممکن؛ reasons دلایل قابل‌فهم برای کاربر است."""
+    _send_login_alert(to_email, details, reasons)

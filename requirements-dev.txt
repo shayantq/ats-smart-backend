@@ -13,6 +13,8 @@ pytest-cov==5.0.0
 # هیچ‌جای کد Production از aiosqlite استفاده نمی‌کند (آن همچنان روی
 # asyncpg/PostgreSQL اجرا می‌شود).
 aiosqlite==0.22.1
+# Redis حافظه‌ای برای تست نشست‌ها و صف RQ (Hash، Sorted Set، Pipeline، WATCH/MULTI) — بدون Redis واقعی
+fakeredis==2.25.1
 
 # ---- کیفیت کد (Linting/Formatting) — تنظیمات در pyproject.toml و .flake8 ----
 black==24.8.0

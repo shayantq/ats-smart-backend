@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+{% if suspicious %}
+<h2 style="color: #dc2626;">⚠️ ورود مشکوک به حساب شما</h2>
+<p>سلام،</p>
+<p>یک ورود به حساب کاربری شما در ATS Smart ثبت شد که با الگوی ورودهای قبلی‌تان هم‌خوانی ندارد:</p>
+<ul>
+  {% for reason in reasons %}<li>{{ reason }}</li>{% endfor %}
+</ul>
+{% else %}
+<h2>ورود از دستگاه جدید</h2>
+<p>سلام،</p>
+<p>حساب کاربری شما در ATS Smart از مرورگر یا نشانی IP تازه‌ای وارد شد.</p>
+{% endif %}
+<table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
+  <tr><td style="padding: 4px 0; color: #64748b;">زمان</td><td dir="ltr" style="text-align: left;">{{ signed_in_at }}</td></tr>
+  <tr><td style="padding: 4px 0; color: #64748b;">مرورگر</td><td dir="ltr" style="text-align: left;">{{ browser }}</td></tr>
+  <tr><td style="padding: 4px 0; color: #64748b;">سیستم‌عامل</td><td dir="ltr" style="text-align: left;">{{ os }}</td></tr>
+  <tr><td style="padding: 4px 0; color: #64748b;">نشانی IP</td><td dir="ltr" style="text-align: left;">{{ ip }}</td></tr>
+  <tr><td style="padding: 4px 0; color: #64748b;">موقعیت تقریبی</td><td style="text-align: left;">{{ location }}</td></tr>
+</table>
+<p>اگر این ورود کار خودتان بوده، کاری لازم نیست.</p>
+<p>اگر <strong>شما وارد نشده‌اید</strong>، همین حالا از بخش «نشست‌های فعال» آن نشست را ببندید و رمز عبورتان را عوض کنید:</p>
+<p style="text-align: center;"><a class="button button-reject" href="{{ sessions_url }}">مشاهده‌ی نشست‌های فعال</a></p>
+<p>با احترام،<br>تیم ATS Smart</p>
+{% endblock %}

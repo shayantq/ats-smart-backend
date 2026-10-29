@@ -38,3 +38,7 @@ k8s/overlays/local/genai-inference/model.env
 # Zero-Trust: کلیدهای سرویس‌به‌سرویس (سرور: deploy/deploy.sh، کلاستر لوکال: k8s/deploy.sh) — هرگز در ریپو
 /secrets/
 k8s/overlays/*/secrets/service-auth/
+
+# مدیریت نشست‌ها: دیتابیس موقعیت IP (روی سرور با deploy/geoip-update.sh دانلود می‌شود)
+/geoip/
+*.mmdb

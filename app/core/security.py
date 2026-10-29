@@ -68,21 +68,33 @@ def _create_token(
     return token, int(expires_delta.total_seconds())
 
 
-def create_access_token(subject: str, tenant_id: uuid.UUID | str | None = None) -> tuple[str, int]:
+def create_access_token(
+    subject: str, tenant_id: uuid.UUID | str | None = None, session_id: str | None = None
+) -> tuple[str, int]:
     """
     توکن دسترسی با طول عمر کوتاه (پیش‌فرض ۱۵ دقیقه، طبق تنظیمات .env).
     tenant_id: سازمان کارمند، به‌صورت Claim «tid» — منبع Context چندمستاجری (app/core/tenancy.py).
     چون توکن امضاشده است، کاربر نمی‌تواند سازمانش را عوض کند؛ کارجو این Claim را ندارد.
+    session_id: نشست صادرکننده (Claim «sid»)؛ با ابطال نشست، این توکن هم فوراً رد می‌شود (app/core/deps.py).
     """
     expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    claims = {"tid": str(tenant_id)} if tenant_id else None
+    claims = {}
+    if tenant_id:
+        claims["tid"] = str(tenant_id)
+    if session_id:
+        claims["sid"] = session_id
     return _create_token(subject, expires_delta, token_type="access", extra_claims=claims)
 
 
-def create_refresh_token(subject: str) -> tuple[str, int]:
-    """توکن نوسازی با طول عمر بلند (پیش‌فرض ۷ روز، طبق تنظیمات .env)."""
+def create_refresh_token(subject: str, session_id: str | None = None, jti: str | None = None) -> tuple[str, int]:
+    """
+    توکن نوسازی با طول عمر بلند (پیش‌فرض ۷ روز، طبق تنظیمات .env).
+    sid: نشست ذخیره‌شده در Redis؛ jti: شناسه‌ی یکتای همین نسخه از توکن (هر نوسازی jti تازه می‌گیرد و
+    jti قبلی در فهرست سیاه می‌رود — بنگرید app/core/sessions.py).
+    """
     expires_delta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    return _create_token(subject, expires_delta, token_type="refresh")
+    claims = {"sid": session_id, "jti": jti} if session_id else None
+    return _create_token(subject, expires_delta, token_type="refresh", extra_claims=claims)
 
 
 def decode_token(token: str) -> dict:

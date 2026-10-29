@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # ---- مدیریت نشست‌ها (app/core/sessions.py) ----
+    # فایل دیتابیس موقعیت جغرافیایی IP (فرمت mmdb، مثل DB-IP City Lite)؛ خالی یا ناموجود = بررسی
+    # جغرافیایی ورود غیرفعال (ورود هرگز به‌خاطر نبودش شکست نمی‌خورد)
+    GEOIP_DB_PATH: str = ""
+    # ورود مشکوک: فاصله از نشست قبلی بیش از این (کیلومتر) و سرعت جابه‌جایی لازم بیش از سقف زیر
+    SUSPICIOUS_LOGIN_DISTANCE_KM: float = 500.0
+    SUSPICIOUS_LOGIN_SPEED_KMH: float = 900.0
+
     # دامنه‌ی رسمی فرانت‌اند که اجازه‌ی صحبت با این API را دارد (برای CORS)
     FRONTEND_ORIGIN: str = "http://localhost:5173"
 

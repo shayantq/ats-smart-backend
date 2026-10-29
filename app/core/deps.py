@@ -1,6 +1,8 @@
 """
 لایه‌ی کنترل دسترسی (RBAC):
 - get_current_user: توکن را از هدر Authorization می‌خواند، اعتبارسنجی می‌کند و کاربر را برمی‌گرداند.
+  نشست صادرکننده‌ی توکن (Claim «sid») باید هنوز در Redis وجود داشته باشد — نشست باطل‌شده = 401 فوری،
+  حتی پیش از انقضای access_token (بنگرید app/core/sessions.py).
   برای کاهش بار دیتابیس، اطلاعات کاربر با استفاده از یک Cache روی Redis (که در هر
   درخواست محافظت‌شده تکرار می‌شود) موقتاً نگه داشته می‌شود.
 - require_roles: یک Dependency Factory که مسیر را فقط به نقش‌های مشخص‌شده باز می‌گذارد.
@@ -16,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import get_cached_json, set_cached_json
 from app.core.security import decode_token
+from app.core.sessions import SessionStoreUnavailable, touch_session
 from app.db.session import get_db
 from app.models import User
 
@@ -77,6 +80,16 @@ async def get_current_user(
 
     token_tenant = payload.get("tid")
 
+    # توکن بدون نشست (صادرشده پیش از مدیریت نشست‌ها) یا نشست باطل/منقضی → ورود دوباره
+    session_id = payload.get("sid")
+    if not session_id:
+        raise unauthorized
+    try:
+        if not await touch_session(session_id):
+            raise unauthorized
+    except SessionStoreUnavailable:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="سرویس نشست موقتاً در دسترس نیست.")
+
     cache_key = _session_cache_key(user_uuid)
     cached_user = await get_cached_json(cache_key)
     if cached_user is not None and "tenant_id" in cached_user:
@@ -124,6 +137,14 @@ def _ensure_token_tenant_matches(user: User, token_tenant: str | None, unauthori
         return
     if expected is None or token_tenant != expected:
         raise unauthorized
+
+
+async def get_current_session_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    current_user: User = Depends(get_current_user),
+) -> str:
+    """شناسه‌ی نشستِ همین درخواست (برای «نشست فعلی» در فهرست نشست‌ها و خروج). توکن قبلاً اعتبارسنجی شده."""
+    return decode_token(credentials.credentials)["sid"]
 
 
 def require_roles(*allowed_roles: str):

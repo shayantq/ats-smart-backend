@@ -23,6 +23,13 @@ bcrypt==4.0.1
 python-multipart==0.0.9
 slowapi==0.1.9
 
+# ---- مدیریت نشست‌ها (app/core/sessions.py، app/core/geoip.py) ----
+# تشخیص مرورگر، سیستم‌عامل و نوع دستگاه از User-Agent (پایتون خالص)
+user-agents==2.2.0
+ua-parser==0.18.0
+# خواندن دیتابیس موقعیت جغرافیایی IP (mmdb) با mmap — بدون درخواست به سرویس بیرونی
+maxminddb==2.6.2
+
 # ---- Environment Management ----
 python-dotenv==1.0.1
 

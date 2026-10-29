@@ -18,16 +18,19 @@ Skip می‌شوند — مگر TEST_DB_REQUIRED=1 تنظیم شده باشد (�
 
 اثرات جانبی بیرون از دیتابیس (ایمیل/صف Redis/زمان‌بند یادآور/کش نشست/Rate Limit) در این
 تست‌ها با جایگزین‌های بی‌اثر یا حافظه‌ای عوض می‌شوند تا تست‌ها قطعی و مستقل از Redis باشند.
+نشست‌های ورود (app/core/sessions.py) روی یک Redis حافظه‌ای واقعی‌نما (fakeredis) جدا برای هر تست‌اند.
 """
 
 import asyncio
 import os
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
 import asyncpg
+import fakeredis
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -36,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core import deps
+from app.core import sessions as sessions_module
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.security import create_access_token, hash_password
@@ -143,6 +147,24 @@ def fake_cache() -> FakeCache:
     return FakeCache()
 
 
+# Redis حافظه‌ای تست جاری — auth_headers (تابع همگام) نشست توکنش را مستقیم همین‌جا می‌سازد
+_ACTIVE_FAKE_REDIS: dict[str, fakeredis.FakeServer] = {}
+
+
+@pytest.fixture
+def fake_redis_server():
+    server = fakeredis.FakeServer()
+    _ACTIVE_FAKE_REDIS["server"] = server
+    yield server
+    _ACTIVE_FAKE_REDIS.clear()
+
+
+@pytest.fixture
+def fake_redis(fake_redis_server) -> fakeredis.FakeRedis:
+    """دید همگام (برای assert در تست‌ها) به همان Redis حافظه‌ای که API استفاده می‌کند."""
+    return fakeredis.FakeRedis(server=fake_redis_server, decode_responses=True)
+
+
 @pytest.fixture
 def enqueued_tasks() -> list[tuple]:
     """هر کاری که API به صف پس‌زمینه بفرستد اینجا ثبت می‌شود (به‌جای Redis واقعی)."""
@@ -150,7 +172,7 @@ def enqueued_tasks() -> list[tuple]:
 
 
 @pytest_asyncio.fixture
-async def client(db_session, fake_cache, enqueued_tasks, monkeypatch, tmp_path):
+async def client(db_session, fake_cache, enqueued_tasks, fake_redis_server, monkeypatch, tmp_path):
     async def override_get_db():
         # همه‌ی درخواست‌های یک تست یک Session مشترک دارند؛ اگر درخواست قبلی commit نکرده باشد، تراکنشش هنوز
         # باز است و after_begin دوباره اجرا نمی‌شود. پس نقش/متغیرهای RLS همین درخواست صریحاً اعمال و در پایان
@@ -177,6 +199,10 @@ async def client(db_session, fake_cache, enqueued_tasks, monkeypatch, tmp_path):
     monkeypatch.setattr(auth_router, "get_cached_json", fake_cache.get)
     monkeypatch.setattr(auth_router, "set_cached_json", fake_cache.set)
     monkeypatch.setattr(auth_router, "delete_cached", fake_cache.delete)
+
+    # نشست‌های ورود → Redis حافظه‌ای همین تست
+    session_redis = fakeredis.FakeAsyncRedis(server=fake_redis_server, decode_responses=True)
+    monkeypatch.setattr(sessions_module, "get_redis_client", lambda: session_redis)
 
     # صف پس‌زمینه و ایمیل‌ها → فقط ثبت در لیست، بدون Redis
     monkeypatch.setattr(auth_router, "enqueue_task", fake_enqueue)
@@ -261,8 +287,29 @@ def make_user(db_session, make_tenant):
     return _make_user
 
 
+def seed_session(user_id: uuid.UUID | str) -> str:
+    """یک نشست فعال (مثل ورود واقعی) در Redis حافظه‌ای تست جاری؛ خروجی: sid برای Claim توکن."""
+    session_id, now = str(uuid.uuid4()), time.time()
+    redis = fakeredis.FakeRedis(server=_ACTIVE_FAKE_REDIS["server"], decode_responses=True)
+    lifetime = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+    redis.hset(
+        f"session:{session_id}",
+        mapping={
+            "sid": session_id,
+            "user_id": str(user_id),
+            "refresh_jti": uuid.uuid4().hex,
+            "created_at": str(now),
+            "last_active_at": str(now),
+            "expires_at": str(now + lifetime),
+        },
+    )
+    redis.expire(f"session:{session_id}", lifetime)
+    redis.zadd(f"user_sessions:{user_id}", {session_id: now})
+    return session_id
+
+
 def auth_headers(user: User) -> dict[str, str]:
-    access_token, _ = create_access_token(str(user.id), tenant_id=user.tenant_id)
+    access_token, _ = create_access_token(str(user.id), tenant_id=user.tenant_id, session_id=seed_session(user.id))
     return {"Authorization": f"Bearer {access_token}"}
 
 

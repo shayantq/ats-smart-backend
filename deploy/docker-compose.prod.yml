@@ -37,9 +37,13 @@ services:
       OPS_WEBHOOK_TOKEN: ${OPS_WEBHOOK_TOKEN:?OPS_WEBHOOK_TOKEN را در .env سرور تنظیم کنید}
       SERVICE_NAME: backend-api
       SERVICE_AUTH_PUBLIC_KEYS_DIR: /run/service-auth/public
+      # مدیریت نشست‌ها: دیتابیس موقعیت IP برای تشخیص ورود مشکوک (deploy/geoip-update.sh)
+      GEOIP_DB_PATH: /srv/geoip/dbip-city-lite.mmdb
     volumes:
       # فقط کلیدهای عمومی سرویس‌های مجاز (محرمانه نیستند)
       - ./secrets/service-auth/public:/run/service-auth/public:ro
+      # پوشه (نه فایل) Mount می‌شود تا جایگزینی ماهانه‌ی فایل بدون ری‌استارت دیده شود
+      - ./geoip:/srv/geoip:ro
 
   worker:
     environment:
