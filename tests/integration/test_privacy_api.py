@@ -285,3 +285,24 @@ async def test_plaintext_left_by_a_rolling_update_is_readable_then_encrypted(
     row = await _raw(db_session, "SELECT phone, location FROM candidates WHERE id = :id", id=candidate_id)
     assert row["phone"].startswith(FERNET_PREFIX) and row["location"].startswith(FERNET_PREFIX)
     assert (await crypto._reencrypt(only_legacy=True)) == {"candidates": 0, "resumes": 0}  # دیگر چیزی نمانده
+
+
+async def test_sessions_are_revoked_even_if_file_storage_fails(client, db_session, make_application, monkeypatch):
+    """
+    یافته‌ی Production: Volume رزومه‌ها مجوز نوشتن نداشت و ساخت بک‌اند ذخیره‌سازی PermissionError می‌داد؛ پاسخ
+    500 بود و نشست‌ها باطل نمی‌شدند. حالا ابطال نشست‌ها اولین گام بعد از commit است و خطای فایل ناشناس‌سازی را
+    نمی‌شکند.
+    """
+    from app.core import privacy
+
+    _, candidate_user, _, resume = await _candidate_with_resume(client, db_session, make_application)
+    headers = auth_headers(candidate_user)
+
+    def broken_storage():
+        raise PermissionError("[Errno 13] Permission denied: '/app/media/resumes'")
+
+    monkeypatch.setattr(privacy, "get_storage_backend", broken_storage)
+    response = await client.delete("/api/v1/candidates/me/", headers=headers)
+
+    assert response.status_code == 200 and response.json()["files_deleted"] == 0
+    assert (await client.get("/api/v1/candidates/me", headers=headers)).status_code == 401

@@ -60,8 +60,9 @@ class LocalStorageBackend(StorageBackend):
     """
 
     def __init__(self) -> None:
+        # پوشه فقط هنگام نوشتن فایل ساخته می‌شود (_write_file)؛ ساختنش اینجا باعث می‌شد هر استفاده از این بک‌اند
+        # — حتی حذف فایل — روی Volume بدون مجوز نوشتن با PermissionError شکست بخورد
         self._root = Path(settings.MEDIA_ROOT) / "resumes"
-        self._root.mkdir(parents=True, exist_ok=True)
 
     async def save_file(self, *, candidate_id: uuid.UUID, filename: str, content: bytes, content_type: str) -> str:
         object_key = _build_object_key(candidate_id, filename)

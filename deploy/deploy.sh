@@ -196,6 +196,12 @@ compose up -d --no-deps --no-build --wait postgres_db redis_cache
 # ⚠️ مایگریشن‌ها پیش از جایگزینی کد اجرا می‌شوند، پس برای حفظ «بدون قطعی» باید
 # با نسخه‌ی قبلی کد هم سازگار باشند (الگوی Expand/Contract — بنگرید README)
 compose run --rm --no-deps migrate
+# Volume رزومه‌ها (media_data) اگر اول توسط کانتینری با کاربر root ساخته شده باشد، ریشه‌اش متعلق به root است و
+# کاربر برنامه (app، uid 10001) نه رزومه ذخیره می‌کند نه حذف (یافته‌ی Production: PermissionError روی /app/media).
+# هر استقرار مالکیت را درست می‌کند (Idempotent، غیربازگشتی — فقط خود پوشه‌ها)
+compose run --rm --no-deps --user root --entrypoint sh migrate \
+    -c 'mkdir -p /app/media/resumes && chown app:app /app/media /app/media/resumes' \
+    || fail "تنظیم مالکیت پوشه‌ی رزومه‌ها (media_data) ناموفق بود"
 
 log "۳/۵ Rolling Update بک‌اند و فرانت‌اند"
 # پیکربندی جدید Gateway (توزیع بار، Timeoutها) باید «پیش از» جابه‌جایی نسخه‌ها فعال باشد —

@@ -88,20 +88,22 @@ async def anonymize_candidate_account(db: AsyncSession, user: User) -> Anonymiza
         db_user.anonymized_at = datetime.now(timezone.utc)
         await db.commit()
 
+    # بعد از commit، هر گام جدا محافظت می‌شود و شکست یکی مانع بقیه نیست. ابطال نشست‌ها اول است: مهم‌ترین گام
+    # امنیتی (توکن‌های حساب حذف‌شده نباید حتی یک درخواست دیگر کار کنند)
+    user_id = str(user.id)
+    try:
+        await revoke_all_sessions(user_id)
+        await get_redis_client().delete(f"{KNOWN_DEVICES_KEY_PREFIX}{user_id}", f"{LOGIN_HISTORY_KEY_PREFIX}{user_id}")
+    except Exception as error:  # noqa: BLE001
+        logger.error("پاک‌سازی نشست‌های حساب ناشناس‌شده ناموفق بود | user=%s | %s", user_id, type(error).__name__)
+    await delete_cached(f"session:user:{user_id}")  # کش کاربر در get_current_user (ایمیل قبلی)
+
     files_deleted = 0
-    storage = get_storage_backend()
     for file_url in file_urls:
         try:
-            files_deleted += await storage.delete_file(file_url)
+            files_deleted += await get_storage_backend().delete_file(file_url)
         except Exception as error:  # noqa: BLE001 - حذف فایل نباید ناشناس‌سازی دیتابیس را خنثی کند
-            logger.error("حذف فایل رزومه‌ی حساب ناشناس‌شده ناموفق بود | user=%s | %s", user.id, type(error).__name__)
+            logger.error("حذف فایل رزومه‌ی حساب ناشناس‌شده ناموفق بود | user=%s | %s", user_id, type(error).__name__)
 
-    try:
-        await revoke_all_sessions(str(user.id))
-        await get_redis_client().delete(f"{KNOWN_DEVICES_KEY_PREFIX}{user.id}", f"{LOGIN_HISTORY_KEY_PREFIX}{user.id}")
-    except Exception as error:  # noqa: BLE001
-        logger.error("پاک‌سازی نشست‌های حساب ناشناس‌شده ناموفق بود | user=%s | %s", user.id, type(error).__name__)
-    await delete_cached(f"session:user:{user.id}")  # کش کاربر در get_current_user (ایمیل قبلی)
-
-    logger.info("حساب کارجو ناشناس شد | user=%s | resumes=%d | files=%d", user.id, len(resumes), files_deleted)
+    logger.info("حساب کارجو ناشناس شد | user=%s | resumes=%d | files=%d", user_id, len(resumes), files_deleted)
     return AnonymizationResult(resumes_cleared=len(resumes), files_deleted=files_deleted)

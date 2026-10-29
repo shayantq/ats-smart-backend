@@ -86,7 +86,7 @@ import asyncio, json, os, secrets
 from app.core.security import hash_password
 from app.core.tenant_provisioning import provision_tenant
 from app.db.session import AsyncSessionLocal
-from app.models import Application, Candidate, Job, Resume, User
+from app.models import Application, Candidate, Job, Resume, StatusHistory, User
 
 RUN_ID = os.environ["RUN_ID"]
 
@@ -103,8 +103,14 @@ async def main():
         candidate = Candidate(user_id=user.id, first_name="Sara", last_name="Rezaei", phone="09121234567", location="Tehran, Vanak")
         db.add(candidate)
         await db.flush()
+        application = Application(job_id=job.id, candidate_id=candidate.id, tenant_id=tenant.id, current_status="Screening", score_ai=82)
+        db.add(application)
+        await db.flush()
+        # قیف استخدام از تاریخچه‌ی وضعیت شمرده می‌شود: Draft ← Applied ← Screening (قیف: Applied=1، Screening=1)
+        for old_status, new_status in (("Draft", "Applied"), ("Applied", "Screening")):
+            db.add(StatusHistory(application_id=application.id, tenant_id=tenant.id, old_status=old_status,
+                                 new_status=new_status, changed_by=hr.id))
         db.add_all([
-            Application(job_id=job.id, candidate_id=candidate.id, tenant_id=tenant.id, current_status="Screening", score_ai=82),
             Resume(candidate_id=candidate.id, tenant_id=tenant.id, file_url=f"deleted:privacy-check-{RUN_ID}",
                    raw_text="Sara Rezaei 09121234567 — Senior Python Django engineer, Kubernetes",
                    parsed_data={"personal_info": {"name": "Sara Rezaei", "phone": "09121234567"}},
@@ -179,7 +185,8 @@ _, funnel_after = call("GET", "/analytics/funnel", hr_token)
 stages = lambda funnel: {s["stage"]: s["count"] for s in (funnel or {}).get("stages", [])}
 print(f"قیف قبل: {stages(funnel_before)}")
 print(f"قیف بعد: {stages(funnel_after)}")
-result(funnel_before is not None and stages(funnel_before) == stages(funnel_after), "قیف استخدام سازمان قبل و بعد از حذف حساب دقیقاً یکی است")
+result(stages(funnel_before).get("Screening") == 1 and stages(funnel_before) == stages(funnel_after),
+       "قیف استخدام سازمان (Applied=1، Screening=1) قبل و بعد از حذف حساب دقیقاً یکی است")
 code, _ = call("GET", "/candidates/me", cand_token)
 result(code == 401, f"توکن کارجوی حذف‌شده → {code}")
 code, _ = call("POST", "/auth/login", body={"email": state["candidate_email"], "password": state["password"]})
@@ -198,6 +205,7 @@ section "پاک‌سازی سازمان و کاربران آزمایشی"
 docker exec -i -e RUN_ID="$RUN_ID" "$API" python - <<'PY' 2>&1 | collect
 import asyncio, os
 from sqlalchemy import delete, or_, select
+from app.core.redis_client import close_redis_connection
 from app.core.sessions import SessionStoreUnavailable, revoke_all_sessions
 from app.core.tenant_provisioning import delete_owned_tenants
 from app.db.session import AsyncSessionLocal
@@ -227,6 +235,7 @@ async def main():
         await db.execute(delete(User).where(or_(User.id.in_(user_ids), User.id.in_(owner_ids))))
         await db.commit()
         print(f"RESULT PASS سازمان آزمایشی، {len(user_ids) + len(owner_ids)} کاربر و رکوردهایشان پاک شد")
+    await close_redis_connection()
 
 asyncio.run(main())
 PY
