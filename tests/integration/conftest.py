@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core import deps
+from app.core import privacy as privacy_module
 from app.core import sessions as sessions_module
 from app.core.config import settings
 from app.core.limiter import limiter
@@ -216,6 +217,11 @@ async def client(db_session, fake_cache, enqueued_tasks, fake_redis_server, monk
     monkeypatch.setattr(settings, "MEDIA_ROOT", str(tmp_path))
     local_storage = LocalStorageBackend()
     monkeypatch.setattr(resumes_router, "get_storage_backend", lambda: local_storage)
+
+    # حق فراموش شدن (app/core/privacy.py): همان فایل‌ها، همان Redis حافظه‌ای و همان کش این تست
+    monkeypatch.setattr(privacy_module, "get_storage_backend", lambda: local_storage)
+    monkeypatch.setattr(privacy_module, "get_redis_client", lambda: session_redis)
+    monkeypatch.setattr(privacy_module, "delete_cached", fake_cache.delete)
 
     # Rate Limit (۵ درخواست در دقیقه روی auth) در تست‌ها مانع نشود
     monkeypatch.setattr(limiter, "enabled", False)

@@ -29,6 +29,13 @@ services:
   backend_api:
     ports: !reset []
     scale: ${BACKEND_REPLICAS:-3}
+    # حریم خصوصی: کلید رمزنگاری داده‌های شخصی فقط برای سرویس‌هایی که داده‌ی رمزشده می‌خوانند/می‌نویسند
+    # (deploy/deploy.sh یک‌بار می‌سازد؛ scheduler، gateway، فرانت‌اند، exporter ها و backup آن را ندارند)
+    env_file:
+      - path: .env
+        required: false
+      - path: secrets/pii.env
+        required: true
     environment:
       ENVIRONMENT: production
       # درخواست‌ها فقط از Nginx داخلی می‌رسند (پورت بک‌اند بیرون باز نیست)، پس
@@ -46,6 +53,13 @@ services:
       - ./geoip:/srv/geoip:ro
 
   worker:
+    # حریم خصوصی: کلید رمزنگاری داده‌های شخصی فقط برای سرویس‌هایی که داده‌ی رمزشده می‌خوانند/می‌نویسند
+    # (deploy/deploy.sh یک‌بار می‌سازد؛ scheduler، gateway، فرانت‌اند، exporter ها و backup آن را ندارند)
+    env_file:
+      - path: .env
+        required: false
+      - path: secrets/pii.env
+        required: true
     environment:
       ENVIRONMENT: production
       SERVICE_NAME: worker
@@ -59,6 +73,13 @@ services:
       ENVIRONMENT: production
 
   migrate:
+    # حریم خصوصی: کلید رمزنگاری داده‌های شخصی فقط برای سرویس‌هایی که داده‌ی رمزشده می‌خوانند/می‌نویسند
+    # (deploy/deploy.sh یک‌بار می‌سازد؛ scheduler، gateway، فرانت‌اند، exporter ها و backup آن را ندارند)
+    env_file:
+      - path: .env
+        required: false
+      - path: secrets/pii.env
+        required: true
     environment:
       ENVIRONMENT: production
 

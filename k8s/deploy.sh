@@ -99,6 +99,19 @@ if [[ ! -f "${SERVICE_AUTH_DIR}/genai-worker.key" || ! -f "${SERVICE_AUTH_DIR}/g
     openssl pkey -in "${SERVICE_AUTH_DIR}/genai-worker.key" -pubout -out "${SERVICE_AUTH_DIR}/genai-worker.pem" 2>/dev/null
     ok "کلید سرویس genai-worker ساخته شد (secrets/service-auth) — API فقط کلید عمومی را می‌گیرد"
 fi
+# حریم خصوصی: کلیدهای رمزنگاری داده‌های شخصی — یک‌بار و فقط روی همین سیستم (در .gitignore)؛ هرگز چاپ نمی‌شوند.
+# گم شدن این فایل = غیرقابل‌خواندن شدن داده‌های رمزشده‌ی دیتابیس کلاستر
+if [[ ! -s "${SECRETS_DIR}/pii.env" ]]; then
+    command -v openssl >/dev/null 2>&1 || { echo "openssl پیدا نشد (برای ساخت کلید رمزنگاری لازم است)" >&2; exit 1; }
+    (
+        umask 077
+        {
+            echo "PII_ENCRYPTION_KEYS=$(openssl rand -base64 32 | tr '+/' '-_')"
+            echo "PII_BLIND_INDEX_KEY=$(openssl rand -base64 32 | tr '+/' '-_')"
+        } > "${SECRETS_DIR}/pii.env"
+    )
+    ok "کلیدهای رمزنگاری داده‌های شخصی ساخته شد (secrets/pii.env) — یک نسخه را جدا نگه دارید"
+fi
 for name in postgres backend grafana; do
     [[ -f "${SECRETS_DIR}/${name}.env" ]] || die "فایل ${SECRETS_DIR}/${name}.env وجود ندارد (نمونه: ${name}.env.example)"
 done

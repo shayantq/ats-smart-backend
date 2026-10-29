@@ -5,7 +5,8 @@ import { ToastProvider } from "./context/ToastContext";
 import HRDashboard from "./pages/HRDashboard";
 import CandidatePortal from "./pages/CandidatePortal";
 import LoginPage from "./pages/LoginPage";
-import { UNAUTHORIZED_EVENT } from "./services/apiClient";
+import RegisterPage from "./pages/RegisterPage";
+import { ACCOUNT_DELETED_EVENT, UNAUTHORIZED_EVENT } from "./services/apiClient";
 import { fetchCurrentUser } from "./services/authApi";
 import { logoutCurrentSession } from "./services/sessionsApi";
 import { clearToken, getToken } from "./services/tokenStorage";
@@ -29,6 +30,9 @@ function App() {
   const [showSessions, setShowSessions] = useState(
     () => new URLSearchParams(window.location.search).get("view") === "sessions",
   );
+  // صفحه‌ی ورود یا ثبت‌نام کارجو (برای کاربر واردنشده) + پیام موفقیت روی صفحه‌ی ورود
+  const [authView, setAuthView] = useState<"login" | "register">("login");
+  const [loginNotice, setLoginNotice] = useState<{ message: string; email: string } | null>(null);
 
   useEffect(() => {
     if (!isRestoringSession) return;
@@ -48,6 +52,19 @@ function App() {
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
   }, [dispatch, queryClient]);
 
+  // حذف حساب کارجو (ProfileTab): خروج و پیام تأیید روی صفحه‌ی ورود
+  useEffect(() => {
+    const handleAccountDeleted = () => {
+      clearToken();
+      setShowSessions(false);
+      setLoginNotice({ message: "حساب شما حذف شد و اطلاعات هویتی و فایل رزومه‌تان پاک شد.", email: "" });
+      dispatch(clearUser());
+      queryClient.clear();
+    };
+    window.addEventListener(ACCOUNT_DELETED_EVENT, handleAccountDeleted);
+    return () => window.removeEventListener(ACCOUNT_DELETED_EVENT, handleAccountDeleted);
+  }, [dispatch, queryClient]);
+
   function handleLogout() {
     // نشست همین دستگاه سمت سرور هم باطل شود (کوکی Refresh Token دیگر قابل استفاده نیست)؛ خطای شبکه مانع خروج نمی‌شود
     logoutCurrentSession().catch(() => undefined);
@@ -64,7 +81,25 @@ function App() {
   return (
     <ToastProvider>
       {user === null ? (
-        <LoginPage />
+        authView === "register" ? (
+          <RegisterPage
+            onRegistered={(email) => {
+              setLoginNotice({ message: "ثبت‌نام انجام شد؛ حالا وارد شوید.", email });
+              setAuthView("login");
+            }}
+            onBackToLogin={() => setAuthView("login")}
+          />
+        ) : (
+          <LoginPage
+            key={loginNotice?.email ?? ""}
+            notice={loginNotice?.message ?? null}
+            initialEmail={loginNotice?.email ?? ""}
+            onRegisterClick={() => {
+              setLoginNotice(null);
+              setAuthView("register");
+            }}
+          />
+        )
       ) : (
         <>
           <header className="border-b border-slate-200 bg-white">

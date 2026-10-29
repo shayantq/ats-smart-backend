@@ -43,6 +43,14 @@ class StorageBackend(ABC):
         """فایل را ذخیره می‌کند و آدرس قابل‌دسترسی (file_url) آن را برمی‌گرداند."""
         raise NotImplementedError
 
+    @abstractmethod
+    async def delete_file(self, file_url: str) -> bool:
+        """
+        حذف دائمی فایل (حق فراموش شدن — app/core/privacy.py). True: حذف شد؛ False: فایلی با این آدرس در
+        همین بک‌اند نبود (از قبل حذف شده یا متعلق به بک‌اند دیگری است).
+        """
+        raise NotImplementedError
+
 
 class LocalStorageBackend(StorageBackend):
     """
@@ -61,6 +69,13 @@ class LocalStorageBackend(StorageBackend):
         # I/O دیسک در Thread Pool — تا نوشتن فایل، Event Loop سرور را برای بقیه‌ی درخواست‌ها قفل نکند
         await run_in_threadpool(_write_file, destination, content)
         return f"{settings.MEDIA_BASE_URL.rstrip('/')}/resumes/{object_key}"
+
+    async def delete_file(self, file_url: str) -> bool:
+        path = resolve_local_media_path(file_url)
+        if path is None or not path.is_file():
+            return False
+        await run_in_threadpool(path.unlink)
+        return True
 
 
 def resolve_local_media_path(file_url: str) -> Path | None:
@@ -122,6 +137,26 @@ class S3StorageBackend(StorageBackend):
             ContentType=content_type,
         )
         return self._build_public_url(object_key)
+
+    async def delete_file(self, file_url: str) -> bool:
+        object_key = self._object_key_from_url(file_url)
+        if object_key is None:
+            return False
+        await run_in_threadpool(self._client.delete_object, Bucket=self._bucket, Key=object_key)
+        return True
+
+    def _object_key_from_url(self, file_url: str) -> str | None:
+        """عکس _build_public_url: کلید شیء از روی آدرس ذخیره‌شده‌ی فایل."""
+        prefixes = [
+            settings.S3_PUBLIC_BASE_URL,
+            f"{settings.S3_ENDPOINT_URL.rstrip('/')}/{self._bucket}" if settings.S3_ENDPOINT_URL else "",
+            f"https://{self._bucket}.s3.{settings.S3_REGION}.amazonaws.com",
+        ]
+        for prefix in filter(None, prefixes):
+            prefix = prefix.rstrip("/") + "/"
+            if file_url.startswith(prefix) and len(file_url) > len(prefix):
+                return file_url[len(prefix) :]
+        return None
 
     def _build_public_url(self, object_key: str) -> str:
         if settings.S3_PUBLIC_BASE_URL:

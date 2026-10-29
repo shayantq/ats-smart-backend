@@ -17,7 +17,7 @@ async def test_tests_run_on_a_separate_temporary_database(db_session):
 async def test_schema_comes_from_real_alembic_migrations(db_session):
     """اسکیمای دیتابیس تست همان اسکیمای Production است (کل زنجیره‌ی مایگریشن‌ها اجرا شده)."""
     version = (await db_session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-    assert version == "d2f6b8a41c37"
+    assert version == "b8e4d2f1a9c6"
     tables = await db_session.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
     assert {"interview_question_sets", "interview_questions"} <= set(tables.scalars())  # بانک سؤال GenAI
     # چندمستاجری: RLS روی جدول‌های عملیاتی فعال است
@@ -27,7 +27,8 @@ async def test_schema_comes_from_real_alembic_migrations(db_session):
     assert {"jobs", "applications", "resumes", "interviews", "candidates", "skills"} <= set(rls_tables.scalars())
     indexes = await db_session.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'resumes'"))
     names = set(indexes.scalars())
-    assert {"ix_resumes_raw_text_fts_v2", "ix_resumes_skill_keys_gin", "ix_resumes_experience_years"} <= names
+    assert {"ix_resumes_search_tokens_gin", "ix_resumes_skill_keys_gin", "ix_resumes_experience_years"} <= names
+    assert "ix_resumes_raw_text_fts_v2" not in names  # متن رزومه رمزشده است؛ جستجو با ایندکس کور
     assert "ix_resumes_skill_analysis_gin" not in names  # ایندکس بلااستفاده‌ی قبلی حذف شده
 
 

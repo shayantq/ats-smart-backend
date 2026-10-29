@@ -107,3 +107,11 @@ class OfferResponseResult(BaseModel):
     application_id: uuid.UUID
     new_status: str
     message: str
+
+
+class AccountDeletionResponse(BaseModel):
+    """نتیجه‌ی DELETE /api/v1/candidates/me/ (حق فراموش شدن)."""
+
+    message: str
+    resumes_cleared: int
+    files_deleted: int

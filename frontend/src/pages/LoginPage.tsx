@@ -9,9 +9,16 @@ import { setUser } from "../store/slices/authSlice";
  * صفحه‌ی ورود: ایمیل + رمز عبور → POST /auth/login → ذخیره‌ی توکن → GET /auth/me →
  * ثبت کاربر در Redux؛ App.tsx بر اساس نقش، کاربر را به پورتال مناسبش هدایت می‌کند.
  */
-export default function LoginPage() {
+interface LoginPageProps {
+  /** پیام موفقیت (مثلاً بعد از ثبت‌نام یا حذف حساب) */
+  notice?: string | null;
+  initialEmail?: string;
+  onRegisterClick?: () => void;
+}
+
+export default function LoginPage({ notice = null, initialEmail = "", onRegisterClick }: LoginPageProps = {}) {
   const dispatch = useAppDispatch();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,6 +57,12 @@ export default function LoginPage() {
           ورود به ATS Smart
         </h1>
         <p className="mb-6 text-sm text-slate-500">سامانه‌ی هوشمند جذب و استخدام</p>
+
+        {notice && (
+          <p role="status" className="mb-4 rounded-md bg-green-50 p-2 text-sm text-green-700">
+            {notice}
+          </p>
+        )}
 
         <label htmlFor="login-email" className="mb-1 block text-sm font-semibold text-slate-700">
           ایمیل
@@ -92,6 +105,15 @@ export default function LoginPage() {
         >
           {isSubmitting ? "در حال ورود..." : "ورود"}
         </button>
+        {onRegisterClick && (
+          <button
+            type="button"
+            onClick={onRegisterClick}
+            className="mt-3 w-full text-center text-xs font-semibold text-blue-600 hover:underline"
+          >
+            کارجو هستید و حساب ندارید؟ ثبت‌نام
+          </button>
+        )}
       </form>
     </main>
   );

@@ -17,6 +17,7 @@
 - [API و امکانات](#api-و-امکانات)
 - [چندمستاجری (Multi-Tenancy)](#چندمستاجری-multi-tenancy)
 - [Zero-Trust بین سرویس‌ها](#zero-trust-بین-سرویسها)
+- [حریم خصوصی (GDPR) و رمزنگاری داده‌ها](#حریم-خصوصی-gdpr-و-رمزنگاری-دادهها)
 - [خط لوله‌ی هوش مصنوعی رزومه](#خط-لولهی-هوش-مصنوعی-رزومه)
 - [تولید سؤال مصاحبه با هوش مصنوعی مولد](#تولید-سؤال-مصاحبه-با-هوش-مصنوعی-مولد)
 - [تست بار و امنیت](#تست-بار-و-امنیت)
@@ -110,6 +111,7 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 | `DATABASE_URL` · `REDIS_URL` | اتصال PostgreSQL (asyncpg) و Redis — داخل Docker خودکار با نام سرویس‌ها ساخته می‌شوند |
 | `SECRET_KEY` | کلید امضای JWT |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` · `REFRESH_TOKEN_EXPIRE_DAYS` | عمر توکن‌ها (پیش‌فرض ۱۵ دقیقه / ۷ روز) |
+| `PII_ENCRYPTION_KEYS` · `PII_BLIND_INDEX_KEY` | حریم خصوصی: کلیدهای Fernet رمزنگاری داده‌های شخصی (جداشده با کاما؛ اولی فعال) و کلید HMAC ایندکس کور جستجوی رزومه — الزامی؛ سرور: `secrets/pii.env`، کلاستر: Secret `ats-pii-keys` |
 | `GEOIP_DB_PATH` · `SUSPICIOUS_LOGIN_DISTANCE_KM` · `SUSPICIOUS_LOGIN_SPEED_KMH` | مدیریت نشست‌ها: فایل mmdb موقعیت IP (سرور: `deploy/geoip-update.sh`؛ خالی = بررسی جغرافیایی غیرفعال) و آستانه‌های ورود مشکوک (پیش‌فرض ۵۰۰ کیلومتر / ۹۰۰ کیلومتر بر ساعت) |
 | `FRONTEND_ORIGIN` | تنها Origin مجاز CORS |
 | `STORAGE_BACKEND` | `local` (دیسک، پیش‌فرض) یا `s3` (AWS S3، Liara، ArvanCloud، MinIO و ...) |
@@ -304,6 +306,26 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 
 ---
 
+## حریم خصوصی (GDPR) و رمزنگاری داده‌ها
+
+داده‌های شخصی کارجو در دیتابیس رمزشده‌اند و کارجو می‌تواند حسابش را حذف کند. معماری کامل: [`docs/privacy/ARCHITECTURE.md`](docs/privacy/ARCHITECTURE.md).
+
+- **رمزنگاری در لایه‌ی برنامه (Fernet):** نام، نام خانوادگی، تلفن و آدرس کارجو، و متن خام و داده‌ی استخراج‌شده‌ی رزومه. در DBeaver، psql یا فایل پشتیبان فقط `gAAAAA…` دیده می‌شود. نوع‌های ستون `EncryptedText`/`EncryptedJSON` (`app/core/crypto.py`) هنگام خواندن خودکار رمزگشایی می‌کنند و کد مسیرها تغییری نکرده است.
+- **جستجوی متن رزومه روی داده‌ی رمزشده:** ایندکس کور. هر کلمه با HMAC و کلید جدا هش و در `resumes.search_tokens` (ایندکس GIN) نگه داشته می‌شود. AND/OR مثل قبل کار می‌کند؛ تطبیق فقط با کلمه‌ی کامل است.
+- **`DELETE /api/v1/candidates/me/` (حق فراموش شدن):** Hard Delete نیست:
+  - هویت تصادفی یا NULL می‌شود.
+  - فایل و متن رزومه پاک می‌شوند.
+  - نشست‌ها باطل می‌شوند.
+  - درخواست‌ها، وضعیت‌ها و نمره‌ها می‌مانند، پس قیف استخدام و نرخ تبدیل سازمان‌ها تغییر نمی‌کند.
+- **رضایت‌نامه:** ثبت‌نام کارجو بدون `data_consent: true` ← `422`. زمان و نسخه‌ی رضایت را سرور ثبت می‌کند (`users.data_consent_at`). فرم ثبت‌نام فرانت‌اند چک‌باکس رضایت دارد.
+- **کلید:** `PII_ENCRYPTION_KEYS` (چند کلید برای چرخش) و `PII_BLIND_INDEX_KEY`، فقط از متغیر محیطی محافظت‌شده:
+  - **سرور:** `secrets/pii.env` با مجوز ۶۰۰، فقط برای `backend_api`، `worker` و `migrate`.
+  - **کلاستر:** Secret `ats-pii-keys` با `secretKeyRef`.
+  - بدون کلید، برنامه بالا نمی‌آید. **یک نسخه‌ی آفلاین از کلید نگه دارید؛ بدون آن، داده‌ها و فایل‌های پشتیبان قابل خواندن نیستند.**
+- **راستی‌آزمایی:** `bash deploy/privacy-check.sh` روی سرور ← `[PRIVACY PASS]`.
+
+---
+
 ## خط لوله‌ی هوش مصنوعی رزومه
 
 بعد از هر آپلود موفق، Worker این چهار مرحله را در پس‌زمینه اجرا می‌کند (`app/tasks/resume_processing.py`). شکست هر مرحله فقط لاگ می‌شود و نتایج مراحل قبلی از بین نمی‌رود:
@@ -391,6 +413,8 @@ docker compose -f docker-compose.yml -f security/docker-compose.zap.yml run --rm
 ## پشتیبان‌گیری و بازیابی فاجعه (DR)
 
 کد و پیکربندی: پوشه‌ی `backup/` · سرویس‌های `backup` (زمان‌بندی خودکار)، `backup_restore` (فقط با دستور) و `offsite_storage` (شبیه‌ساز Offsite، فقط لوکال).
+
+> **⚠️ کلید رمزنگاری داده‌های شخصی جزو پشتیبان نیست (عمداً).** داده‌های شخصی داخل dump و WAL به‌صورت رمزشده‌ی Fernet ذخیره شده‌اند. بازیابی، بدون همان `PII_ENCRYPTION_KEYS` (در `secrets/pii.env` سرور یا Secret `ats-pii-keys`)، جدول‌ها را برمی‌گرداند ولی نام، تلفن، آدرس و متن رزومه‌ها قابل خواندن نیست. کلید را جدا و آفلاین نگه دارید؛ سرویس `backup` آن را نمی‌بیند. بنگرید [`docs/privacy/ARCHITECTURE.md`](docs/privacy/ARCHITECTURE.md).
 
 ```
 PostgreSQL ──(archive_command: هر سگمنت WAL)──► wal_archive ─┐

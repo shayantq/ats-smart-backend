@@ -8,10 +8,11 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, event, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.crypto import EncryptedJSON, EncryptedText, blind_index_tokens
 from app.models.base import Base, SharedTenantMixin, TenantMixin
 
 if TYPE_CHECKING:
@@ -91,16 +92,25 @@ class Resume(TenantMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False)
     file_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    # فیلد متنی خام رزومه جهت فعال‌سازی موتور جستجوی متنی (Full-Text Search / GIN Index) در آینده
-    raw_text: Mapped[str] = mapped_column(Text, nullable=True)
-    # خروجی ساختاریافته‌ی ماژول NER (اطلاعات فردی + سوابق تحصیلی + تجربیات شغلی)
-    # که به مرحله‌ی بعدی خط لوله‌ی هوش مصنوعی (امتیازدهی) منتقل می‌شود
-    parsed_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # متن خام رزومه — رمزشده در دیتابیس (app/core/crypto.py)، در برنامه خودکار باز می‌شود
+    raw_text: Mapped[str] = mapped_column(EncryptedText, nullable=True)
+    # ایندکس کور جستجوی متن رزومه: HMAC هر کلمه‌ی raw_text (با تغییر raw_text خودکار ساخته می‌شود —
+    # بنگرید listener پایین همین فایل)؛ ایندکس GIN ix_resumes_search_tokens_gin
+    search_tokens: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    # خروجی ساختاریافته‌ی ماژول NER (اطلاعات فردی + سوابق تحصیلی + تجربیات شغلی) — رمزشده، چون نام، ایمیل و
+    # تلفن استخراج‌شده را دارد؛ به مرحله‌ی بعدی خط لوله‌ی هوش مصنوعی (امتیازدهی) منتقل می‌شود
+    parsed_data: Mapped[dict | None] = mapped_column(EncryptedJSON, nullable=True)
     # خروجی موتور مهارت (Skill Engine): مهارت‌های تطبیق‌یافته با گراف مهارت +
     # تحلیل خالص سال‌های سابقه‌ی کاری (بعد از کسر تداخل و فیلتر دوره‌های نامعتبر)
     skill_analysis: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     candidate: Mapped["Candidate"] = relationship()
+
+
+@event.listens_for(Resume.raw_text, "set")
+def _rebuild_resume_search_tokens(target: Resume, value: str | None, oldvalue, initiator) -> None:
+    """هر بار متن رزومه عوض شود (استخراج متن، ناشناس‌سازی) ایندکس کور جستجو هم از همان متن ساخته می‌شود."""
+    target.search_tokens = blind_index_tokens(value)
 
 
 class Skill(SharedTenantMixin, Base):

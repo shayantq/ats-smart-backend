@@ -1,10 +1,59 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchMyProfile, updateMyProfile } from "../../services/candidatesApi";
+import { deleteMyAccount, fetchMyProfile, updateMyProfile } from "../../services/candidatesApi";
 import SkillTagInput from "./SkillTagInput";
 import ResumeUploadWidget from "./ResumeUploadWidget";
 import { useToast } from "../../context/ToastContext";
-import { ApiError } from "../../services/apiClient";
+import { ACCOUNT_DELETED_EVENT, ApiError } from "../../services/apiClient";
+
+/**
+ * حذف حساب (حق فراموش شدن): تأیید دومرحله‌ای، چون برگشت‌پذیر نیست. سرور هویت را ناشناس و فایل رزومه را حذف
+ * می‌کند و همه‌ی نشست‌ها را می‌بندد؛ آمار بی‌نام درخواست‌ها برای سازمان‌ها می‌ماند.
+ */
+function DeleteAccountSection() {
+  const { showToast } = useToast();
+  const [isConfirming, setIsConfirming] = useState(false);
+  const deleteMutation = useMutation({
+    mutationFn: deleteMyAccount,
+    onSuccess: () => window.dispatchEvent(new Event(ACCOUNT_DELETED_EVENT)),
+    onError: () => showToast("حذف حساب ناموفق بود؛ دوباره تلاش کنید.", "error"),
+  });
+
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50/40 p-4 lg:col-span-2">
+      <h3 className="mb-1 text-sm font-bold text-red-700">حذف حساب</h3>
+      <p className="mb-3 text-xs leading-6 text-slate-600">
+        نام، شماره‌ی تماس، آدرس، ایمیل و فایل و متن رزومه‌ی شما برای همیشه پاک می‌شود و دیگر نمی‌توانید با این حساب وارد
+        شوید. فقط آمار بی‌نام درخواست‌ها برای سازمان‌ها باقی می‌ماند.
+      </p>
+      {isConfirming ? (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            onClick={() => deleteMutation.mutate()}
+            disabled={deleteMutation.isPending}
+            className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {deleteMutation.isPending ? "در حال حذف..." : "بله، حسابم برای همیشه حذف شود"}
+          </button>
+          <button
+            onClick={() => setIsConfirming(false)}
+            disabled={deleteMutation.isPending}
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            انصراف
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setIsConfirming(true)}
+          className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+        >
+          حذف حساب
+        </button>
+      )}
+    </div>
+  );
+}
 
 const PROFILE_QUERY_KEY = ["candidate", "profile"];
 
@@ -113,6 +162,8 @@ export default function ProfileTab() {
       </div>
 
       <ResumeUploadWidget />
+
+      <DeleteAccountSection />
     </div>
   );
 }

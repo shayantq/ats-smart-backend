@@ -24,6 +24,7 @@ from app.core.config import settings
 from app.core.deps import get_current_session_id, get_current_user
 from app.core.limiter import limiter
 from app.core.notification_service import notify_new_user_registered
+from app.core.privacy import PRIVACY_NOTICE_VERSION
 from app.core.queue import enqueue_task
 from app.core.security import (
     create_access_token,
@@ -158,6 +159,10 @@ async def register_user(
         password_hash=await hash_password_async(payload.password),
         role=payload.role.value,
     )
+    if payload.data_consent:
+        # زمان رضایت را سرور ثبت می‌کند، نه کلاینت (قابل جعل نیست)
+        new_user.data_consent_at = datetime.now(timezone.utc)
+        new_user.data_consent_version = PRIVACY_NOTICE_VERSION
 
     if payload.company_name:
         # ثبت‌نام Admin = ساخت سازمان (Tenant) تازه. ساخت سازمان کار سطح پلتفرم است و هیچ پالیسی

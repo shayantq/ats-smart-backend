@@ -37,6 +37,9 @@ class RegisterRequest(BaseModel):
     company_name: Optional[str] = Field(
         default=None, min_length=2, max_length=255, description="فقط برای Admin: نام سازمان جدید"
     )
+    # حریم خصوصی: کارجو باید رضایت‌نامه‌ی پردازش داده‌های شخصی را صریحاً تأیید کند؛ زمان و نسخه‌ی متن
+    # رضایت‌نامه سمت سرور ثبت می‌شود (users.data_consent_at / data_consent_version)
+    data_consent: bool = Field(default=False, description="تأیید رضایت‌نامه‌ی پردازش داده‌های شخصی (برای کارجو الزامی)")
 
     @field_validator("company_name", mode="before")
     @classmethod
@@ -51,6 +54,8 @@ class RegisterRequest(BaseModel):
             raise ValueError("برای ثبت‌نام Admin، نام سازمان (company_name) الزامی است.")
         if self.role == UserRole.CANDIDATE and self.company_name:
             raise ValueError("کارجو عضو سازمان نیست؛ company_name را نفرستید.")
+        if self.role == UserRole.CANDIDATE and not self.data_consent:
+            raise ValueError("برای ثبت‌نام کارجو، تأیید رضایت‌نامه‌ی پردازش داده‌های شخصی (data_consent) الزامی است.")
         return self
 
     @field_validator("email", mode="before")

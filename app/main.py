@@ -15,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.core.config import settings
+from app.core.crypto import validate_keys
 from app.core.limiter import limiter
 from app.core.metrics import setup_metrics
 from app.core.redis_client import check_redis_connection, close_redis_connection
@@ -44,6 +45,9 @@ async def lifespan(app: FastAPI):
     # اتصال به Redis پیش از آماده شدن کامل سرور بررسی می‌شود تا وضعیتش در
     # لاگ‌های سرور واضح باشد؛ در دسترس نبودن Redis باعث توقف بالا آمدن سرور
     # نمی‌شود (فقط کش/صف موقتاً غیرفعال می‌مانند)، چون وابستگی حیاتی API نیست.
+    # حریم خصوصی: بدون کلید رمزنگاری داده‌های شخصی، API بالا نمی‌آید (به‌جای نوشتن داده‌ی رمزنشده یا
+    # خطای دیرهنگام روی اولین درخواست) — app/core/crypto.py
+    validate_keys()
     await check_redis_connection()
     yield
     await close_redis_connection()

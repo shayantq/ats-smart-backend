@@ -11,9 +11,16 @@
     pytest -m integration
 """
 
+import os
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
+
+# کلیدهای رمزنگاری داده‌های شخصی فقط برای همین اجرای تست (تصادفی، در هیچ فایلی ذخیره نمی‌شوند)؛ پیش از
+# import شدن app تنظیم می‌شوند و به پردازه‌ی مایگریشن تست‌های یکپارچه هم ارث می‌رسند
+os.environ.setdefault("PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+os.environ.setdefault("PII_BLIND_INDEX_KEY", Fernet.generate_key().decode())
 
 _TESTS_ROOT = Path(__file__).resolve().parent
 

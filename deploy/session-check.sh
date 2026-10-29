@@ -113,7 +113,7 @@ def result(ok, text):
     print(f"RESULT {'PASS' if ok else 'FAIL'} {text}")
 
 
-code, _ = call("POST", "/register", body={"email": EMAIL, "password": PASSWORD, "role": "Candidate"})
+code, _ = call("POST", "/register", body={"email": EMAIL, "password": PASSWORD, "role": "Candidate", "data_consent": True})
 result(code == 201, f"ثبت‌نام کاربر آزمایشی → {code}")
 code, laptop = call("POST", "/login", LAPTOP, body={"email": EMAIL, "password": PASSWORD})
 result(code == 200, f"ورود دستگاه ۱ (Chrome · Windows) → {code}")

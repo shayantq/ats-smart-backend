@@ -11,6 +11,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.crypto import EncryptedText
 from app.models.base import Base, TenantMixin
 
 
@@ -30,6 +31,11 @@ class User(Base):
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True, index=True
     )
+    # حریم خصوصی (docs/privacy/ARCHITECTURE.md): زمان و نسخه‌ی متن رضایت‌نامه‌ای که کاربر هنگام ثبت‌نام تأیید کرد
+    data_consent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    data_consent_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    # «حق فراموش شدن»: زمان ناشناس‌سازی حساب (ردیف حذف نمی‌شود تا آمار قیف استخدام سالم بماند)
+    anonymized_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     owned_companies: Mapped[list["Company"]] = relationship(back_populates="owner", foreign_keys="Company.owner_id")
     candidate_profile: Mapped["Candidate"] = relationship(back_populates="user", uselist=False)
@@ -57,13 +63,15 @@ class Candidate(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False)
-    first_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    last_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    phone: Mapped[str] = mapped_column(String(20), nullable=True)
+    # داده‌های هویتی/تماس رمزشده در دیتابیس (Fernet — app/core/crypto.py)؛ در برنامه خودکار باز می‌شوند.
+    # طول ورودی‌ها را اسکیمای API محدود می‌کند (متن رمزشده چند برابر بلندتر است، پس ستون‌ها Text هستند)
+    first_name: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    last_name: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    phone: Mapped[str] = mapped_column(EncryptedText, nullable=True)
     # تگ‌های مهارتی که خود کارجو از پروفایلش ثبت می‌کند (بخش پورتال کارجو)
     skills: Mapped[Optional[list[str]]] = mapped_column(ARRAY(String(100)), nullable=True)
     # موقعیت مکانی کارجو — برای موتور نمره‌دهی و رتبه‌بندی رزومه (Matching Score) استفاده می‌شود
-    location: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    location: Mapped[Optional[str]] = mapped_column(EncryptedText, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="candidate_profile")
 

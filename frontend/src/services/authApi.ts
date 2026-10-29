@@ -28,6 +28,18 @@ export async function login(email: string, password: string): Promise<LoginRespo
   });
 }
 
+/**
+ * ثبت‌نام کارجو — POST /api/v1/auth/register. data_consent (تأیید رضایت‌نامه‌ی پردازش داده‌های شخصی)
+ * برای کارجو الزامی است؛ زمان رضایت را سرور ثبت می‌کند.
+ */
+export async function registerCandidate(email: string, password: string, dataConsent: boolean): Promise<void> {
+  await apiRequest<unknown>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password, role: "Candidate", data_consent: dataConsent }),
+    auth: false,
+  });
+}
+
 export async function fetchCurrentUser(): Promise<AuthUser> {
   const me = await apiRequest<CurrentUserResponse>("/auth/me");
   return { id: me.user_id, email: me.email, role: me.role };

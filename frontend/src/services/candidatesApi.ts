@@ -1,6 +1,7 @@
 /**
  * فراخوانی اندپوینت‌های بک‌اند مربوط به پورتال کارجو:
  * - GET/PUT /api/v1/candidates/me                          پروفایل شخصی
+ * - DELETE  /api/v1/candidates/me/                         حذف حساب (ناشناس‌سازی اطلاعات هویتی)
  * - GET     /api/v1/candidates/me/applications                رهگیر وضعیت
  * - GET     /api/v1/candidates/me/offers                       صندوق ورودی پیشنهادها
  * - PUT     /api/v1/candidates/me/applications/{id}/respond     پاسخ به یک پیشنهاد
@@ -27,6 +28,16 @@ export async function updateMyProfile(payload: CandidateProfileUpdatePayload): P
     method: "PUT",
     body: JSON.stringify(payload),
   });
+}
+
+export interface AccountDeletionResult {
+  message: string;
+  resumes_cleared: number;
+  files_deleted: number;
+}
+
+export async function deleteMyAccount(): Promise<AccountDeletionResult> {
+  return apiRequest<AccountDeletionResult>("/candidates/me/", { method: "DELETE" });
 }
 
 export async function fetchMyApplications(): Promise<ApplicationTrackerItem[]> {

@@ -1,120 +1,91 @@
 """
-ابزار تبدیل عبارت جستجوی متنی آزاد کاربر (که می‌تواند شامل عملگرهای منطقی
-AND/OR باشد، مثلاً "Python AND Django" یا "React OR Vue") به یک عبارت معتبر
-برای ورودی تابع to_tsquery پستگرس (بنگرید app/routers/candidates.py، موتور
-جستجوی پیشرفته‌ی رزومه‌ها).
+تبدیل عبارت جستجوی متنی آزاد کاربر (با عملگرهای منطقی AND/OR، مثلاً "Python AND Django" یا "React OR Vue")
+به شرط جستجو روی ایندکس کور رزومه‌ها (app/routers/candidates.py، موتور جستجوی پیشرفته‌ی رزومه‌ها).
 
-چرا websearch_to_tsquery پستگرس استفاده نشده؟
-------------------------------------------------
-websearch_to_tsquery کلیدواژه‌ی "or" را به‌عنوان عملگر OR می‌شناسد، ولی
-"and" را یک کلمه‌ی عادی جستجو در نظر می‌گیرد (چون Postgres پیکربندی 'simple'
-هیچ Stopword‌ای حذف نمی‌کند — دقیقاً همان پیکربندی‌ای که ایندکس GIN رزومه‌ها
-با آن ساخته شده، بنگرید مایگریشن 852de21930b5). یعنی "Python AND Django" با
-websearch_to_tsquery تبدیل می‌شد به جستجوی سه کلمه‌ی "python"، "and" و
-"django" با هم (AND ضمنی پیش‌فرض) — دقیقاً برعکسِ رفتاری که معیار پذیرش تسک
-می‌خواهد. به همین دلیل این پارسر دستی نوشته شده تا هم AND و هم OR را صریح و
-Case-Insensitive تشخیص دهد.
+حریم خصوصی: متن رزومه (resumes.raw_text) در دیتابیس رمزشده است و جستجوی تمام‌متن پستگرس (to_tsvector) روی آن
+ممکن نیست. به‌جایش هر کلمه‌ی متن با HMAC و کلید محرمانه هش و در resumes.search_tokens (text[] با ایندکس GIN)
+نگه داشته می‌شود (app/core/crypto.py). عبارت جستجو با همین نرمال‌سازی به کلمه شکسته، هش و با عملگر @> مقایسه
+می‌شود — پس همان معنای AND/OR قبلی حفظ می‌شود (تطبیق کلمه‌ی کامل، بدون حساسیت به حروف بزرگ/کوچک).
+
+چرا پارسر دستی؟ websearch_to_tsquery پستگرس «and» را عملگر نمی‌شناسد؛ این پارسر هر دو را صریح و
+Case-Insensitive تشخیص می‌دهد و همین رفتار با ایندکس کور هم حفظ شده است.
 """
 
 from __future__ import annotations
 
 import re
 
-from sqlalchemy import Float, Text, func, literal_column
+from sqlalchemy import Float, Text, and_, func, or_
 from sqlalchemy.dialects.postgresql import ARRAY, array
 from sqlalchemy.sql.elements import ColumnElement
-
 
 # جداکننده‌ی عملگرهای منطقی: با فاصله از دو طرف احاطه شده باشند تا کلماتی
 # مثل "Andrew" یا "Orlando" به اشتباه عملگر تشخیص داده نشوند.
 _OPERATOR_SPLIT_PATTERN = re.compile(r"\s+(AND|OR)\s+", re.IGNORECASE)
 
-# هر کلمه فقط از حروف (فارسی/انگلیسی) و اعداد تشکیل می‌شود؛ هر کاراکتر دیگر
-# (مثل '، "، ؛، --، و ...) پیش از رسیدن به to_tsquery حذف می‌شود تا امکان
-# بروز خطای Syntax در تجزیه‌گر tsquery پستگرس وجود نداشته باشد.
-_WORD_PATTERN = re.compile(r"[\w\u0600-\u06FF]+", re.UNICODE)
+# هر کلمه فقط از حروف (فارسی/انگلیسی) و اعداد تشکیل می‌شود؛ هر نویسه‌ی دیگر (، ؛ ' " و ...) حذف می‌شود.
+_WORD_PATTERN = re.compile(r"\w+", re.UNICODE)
+
+# نویسه‌های پرکاربرد در نام فناوری‌ها که کلمه را می‌شکنند: «Node.js» → node و js، «C++» → c، «C#» → c.
+# پس جستجوی «Node» هم رزومه‌ای را که فقط «Node.js» نوشته پیدا می‌کند (رفتار قبلی جستجوی تمام‌متن حفظ شده).
+_SPLIT_CHARS = str.maketrans({char: " " for char in "./+#@_-"})
 
 
-def build_resume_search_tsquery(raw_query: str | None) -> str | None:
+def resume_search_words(text: str | None) -> list[str]:
+    """
+    نرمال‌سازی مشترک «متن رزومه هنگام ساخت ایندکس» و «عبارت جستجو» — این دو باید همیشه یکی باشند.
+    خروجی: کلمات حروف‌کوچک به ترتیب ظهور (ممکن است تکراری باشند).
+    """
+    if not text:
+        return []
+    return [word.lower() for word in _WORD_PATTERN.findall(text.translate(_SPLIT_CHARS))]
+
+
+def parse_search_query(raw_query: str | None) -> list[tuple[str, list[str]]]:
     """
     ورودی: عبارت خام جستجوی کاربر (پارامتر q).
-    خروجی: یک رشته‌ی آماده برای func.to_tsquery('simple', <خروجی>)، یا None
-    اگر بعد از پاک‌سازی هیچ کلمه‌ی معتبری باقی نماند (مثلاً ورودی فقط شامل
-    نویسه‌های خاص بود).
+    خروجی: [(عملگرِ اتصال به عبارت قبلی «&» یا «|»، کلمات عبارت), ...] — فهرست خالی اگر کلمه‌ی معتبری نماند.
 
     قوانین:
-    - AND/OR به‌صورت Case-Insensitive شناسایی می‌شوند (طبق معیار پذیرش تسک).
-    - بین دو عبارت متوالیِ بدون عملگر صریح (فقط با فاصله جدا شده)، AND
-      پیش‌فرض در نظر گرفته می‌شود — دقیقاً همان رفتاری که کاربر از یک
-      جستجوی چندکلمه‌ای معمولی انتظار دارد.
-    - عبارت نهایی، عبارت‌های متوالی را از چپ به راست و به‌ترتیب با پرانتزبندی
-      صریح ترکیب می‌کند (بدون اولویت ضمنی بین AND/OR) تا رفتار همیشه قابل‌پیش‌بینی
-      و قطعی باشد.
+    - AND/OR به‌صورت Case-Insensitive شناسایی می‌شوند.
+    - بین دو عبارت متوالیِ بدون عملگر صریح (فقط با فاصله جدا شده)، AND پیش‌فرض است؛ کلمات یک عبارت هم با
+      هم AND می‌شوند.
+    - عبارت‌ها از چپ به راست و بدون اولویت ضمنی بین AND/OR ترکیب می‌شوند تا رفتار قابل‌پیش‌بینی بماند.
     """
-    if not raw_query:
-        return None
+    if not raw_query or not raw_query.strip():
+        return []
 
-    raw_query = raw_query.strip()
-    if not raw_query:
-        return None
-
-    segments = _OPERATOR_SPLIT_PATTERN.split(raw_query)
-
-    combined_expr: str | None = None
-    pending_operator = "&"  # پیش‌فرض بین دو عبارت متوالی بدون عملگر صریح: AND
-
-    for index, segment in enumerate(segments):
+    terms: list[tuple[str, list[str]]] = []
+    pending_operator = "&"
+    for index, segment in enumerate(_OPERATOR_SPLIT_PATTERN.split(raw_query.strip())):
         # segments همیشه به‌صورت متناوب [عبارت, عملگر, عبارت, عملگر, ...] است
         if index % 2 == 1:
             pending_operator = "|" if segment.upper() == "OR" else "&"
             continue
-
-        words = _WORD_PATTERN.findall(segment)
-        if not words:
-            continue
-
-        term_expr = " & ".join(words)
-        if len(words) > 1:
-            term_expr = f"({term_expr})"
-
-        combined_expr = term_expr if combined_expr is None else f"({combined_expr} {pending_operator} {term_expr})"
-
-    return combined_expr
+        words = resume_search_words(segment)
+        if words:
+            terms.append((pending_operator, words))
+    return terms
 
 
-# نویسه‌هایی که پیش از to_tsvector به فاصله تبدیل می‌شوند (بنگرید توضیح تابع
-# resume_fts_tsvector_expression پایین همین فایل).
-_FTS_PUNCTUATION_CHARS = "./+#@_-"
-_FTS_PUNCTUATION_REPLACEMENT = " " * len(_FTS_PUNCTUATION_CHARS)
-
-
-def resume_fts_tsvector_expression(raw_text_column: ColumnElement) -> ColumnElement:
+def resume_blind_index_condition(raw_query: str | None, search_tokens_column: ColumnElement) -> ColumnElement | None:
     """
-    عبارت to_tsvector مشترکی که هم در کوئری جستجو (app/routers/candidates.py)
-    و هم در تعریف ایندکس GIN (مایگریشن مربوطه — بنگرید پایین) استفاده می‌شود؛
-    این دو باید همیشه دقیقاً یکی باشند وگرنه پستگرس نمی‌تواند از ایندکس
-    استفاده کند.
-
-    ⚠️ باگ کشف‌شده و رفع‌شده (نسخه‌ی اول این تابع این کار را نمی‌کرد):
-    پارسر پیش‌فرض متن پستگرس، رشته‌هایی مثل "Node.js" یا "C++" را طبق قواعد
-    توکنایزیشن خودش (تشخیص الگوی «شبه‌میزبان»/«شبه‌فایل» برای کلمه.کلمه) یک
-    توکن واحد "node.js" می‌بیند، نه دو کلمه‌ی جدای "node" و "js" — یعنی جستجوی
-    تک‌کلمه‌ای "Node" هیچ‌وقت با رزومه‌ای که فقط "Node.js" نوشته مطابقت پیدا
-    نمی‌کرد (دقیقاً چیزی که باعث خالی برگشتن نتایج جستجوهای واقعی می‌شد، چون
-    اکثر رزومه‌ها این فناوری‌ها را با نقطه/پلاس/هش می‌نویسند: Node.js، C++،
-    C#، ASP.NET، Vue.js و ...).
-
-    راه‌حل: پیش از to_tsvector، نویسه‌های پرکاربرد در نام فناوری‌ها
-    (./+#@_-) با translate() به فاصله تبدیل می‌شوند — یعنی "Node.js" عملاً
-    مثل "Node js" توکنایز می‌شود و هم با جستجوی "Node" هم "js" هم "Node.js"
-    (که حالا به AND دو کلمه تبدیل می‌شود) مطابقت پیدا می‌کند.
+    شرط SQL جستجوی متن رزومه روی ایندکس کور:  search_tokens @> ARRAY[hmac(word1), hmac(word2), ...]
+    (هر عبارت = همه‌ی کلماتش)، ترکیب‌شده با AND/OR از چپ به راست. پستگرس هر @> را از ایندکس GIN
+    ix_resumes_search_tokens_gin جواب می‌دهد. None اگر عبارت کلمه‌ی معتبری نداشته باشد.
     """
-    normalized = func.translate(
-        func.coalesce(raw_text_column, literal_column("''")),
-        literal_column(f"'{_FTS_PUNCTUATION_CHARS}'"),
-        literal_column(f"'{_FTS_PUNCTUATION_REPLACEMENT}'"),
-    )
-    return func.to_tsvector("simple", normalized)
+    from app.core.crypto import blind_index_token
+
+    combined: ColumnElement | None = None
+    for operator, words in parse_search_query(raw_query):
+        hashed = sorted({blind_index_token(word) for word in words})
+        # لیست با همان نوع ستون (text[]) Bind می‌شود؛ ARRAY[...] پارامترها را varchar[] می‌فرستاد و @> خطا می‌داد
+        term = search_tokens_column.contains(hashed)
+        if combined is None:
+            combined = term
+        else:
+            combined = or_(combined, term) if operator == "|" else and_(combined, term)
+    return combined
 
 
 def resume_has_skill_condition(skill_analysis_column: ColumnElement, skill_name: str) -> ColumnElement:

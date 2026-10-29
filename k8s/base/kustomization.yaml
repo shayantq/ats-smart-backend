@@ -78,3 +78,7 @@ configMapGenerator:
   - name: backup-config
     envs:
       - backup/backup.env
+
+# حریم خصوصی: کلید رمزنگاری داده‌های شخصی فقط برای API، Worker ها و Job مایگریشن (secretKeyRef)
+patches:
+  - path: backend/pii-keys.patch.yaml

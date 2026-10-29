@@ -78,6 +78,11 @@ secretGenerator:
   - name: ats-service-auth-public
     files:
       - genai-worker.pem=secrets/service-auth/genai-worker.pem
+  # حریم خصوصی: PII_ENCRYPTION_KEYS و PII_BLIND_INDEX_KEY — deploy.sh یک‌بار می‌سازد (secrets/pii.env؛ در
+  # .gitignore). فقط با secretKeyRef به API، Worker ها و مایگریشن می‌رسد (k8s/base/backend/pii-keys.patch.yaml)
+  - name: ats-pii-keys
+    envs:
+      - secrets/pii.env
 
 patches:
   # همه‌ی PVC ها (و PVC های StatefulSet پستگرس) روی StorageClass با Retain

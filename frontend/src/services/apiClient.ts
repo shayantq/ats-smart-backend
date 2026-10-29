@@ -13,6 +13,9 @@ import { clearToken, getToken, setToken } from "./tokenStorage";
  */
 export const UNAUTHORIZED_EVENT = "ats:unauthorized";
 
+/** کارجو حسابش را حذف کرد (حق فراموش شدن)؛ App.tsx او را با پیام تأیید به صفحه‌ی ورود می‌برد */
+export const ACCOUNT_DELETED_EVENT = "ats:account-deleted";
+
 function forceLogin(): void {
   clearToken();
   window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));

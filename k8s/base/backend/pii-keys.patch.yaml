@@ -1,0 +1,112 @@
+# =============================================================================
+# حریم خصوصی: کلید رمزنگاری داده‌های شخصی (Fernet) و کلید ایندکس کور جستجوی رزومه — app/core/crypto.py
+#
+# فقط از Secret جدای ats-pii-keys و فقط با secretKeyRef، و فقط به کانتینرهایی که داده‌ی رمزشده می‌خوانند یا
+# می‌نویسند: API، Worker ها (ایمیل با نام کارجو، پردازش رزومه، پروفایل هوش مصنوعی) و Job مایگریشن. scheduler،
+# init container ها، فرانت‌اند، مانیتورینگ و backup آن را نمی‌بینند؛ در ConfigMap، ایمیج و ریپو هم نیست.
+# Secret را Overlay هر محیط می‌سازد (لوکال: secretGenerator از secrets/pii.env که k8s/deploy.sh یک‌بار می‌سازد).
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: backend-api
+          env:
+            - name: PII_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_ENCRYPTION_KEYS
+            - name: PII_BLIND_INDEX_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_BLIND_INDEX_KEY
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          env:
+            - name: PII_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_ENCRYPTION_KEYS
+            - name: PII_BLIND_INDEX_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_BLIND_INDEX_KEY
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resume-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: resume-worker
+          env:
+            - name: PII_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_ENCRYPTION_KEYS
+            - name: PII_BLIND_INDEX_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_BLIND_INDEX_KEY
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genai-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: genai-worker
+          env:
+            - name: PII_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_ENCRYPTION_KEYS
+            - name: PII_BLIND_INDEX_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_BLIND_INDEX_KEY
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          env:
+            - name: PII_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_ENCRYPTION_KEYS
+            - name: PII_BLIND_INDEX_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ats-pii-keys
+                  key: PII_BLIND_INDEX_KEY

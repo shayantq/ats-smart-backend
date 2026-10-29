@@ -27,6 +27,7 @@ from rq import SimpleWorker
 from rq.timeouts import TimerDeathPenalty
 
 from app.core.config import settings
+from app.core.crypto import validate_keys
 from app.core.queue import ALL_QUEUES
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +40,8 @@ class WindowsCompatibleWorker(SimpleWorker):
 
 
 def main(queue_names: list[str] | None = None) -> None:
+    # کارها داده‌ی شخصی رمزشده می‌خوانند/می‌نویسند (رزومه، نام کارجو در ایمیل)؛ بدون کلید بالا نمی‌آید
+    validate_keys()
     queue_names = queue_names or list(ALL_QUEUES)
     unknown = sorted(set(queue_names) - set(ALL_QUEUES))
     if unknown:

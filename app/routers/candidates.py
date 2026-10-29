@@ -2,6 +2,7 @@
 میکروسرویس پورتال اختصاصی کارجو (Candidate Dashboard) + موتور جستجوی
 پیشرفته‌ی کارجویان برای تیم منابع انسانی:
 - GET/PUT /api/v1/candidates/me                          مشاهده/ویرایش پروفایل شخصی و تگ‌های مهارتی
+- DELETE  /api/v1/candidates/me/                         حذف حساب (حق فراموش شدن — ناشناس‌سازی، app/core/privacy.py)
 - GET     /api/v1/candidates/me/applications               سیستم رهگیر وضعیت (کدام آگهی، کدام مرحله)
 - GET     /api/v1/candidates/me/offers                      صندوق ورودی پیشنهادهای شغلی فعال
 - PUT     /api/v1/candidates/me/applications/{id}/respond    پاسخ کارجو به یک پیشنهاد (قبول/رد)
@@ -27,10 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.candidate_utils import get_or_create_candidate_profile
 from app.core.deps import get_current_user, require_roles
 from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
+from app.core.privacy import anonymize_candidate_account
 from app.core.search_query import (
-    build_resume_search_tsquery,
+    resume_blind_index_condition,
     resume_experience_years_expression,
-    resume_fts_tsvector_expression,
     resume_has_skill_condition,
 )
 from app.core.state_machine import ApplicationStatus, is_transition_allowed
@@ -38,6 +39,7 @@ from app.db.session import get_db
 from app.models import Application, Candidate, Company, Job, Resume, StatusHistory, User
 from app.schemas.candidate_search import CandidateSearchItem, CandidateSearchResponse
 from app.schemas.candidates import (
+    AccountDeletionResponse,
     ApplicationTrackerItem,
     ApplicationTrackerResponse,
     CandidateProfileResponse,
@@ -111,6 +113,31 @@ async def update_my_profile(
         phone=candidate.phone,
         location=candidate.location,
         skills=candidate.skills or [],
+    )
+
+
+@router.delete(
+    "/me/",
+    response_model=AccountDeletionResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Candidate Portal"],
+    summary="حذف حساب کارجو (حق فراموش شدن): ناشناس‌سازی هویت، حذف فایل رزومه، حفظ آمار استخدام",
+    dependencies=[Depends(require_roles("Candidate"))],
+)
+async def delete_my_account(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AccountDeletionResponse:
+    """
+    ردیف‌ها حذف نمی‌شوند (Hard Delete نیست): نام/تلفن/آدرس/ایمیل تصادفی یا NULL، فایل و متن رزومه پاک، حساب
+    غیرفعال و همه‌ی نشست‌ها باطل می‌شوند؛ درخواست‌ها، وضعیت‌ها و نمره‌ها می‌مانند تا قیف استخدام و نرخ تبدیل
+    سازمان‌ها تغییر نکند. درخواست دوم با همان توکن ← 401 (حساب دیگر وجود ندارد).
+    """
+    result = await anonymize_candidate_account(db, current_user)
+    return AccountDeletionResponse(
+        message="حساب شما حذف شد؛ اطلاعات هویتی و فایل رزومه‌تان پاک شد.",
+        resumes_cleared=result.resumes_cleared,
+        files_deleted=result.files_deleted,
     )
 
 
@@ -343,12 +370,10 @@ async def search_candidates(
     صورت نامعتبر بودن، به‌صورت خودکار خطای ۴۲۲ Unprocessable Entity برمی‌گرداند
     (طبق معیار پذیرش تسک) — نیازی به بررسی دستی در بدنه‌ی تابع نیست.
 
-    جستجوی متنی (q) روی ستون resumes.raw_text و با ایندکس GIN از پیش‌ساخته‌شده
-    (بنگرید مایگریشن 852de21930b5) با to_tsvector('simple', ...) انجام می‌شود؛
-    پیکربندی 'simple' عمداً انتخاب شده چون Stemming/Stopword زبان‌محور اعمال
-    نمی‌کند (رزومه‌ها فارسی/انگلیسی/مخلوط‌اند) و Case-Insensitive بودن نتایج
-    (طبق معیار پذیرش تسک) را تضمین می‌کند. عملگرهای AND/OR داخل q توسط
-    app/core/search_query.py پارس و به عبارت tsquery معتبر تبدیل می‌شوند.
+    جستجوی متنی (q): متن رزومه (resumes.raw_text) در دیتابیس رمزشده است (حریم خصوصی)، پس جستجو روی
+    ایندکس کور resumes.search_tokens (HMAC هر کلمه، ایندکس GIN) انجام می‌شود — تطبیق کلمه‌ی کامل و
+    Case-Insensitive، بدون Stemming (رزومه‌ها فارسی/انگلیسی/مخلوط‌اند). عملگرهای AND/OR داخل q توسط
+    app/core/search_query.py پارس می‌شوند.
 
     فیلترهای ساختاریافته (skills، min_experience_years، min_ai_score) هرکدام
     به‌صورت یک زیرکوئری EXISTS پیاده شده‌اند تا کارجویی که چند رزومه/درخواست
@@ -363,7 +388,7 @@ async def search_candidates(
     primary key و ذاتاً ایندکس‌شده است) انجام می‌شود — ترتیب نمایش معنای
     زمانی ندارد ولی پایدار و بدون گم/تکرارشدن رکورد است.
     """
-    tsquery_expr = build_resume_search_tsquery(q)
+    text_condition = resume_blind_index_condition(q, Resume.search_tokens)
 
     best_ai_score_subquery = (
         select(func.max(Application.score_ai))
@@ -395,18 +420,11 @@ async def search_candidates(
     # زیرکوئری خودکار به سازمان جاری محدود می‌شود — پالیسی RLS جدول candidates هم همین را تضمین می‌کند.
     query = query.where(select(Application.id).where(Application.candidate_id == Candidate.id).exists())
 
-    # --- فیلتر ۱: جستجوی تمام‌متن (raw_text) با پشتیبانی از AND/OR ---
-    # عبارت to_tsvector از app/core/search_query.py می‌آید (نه اینجا Inline
-    # نوشته شده) چون باید دقیقاً با عبارت ایندکس GIN مربوطه یکی باشد — هم
-    # برای استفاده‌ی پستگرس از ایندکس، هم به‌خاطر رفع باگ توکنایزیشن کلمات
-    # ترکیبی مثل "Node.js"/"C++" (توضیح کامل در همان تابع).
-    if tsquery_expr is not None:
-        query = query.where(
-            select(Resume.id)
-            .where(Resume.candidate_id == Candidate.id)
-            .where(resume_fts_tsvector_expression(Resume.raw_text).op("@@")(func.to_tsquery("simple", tsquery_expr)))
-            .exists()
-        )
+    # --- فیلتر ۱: جستجوی متن رزومه (ایندکس کور) با پشتیبانی از AND/OR ---
+    # نرمال‌سازی کلمات (شکستن «Node.js»/«C++» و ...) در app/core/search_query.py با همان تابعی انجام می‌شود
+    # که ایندکس رزومه‌ها را ساخته است
+    if text_condition is not None:
+        query = query.where(select(Resume.id).where(Resume.candidate_id == Candidate.id).where(text_condition).exists())
 
     # --- فیلتر ۲: حداقل سال‌های سابقه‌ی کاری (از تحلیل موتور مهارت) ---
     if min_experience_years is not None:

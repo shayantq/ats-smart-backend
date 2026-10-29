@@ -59,6 +59,40 @@ ensure_service_keys() {
 }
 ensure_service_keys
 
+# حریم خصوصی: کلیدهای رمزنگاری داده‌های شخصی (Fernet) و ایندکس کور جستجوی رزومه — app/core/crypto.py.
+# فقط یک‌بار و فقط روی خود سرور ساخته می‌شوند، در secrets/pii.env (۶۰۰، فقط کاربر استقرار) که Compose فقط به
+# backend_api، worker و migrate می‌دهد؛ هرگز در ریپو، .env، ایمیج یا خروجی CI نیستند و چاپ نمی‌شوند.
+# گم شدن این فایل = غیرقابل‌خواندن شدن همیشگی داده‌ها (حتی از فایل پشتیبان) → حتماً جدا و آفلاین نگه دارید.
+ensure_pii_keys() {
+    local file="secrets/pii.env"
+    if [[ -s "${file}" ]]; then
+        chmod 600 "${file}"
+        return 0
+    fi
+    # دیتابیس قبلاً رمزشده ولی کلید نیست: کلید تازه داده‌ی قبلی را باز نمی‌کند — استقرار متوقف می‌شود
+    local postgres_container encrypted
+    postgres_container="$(docker ps -q --filter "label=com.docker.compose.project.working_dir=${PROJECT_DIR}" \
+        --filter "label=com.docker.compose.service=postgres_db" | head -n 1)"
+    if [[ -n "${postgres_container}" ]]; then
+        encrypted="$(docker exec \
+            -e PII_CHECK_SQL="SELECT 1 FROM information_schema.columns WHERE table_name = 'resumes' AND column_name = 'search_tokens'" \
+            "${postgres_container}" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$PII_CHECK_SQL"' \
+            2>/dev/null | tr -d '[:space:]')"
+        [[ "${encrypted}" != "1" ]] || fail "داده‌های دیتابیس رمزشده‌اند ولی ${file} وجود ندارد. فایل کلید را از نسخه‌ی پشتیبان آفلاین برگردانید؛ کلید تازه داده‌ی قبلی را باز نمی‌کند."
+    fi
+    command -v openssl >/dev/null 2>&1 || fail "openssl روی سرور نصب نیست (برای ساخت کلید رمزنگاری لازم است)."
+    mkdir -p secrets
+    chmod 700 secrets
+    # کلید Fernet = ۳۲ بایت تصادفی در base64 urlsafe
+    (
+        umask 077
+        printf 'PII_ENCRYPTION_KEYS=%s\nPII_BLIND_INDEX_KEY=%s\n' \
+            "$(openssl rand -base64 32 | tr '+/' '-_')" "$(openssl rand -base64 32 | tr '+/' '-_')" > "${file}"
+    )
+    log "کلیدهای رمزنگاری داده‌های شخصی ساخته شد (${file}) — یک نسخه را همین حالا جدا و آفلاین نگه دارید"
+}
+ensure_pii_keys
+
 # مدیریت نشست‌ها: دیتابیس GeoIP تشخیص ورود مشکوک — در پس‌زمینه و جدا از نشست SSH (استقرار منتظر
 # دانلود نمی‌ماند و شکستش استقرار را متوقف نمی‌کند). پوشه پیش از بالا آمدن API ساخته می‌شود (Mount).
 mkdir -p geoip
@@ -175,6 +209,10 @@ rolling_update frontend
 
 log "۴/۵ جایگزینی Worker و Scheduler صف"
 compose up -d --no-deps --no-build worker scheduler
+# حریم خصوصی: داده‌ای که کانتینرهای نسخه‌ی قبلی در همین چند دقیقه‌ی Rolling Update رمزنشده نوشته باشند،
+# حالا که هیچ نسخه‌ی قدیمی‌ای نمانده رمز می‌شود (وقتی چیزی نیست فقط یک کوئری است) — app/core/crypto.py
+compose run --rm --no-deps migrate python -m app.core.crypto encrypt-legacy \
+    || fail "رمزنگاری داده‌های رمزنشده‌ی باقی‌مانده ناموفق بود: ./deploy/compose.sh run --rm --no-deps migrate python -m app.core.crypto encrypt-legacy"
 
 log "۵/۵ مانیتورینگ و Gateway"
 compose up -d --no-deps --no-build \

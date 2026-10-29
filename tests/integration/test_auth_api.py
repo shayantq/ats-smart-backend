@@ -10,7 +10,7 @@ from app.core.security import decode_token, verify_password
 from app.models import User
 from tests.integration.conftest import TEST_PASSWORD, auth_headers
 
-NEW_USER = {"email": "new.user@example.com", "password": "Str0ngPass!", "role": "Candidate"}
+NEW_USER = {"email": "new.user@example.com", "password": "Str0ngPass!", "role": "Candidate", "data_consent": True}
 
 
 async def test_register_persists_user_with_bcrypt_hash(client, db_session):
