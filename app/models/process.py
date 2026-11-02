@@ -103,6 +103,8 @@ class Resume(TenantMixin, Base):
     # خروجی موتور مهارت (Skill Engine): مهارت‌های تطبیق‌یافته با گراف مهارت +
     # تحلیل خالص سال‌های سابقه‌ی کاری (بعد از کسر تداخل و فیلتر دوره‌های نامعتبر)
     skill_analysis: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # خروجی یکپارچه‌ی اکوسیستم چندعاملی (app/agents) — رمزشده، چون نام شرکت‌ها و سوابق کاری را دارد
+    agent_analysis: Mapped[dict | None] = mapped_column(EncryptedJSON, nullable=True)
 
     candidate: Mapped["Candidate"] = relationship()
 

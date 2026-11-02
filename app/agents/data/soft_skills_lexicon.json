@@ -1,0 +1,67 @@
+{
+  "_comment": "واژه‌نامه‌ی عامل تناسب فرهنگی و مهارت‌های نرم (app/agents/soft_skills_agent.py). عبارت‌ها حروف‌کوچک‌اند؛ انگلیسی با مرز کلمه و فارسی به‌صورت زیررشته جستجو می‌شوند. با افزودن عبارت، کد تغییری نمی‌خواهد.",
+  "soft_skills": {
+    "communication": {
+      "label_fa": "ارتباط مؤثر",
+      "en": ["communication", "communicated", "presented", "presentation", "stakeholder", "stakeholders", "documented", "documentation", "public speaking", "negotiated", "explained"],
+      "fa": ["ارتباط مؤثر", "مهارت ارتباطی", "ارائه", "مستندسازی", "مذاکره", "ذی‌نفعان", "تعامل با مشتری", "سخنرانی"]
+    },
+    "leadership": {
+      "label_fa": "رهبری",
+      "en": ["led", "lead", "leading", "leadership", "mentored", "mentoring", "managed a team", "supervised", "coached", "head of"],
+      "fa": ["رهبری", "مدیریت تیم", "سرپرستی", "راهبری", "منتورینگ", "آموزش اعضای تیم", "هدایت تیم"]
+    },
+    "teamwork": {
+      "label_fa": "کار تیمی",
+      "en": ["team", "teamwork", "collaborated", "collaboration", "cross-functional", "together with", "pair programming", "cooperated"],
+      "fa": ["کار تیمی", "همکاری", "تیمی", "هماهنگی با", "همکاری با", "کار گروهی"]
+    },
+    "ownership": {
+      "label_fa": "مسئولیت‌پذیری",
+      "en": ["ownership", "owned", "responsible for", "accountable", "took initiative", "initiative", "end-to-end", "delivered"],
+      "fa": ["مسئولیت", "مسئولیت‌پذیری", "پیگیری", "تحویل", "از ابتدا تا انتها", "ابتکار"]
+    },
+    "learning": {
+      "label_fa": "یادگیری مستمر",
+      "en": ["learned", "learning", "self-taught", "certification", "certified", "course", "courses", "curious", "upskilled"],
+      "fa": ["یادگیری", "یاد گرفتم", "دوره", "گواهینامه", "خودآموز", "علاقه به یادگیری", "به‌روز"]
+    },
+    "problem_solving": {
+      "label_fa": "حل مسئله",
+      "en": ["solved", "problem solving", "problem-solving", "troubleshooting", "debugged", "optimized", "improved", "root cause", "resolved"],
+      "fa": ["حل مسئله", "رفع مشکل", "عیب‌یابی", "بهینه‌سازی", "بهبود", "ریشه‌یابی", "حل کردم"]
+    },
+    "adaptability": {
+      "label_fa": "انعطاف‌پذیری",
+      "en": ["adapted", "adaptable", "flexible", "flexibility", "fast-paced", "migrated", "transitioned", "agile"],
+      "fa": ["انعطاف", "انعطاف‌پذیری", "سازگاری", "تغییرات سریع", "مهاجرت", "چابک"]
+    },
+    "time_management": {
+      "label_fa": "مدیریت زمان",
+      "en": ["deadline", "deadlines", "on time", "prioritized", "time management", "scheduled", "ahead of schedule"],
+      "fa": ["مدیریت زمان", "ددلاین", "مهلت", "اولویت‌بندی", "زمان‌بندی", "به‌موقع"]
+    }
+  },
+  "tone": {
+    "confident": {
+      "en": ["achieved", "delivered", "built", "launched", "increased", "reduced", "designed", "architected", "drove", "spearheaded"],
+      "fa": ["موفق شدم", "طراحی کردم", "پیاده‌سازی کردم", "افزایش دادم", "کاهش دادم", "راه‌اندازی کردم", "ساختم"]
+    },
+    "collaborative": {
+      "en": ["we", "our", "team", "together", "collaborated", "with the team"],
+      "fa": ["ما", "تیم", "با همکاری", "به همراه", "با هم"]
+    },
+    "individual": {
+      "en": ["i", "my", "myself", "single-handedly", "alone"],
+      "fa": ["من", "شخصاً", "به‌تنهایی"]
+    },
+    "hedging": {
+      "en": ["helped", "assisted", "tried", "familiar with", "some experience", "basic knowledge", "involved in", "participated"],
+      "fa": ["کمک کردم", "آشنایی", "آشنا به", "سعی کردم", "مشارکت داشتم", "تا حدودی"]
+    }
+  },
+  "passive": {
+    "en_pattern": "\\b(?:was|were|been|being|is|are)\\s+\\w+(?:ed|en)\\b",
+    "fa": ["انجام شد", "انجام شده", "پیاده‌سازی شد", "طراحی شد", "ایجاد شد", "گردید", "می‌شد"]
+  }
+}

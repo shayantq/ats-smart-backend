@@ -111,6 +111,7 @@ black app tests && flake8 # فرمت و استانداردهای نگارش (ت�
 | `DATABASE_URL` · `REDIS_URL` | اتصال PostgreSQL (asyncpg) و Redis — داخل Docker خودکار با نام سرویس‌ها ساخته می‌شوند |
 | `SECRET_KEY` | کلید امضای JWT |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` · `REFRESH_TOKEN_EXPIRE_DAYS` | عمر توکن‌ها (پیش‌فرض ۱۵ دقیقه / ۷ روز) |
+| `RESUME_PIPELINE` · `AGENT_TIMEOUT_SECONDS` | پردازش رزومه: `multi_agent` (پیش‌فرض، اکوسیستم چندعاملی) یا `linear` (خط لوله‌ی ترتیبی قبلی، بازگشت فوری) · سقف زمان هر عامل (پیش‌فرض ۲۰ ثانیه) |
 | `PII_ENCRYPTION_KEYS` · `PII_BLIND_INDEX_KEY` | حریم خصوصی: کلیدهای Fernet رمزنگاری داده‌های شخصی (جداشده با کاما؛ اولی فعال) و کلید HMAC ایندکس کور جستجوی رزومه — الزامی؛ سرور: `secrets/pii.env`، کلاستر: Secret `ats-pii-keys` |
 | `GEOIP_DB_PATH` · `SUSPICIOUS_LOGIN_DISTANCE_KM` · `SUSPICIOUS_LOGIN_SPEED_KMH` | مدیریت نشست‌ها: فایل mmdb موقعیت IP (سرور: `deploy/geoip-update.sh`؛ خالی = بررسی جغرافیایی غیرفعال) و آستانه‌های ورود مشکوک (پیش‌فرض ۵۰۰ کیلومتر / ۹۰۰ کیلومتر بر ساعت) |
 | `FRONTEND_ORIGIN` | تنها Origin مجاز CORS |
@@ -328,7 +329,26 @@ Draft → Applied → Screening → Technical Interview → HR Interview → Off
 
 ## خط لوله‌ی هوش مصنوعی رزومه
 
-بعد از هر آپلود موفق، Worker این چهار مرحله را در پس‌زمینه اجرا می‌کند (`app/tasks/resume_processing.py`). شکست هر مرحله فقط لاگ می‌شود و نتایج مراحل قبلی از بین نمی‌رود:
+### اکوسیستم چندعاملی (پیش‌فرض، `RESUME_PIPELINE=multi_agent`)
+
+معماری کامل، قواعد و نتیجه‌ی benchmark: [`docs/agents/ARCHITECTURE.md`](docs/agents/ARCHITECTURE.md).
+
+```
+                              ┌──► عامل استخراج مهارت (گراف مهارت) ──────────────┐
+فایل خام ─► عامل ناظر: توزیع ──┼──► عامل اعتبارسنجی سوابق (تداخل، بزرگ‌نمایی) ────┼──► عامل ناظر: جمع‌بندی ─► JSON یکپارچه + نمره
+  (صف resumes)   (OCR و NER یک‌بار)  └──► عامل تناسب فرهنگی و مهارت‌های نرم (لحن) ───┘   (حل تعارض)   resumes.agent_analysis (رمزشده)
+```
+
+- **پیاده‌سازی:** LangGraph `StateGraph` با Fan-out/Fan-in در `app/agents/`. هر عامل در Thread جدا و با سقف زمانی `AGENT_TIMEOUT_SECONDS` اجرا می‌شود. شکست یا تمام شدن زمان یک عامل فقط بخش همان عامل را `failed` می‌کند و وضعیت کل `partial` می‌شود.
+- **عامل‌ها قطعی‌اند و بدون شبکه:** روی موتورهای موجود (گراف مهارت، تحلیل‌گر سوابق، موتور نمره‌دهی) بنا شده‌اند، به‌علاوه‌ی تشخیص بزرگ‌نمایی و واژه‌نامه‌ی فارسی/انگلیسی مهارت‌های نرم (`app/agents/data/soft_skills_lexicon.json`).
+- **خروجی:** یک JSON با قرارداد سخت‌گیر Pydantic (`agents-v1`، بدون کلید ناشناخته). شامل مهارت‌ها، سوابق، مهارت‌های نرم، `conflicts_resolved`، `flags`، نمره (پایه + پاداش مهارت نرم − جریمه‌ی اعتبارسنجی) و زمان هر عامل.
+- **سازگاری:** HR آن را در `GET /resumes/{id}` (فیلد `agent_analysis`) می‌بیند. `skill_analysis` و `score_ai` با همان شکل قبلی نوشته می‌شوند، پس جستجو، آمار و بورد بدون تغییر کار می‌کنند.
+- **بازگشت فوری:** `RESUME_PIPELINE=linear` همان خط لوله‌ی ترتیبی زیر را اجرا می‌کند.
+- **راستی‌آزمایی:** `bash deploy/agents-check.sh` روی سرور، شامل benchmark روی CPU خود سرور ← `[AGENTS PASS]`.
+
+### خط لوله‌ی ترتیبی (`RESUME_PIPELINE=linear`)
+
+Worker این چهار مرحله را در پس‌زمینه اجرا می‌کند (`app/tasks/resume_processing.py`). شکست هر مرحله فقط لاگ می‌شود و نتایج مراحل قبلی از بین نمی‌رود:
 
 ```
 فایل رزومه ─► ① استخراج متن/OCR ─► ② پارسینگ و NER ─► ③ موتور مهارت ─► ④ نمره‌ی تطابق

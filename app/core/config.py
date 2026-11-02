@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # کلید HMAC ایندکس کور جستجوی متن رزومه (مستقل از کلید Fernet تا چرخش آن نیاز به بازسازی ایندکس نداشته باشد)
     PII_BLIND_INDEX_KEY: str = ""
 
+    # ---- پردازش رزومه (app/tasks/resume_processing.py) ----
+    # multi_agent: عامل ناظر + سه عامل تخصصی موازی (app/agents)؛ linear: خط لوله‌ی ترتیبی قبلی (بازگشت فوری)
+    RESUME_PIPELINE: str = "multi_agent"
+    # سقف زمان هر عامل؛ عامل کندتر «failed» علامت می‌خورد و بقیه‌ی گراف ادامه می‌دهد
+    AGENT_TIMEOUT_SECONDS: float = 20.0
+
     # ---- مدیریت نشست‌ها (app/core/sessions.py) ----
     # فایل دیتابیس موقعیت جغرافیایی IP (فرمت mmdb، مثل DB-IP City Lite)؛ خالی یا ناموجود = بررسی
     # جغرافیایی ورود غیرفعال (ورود هرگز به‌خاطر نبودش شکست نمی‌خورد)

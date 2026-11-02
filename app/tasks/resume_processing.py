@@ -3,6 +3,12 @@
 
 این توابع توسط یک فرآیند Worker مجزا اجرا می‌شوند، نه توسط سرور اصلی FastAPI
 (بنگرید app/worker.py برای اجرای سازگار با ویندوز، و README برای دستور اجرا).
+
+دو خط لوله (settings.RESUME_PIPELINE):
+    multi_agent (پیش‌فرض)  عامل ناظر + سه عامل تخصصی موازی (app/agents) ← JSON یکپارچه در resumes.agent_analysis
+    linear                 خط لوله‌ی ترتیبی قبلی — برای بازگشت فوری، بدون تغییر کد یا صف
+هر دو همان ورودی صف (شناسه‌ها/آدرس فایل)، همان صف و همان سیاست تلاش مجدد را دارند و skill_analysis/score_ai را
+با همان شکل می‌نویسند (جستجو، آمار و UI بدون تغییر).
 """
 
 import asyncio
@@ -12,6 +18,7 @@ import uuid
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.matching_engine import calculate_matching_score
 from app.core.resume_parser import parse_resume_text
 from app.core.skill_engine import run_skill_engine
@@ -41,7 +48,117 @@ async def _run_job(application_id: str, file_url: str) -> None:
 
 
 async def _process_resume_async(application_id: str, file_url: str, session_factory) -> None:
+    if settings.RESUME_PIPELINE == "linear":
+        await _process_resume_linear(application_id, file_url, session_factory)
+    else:
+        await _process_resume_multi_agent(application_id, file_url, session_factory)
+
+
+async def _load_job_context(db, application_id: str, resume: Resume) -> dict | None:
+    """ورودی نمره‌دهی عامل ناظر (فقط مقادیر ساده، تا Session دیتابیس در طول اجرای عامل‌ها باز نماند)."""
+    application = (
+        await db.execute(select(Application).where(Application.id == uuid.UUID(application_id)))
+    ).scalar_one_or_none()
+    if application is None:
+        return None
+    job = (await db.execute(select(Job).where(Job.id == application.job_id))).scalar_one_or_none()
+    if job is None:
+        return None
+    candidate = (await db.execute(select(Candidate).where(Candidate.id == resume.candidate_id))).scalar_one_or_none()
+    return {
+        "title": job.title,
+        "skills_required": job.skills_required,
+        "required_seniority": job.required_seniority,
+        "required_education": job.required_education,
+        "location": job.location,
+        "description": job.description,
+        "candidate_location": candidate.location if candidate else None,
+    }
+
+
+async def _process_resume_multi_agent(application_id: str, file_url: str, session_factory) -> None:
     """
+    اکوسیستم چندعاملی: فایل خام به عامل ناظر داده می‌شود؛ ناظر متن را یک‌بار استخراج و پارس می‌کند، سه عامل
+    تخصصی (مهارت، اعتبارسنجی سوابق، مهارت نرم) را موازی اجرا و خروجی‌شان را جمع‌بندی می‌کند — بنگرید
+    docs/agents/ARCHITECTURE.md. لاگ‌ها فقط شناسه و عدد دارند (بدون آدرس فایل یا متن رزومه).
+    """
+    # ایمپورت تنبل: LangGraph فقط در پردازه‌ی Worker بارگذاری شود، نه در API
+    from app.agents.graph import run_agent_pipeline
+    from app.agents.supervisor import to_skill_analysis
+
+    async with session_factory() as db:
+        resume = (await db.execute(select(Resume).where(Resume.file_url == file_url))).scalar_one_or_none()
+        if resume is None:
+            logger.error("رکورد رزومه متناظر با این file_url پیدا نشد | application_id=%s", application_id)
+            return
+        resume_id = resume.id
+        job_context = await _load_job_context(db, application_id, resume)
+
+    try:
+        file_bytes = await asyncio.to_thread(_download_file, file_url)
+    except Exception as error:  # noqa: BLE001
+        logger.error(
+            "دانلود فایل رزومه ناموفق بود | application_id=%s | resume_id=%s | error=%s",
+            application_id,
+            resume_id,
+            type(error).__name__,
+        )
+        return
+
+    try:
+        result = await run_agent_pipeline(file_bytes, file_url, job_context)
+    except UnreadableResumeFileError:
+        logger.error(
+            "استخراج متن رزومه ناموفق بود (فایل ناخوانا/خراب/قفل‌شده) | application_id=%s | resume_id=%s",
+            application_id,
+            resume_id,
+        )
+        return
+    except Exception as error:  # noqa: BLE001 - هر خطای پیش‌بینی‌نشده فقط لاگ شود، نه کرش Worker
+        logger.error(
+            "خطای غیرمنتظره در اکوسیستم چندعاملی | application_id=%s | resume_id=%s | error=%s",
+            application_id,
+            resume_id,
+            type(error).__name__,
+        )
+        return
+
+    analysis = result.analysis
+    async with session_factory() as db:
+        resume = await db.get(Resume, resume_id)
+        resume.raw_text = result.raw_text
+        if result.parsed_data is not None:
+            resume.parsed_data = result.parsed_data
+        if analysis.skills.status == "completed" or analysis.experience.status == "completed":
+            resume.skill_analysis = to_skill_analysis(analysis)
+        resume.agent_analysis = analysis.model_dump(mode="json")
+        if analysis.matching.score is not None:
+            application = await db.get(Application, uuid.UUID(application_id))
+            if application is not None:
+                application.score_ai = round(analysis.matching.score)
+        await db.commit()
+
+    timings = analysis.timings_ms
+    logger.info(
+        "اکوسیستم چندعاملی رزومه را پردازش کرد | application_id=%s | resume_id=%s | وضعیت=%s | مهارت=%d | "
+        "سابقه_سال=%s | هشدار=%d | تعارض=%d | نمره=%s | کل_ms=%s | عامل‌ها_ms=%s",
+        application_id,
+        resume_id,
+        analysis.status,
+        len(analysis.skills.items),
+        analysis.experience.total_experience_years,
+        len(analysis.flags),
+        len(analysis.conflicts_resolved),
+        analysis.matching.score,
+        timings["total"].duration_ms,
+        {name: timing.duration_ms for name, timing in timings.items() if name != "total"},
+    )
+
+
+async def _process_resume_linear(application_id: str, file_url: str, session_factory) -> None:
+    """
+    خط لوله‌ی ترتیبی قبلی (RESUME_PIPELINE=linear).
+
     مرحله ۱: دانلود فایل رزومه از فضای ذخیره‌سازی، استخراج متن خام آن (مستقیم
     یا از طریق OCR — بنگرید app/core/text_extraction.py)، و ذخیره در raw_text.
 
@@ -60,20 +177,15 @@ async def _process_resume_async(application_id: str, file_url: str, session_fact
     با جزئیات کافی لاگ می‌شود — بدون این‌که کل Worker (و پردازش سایر کارها)
     کرش کند. شکست یک مرحله باعث از دست رفتن نتیجه‌ی مراحل قبلی نمی‌شود.
     """
-    logger.info(
-        "شروع پردازش پس‌زمینه‌ی رزومه | application_id=%s | file_url=%s",
-        application_id,
-        file_url,
-    )
+    logger.info("شروع پردازش پس‌زمینه‌ی رزومه (خطی) | application_id=%s", application_id)
 
     try:
         file_bytes = await asyncio.to_thread(_download_file, file_url)
     except Exception as error:
         logger.error(
-            "دانلود فایل رزومه برای پردازش ناموفق بود | application_id=%s | file_url=%s | error=%s",
+            "دانلود فایل رزومه برای پردازش ناموفق بود | application_id=%s | error=%s",
             application_id,
-            file_url,
-            error,
+            type(error).__name__,
         )
         return
 
@@ -121,11 +233,7 @@ async def _process_resume_async(application_id: str, file_url: str, session_fact
         resume = result.scalar_one_or_none()
 
         if resume is None:
-            logger.error(
-                "رکورد رزومه متناظر با این file_url پیدا نشد | application_id=%s | file_url=%s",
-                application_id,
-                file_url,
-            )
+            logger.error("رکورد رزومه متناظر با این file_url پیدا نشد | application_id=%s", application_id)
             return
 
         resume.raw_text = raw_text

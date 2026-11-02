@@ -17,7 +17,7 @@ async def test_tests_run_on_a_separate_temporary_database(db_session):
 async def test_schema_comes_from_real_alembic_migrations(db_session):
     """اسکیمای دیتابیس تست همان اسکیمای Production است (کل زنجیره‌ی مایگریشن‌ها اجرا شده)."""
     version = (await db_session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-    assert version == "b8e4d2f1a9c6"
+    assert version == "c4f1a8e2b7d9"
     tables = await db_session.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
     assert {"interview_question_sets", "interview_questions"} <= set(tables.scalars())  # بانک سؤال GenAI
     # چندمستاجری: RLS روی جدول‌های عملیاتی فعال است

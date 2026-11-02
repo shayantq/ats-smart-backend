@@ -31,3 +31,6 @@ class ResumeDetailResponse(BaseModel):
     file_url: str
     parsed_data: Optional[dict[str, Any]] = None
     skill_analysis: Optional[dict[str, Any]] = None
+    # خروجی یکپارچه‌ی عامل ناظر (app/agents/schema.py::UnifiedAnalysis، schema_version=agents-v1)؛ برای رزومه‌های
+    # پردازش‌شده پیش از اکوسیستم چندعاملی یا با RESUME_PIPELINE=linear خالی است
+    agent_analysis: Optional[dict[str, Any]] = None

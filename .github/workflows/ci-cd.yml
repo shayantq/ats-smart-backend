@@ -347,11 +347,11 @@ jobs:
             ServerAliveCountMax 8
           EOF
 
-      # فقط فایل‌های زیرساخت (compose، اسکریپت‌های استقرار، پیکربندی مانیتورینگ، ابزار بک‌آپ) —
-      # خود برنامه به‌صورت ایمیج از Docker Hub کشیده می‌شود، نه کپی سورس
+      # فقط فایل‌های زیرساخت (compose، اسکریپت‌های استقرار، پیکربندی مانیتورینگ، ابزار بک‌آپ) و benchmark
+      # اکوسیستم چندعاملی (deploy/agents-check.sh) — خود برنامه به‌صورت ایمیج از Docker Hub کشیده می‌شود، نه کپی سورس
       - name: Upload deployment files
         run: |
-          tar czf - docker-compose.yml deploy monitoring backup \
+          tar czf - docker-compose.yml deploy monitoring backup loadtest/agent_benchmark.py \
             | ssh production "mkdir -p '${DEPLOY_PATH}' && tar xzf - -C '${DEPLOY_PATH}'"
 
       # نام ایمیج‌ها همین‌جا از SHA کامیت ساخته می‌شود، نه از خروجی Job قبلی: نام کاربری Docker Hub یک

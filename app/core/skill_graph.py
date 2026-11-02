@@ -94,6 +94,26 @@ def match_skills(text: str) -> list[str]:
     return sorted(detected_skills)
 
 
+def count_skill_mentions(text: str) -> dict[str, tuple[str, int]]:
+    """
+    مثل match_skills، ولی برای هر مهارتی که مستقیماً در متن آمده تعداد دفعات ذکرش را هم برمی‌گرداند:
+    {نام نمایشی: (مهارت اصلی/گره والد، تعداد)} — مهارت‌های استنتاجی (والدی که فقط از زیرشاخه‌اش پیدا شده)
+    اینجا نیستند. کاربرد: عامل استخراج مهارت (app/agents/skill_agent.py) برای میزان اطمینان هر مهارت.
+    """
+    if not text:
+        return {}
+
+    lowered_text = text.lower()
+    mentions: dict[str, tuple[str, int]] = {}
+    for keyword, (display_name, core_skill) in _SKILL_LOOKUP_TABLE.items():
+        pattern = _NON_WORD_BOUNDARY + re.escape(keyword) + _NON_WORD_BOUNDARY_END
+        count = len(re.findall(pattern, lowered_text))
+        if count:
+            previous = mentions.get(display_name, (core_skill, 0))[1]
+            mentions[display_name] = (core_skill, previous + count)
+    return mentions
+
+
 def get_core_skill(skill_name: str) -> str:
     """
     اگر skill_name (زیرشاخه یا خودِ مهارت اصلی) در گراف مهارت شناخته‌شده باشد،
