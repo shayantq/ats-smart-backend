@@ -228,6 +228,28 @@ compose up -d --no-deps --no-build \
 if compose config --services | grep -qx offsite_storage; then
     compose up -d --no-deps --build offsite_storage
 fi
+# کلید رمزنگاری بک‌آپ (age) و پوشه‌ی مقصد محلی — یک‌بار و فقط روی خود سرور:
+#   backup/secrets/public/age-recipient.txt   کلید عمومی (سرویس backup فقط با این رمز می‌کند)
+#   backup/secrets/private/age-identity.txt   کلید خصوصی (۶۰۰؛ فقط برای بازیابی — یک نسخه را آفلاین نگه دارید)
+#   backups/                                  بک‌آپ‌های رمزشده (۷۰۰)، با سیاست نگهداری خودکار
+ensure_backup_storage() {
+    local public="backup/secrets/public/age-recipient.txt" private="backup/secrets/private/age-identity.txt"
+    mkdir -p backups backup/secrets/public backup/secrets/private
+    chmod 700 backups backup/secrets/private
+    [[ -s "${public}" ]] && return 0
+    compose build backup > /dev/null
+    if [[ ! -s "${private}" ]]; then
+        (umask 077 && compose run --rm --no-deps -T --entrypoint age-keygen backup > "${private}" 2>/dev/null) \
+            || fail "ساخت کلید رمزنگاری بک‌آپ ناموفق بود"
+        log "کلید رمزنگاری بک‌آپ ساخته شد (${private}) — یک نسخه را همین حالا جدا و آفلاین نگه دارید"
+    fi
+    chmod 600 "${private}"
+    # کلید عمومی از روی کلید خصوصی (age-keygen -y)؛ کلید خصوصی فقط از stdin به کانتینر می‌رسد
+    compose run --rm --no-deps -T --entrypoint age-keygen backup -y < "${private}" > "${public}" 2>/dev/null \
+        && grep -q '^age1' "${public}" || fail "استخراج کلید عمومی بک‌آپ ناموفق بود"
+    chmod 644 "${public}"
+}
+ensure_backup_storage
 compose up -d --no-deps --build backup
 # پیکربندی‌های mount‌شده (prometheus.yml، alerts.yml، gateway.conf ...) بدون ری‌استارت بارگذاری مجدد می‌شوند
 compose kill -s HUP prometheus alertmanager > /dev/null 2>&1 || true

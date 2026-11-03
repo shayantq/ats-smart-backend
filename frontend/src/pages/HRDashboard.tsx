@@ -1,17 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import KanbanBoard from "../components/KanbanBoard";
 import TodayInterviewsPanel from "../components/interview/TodayInterviewsPanel";
 import AnalyticsDashboard from "../components/analytics/AnalyticsDashboard";
 import NotificationsPanel from "../components/notifications/NotificationsPanel";
+import JobCreateForm from "../components/jobs/JobCreateForm";
 import { useNotifications } from "../hooks/useNotifications";
 import { useToast } from "../context/ToastContext";
 import { fetchActiveJobs } from "../services/jobsApi";
+import { useAppSelector } from "../store/hooks";
+import type { Job } from "../types/job";
 
-type HRTab = "kanban" | "interviews" | "analytics" | "notifications";
+type HRTab = "kanban" | "new_job" | "interviews" | "analytics" | "notifications";
 
-const TABS: { value: HRTab; label: string }[] = [
+// ثبت آگهی فقط برای نقش‌های مدیریت آگهی (همان JOB_MANAGER_ROLES بک‌اند)؛ مصاحبه‌کننده این تب را نمی‌بیند
+const JOB_MANAGER_ROLES = ["Admin", "HR_Manager"];
+
+const TABS: { value: HRTab; label: string; managersOnly?: boolean }[] = [
   { value: "kanban", label: "بورد کانبان" },
+  { value: "new_job", label: "ثبت آگهی", managersOnly: true },
   { value: "interviews", label: "مصاحبه‌های امروز" },
   { value: "analytics", label: "داشبورد تحلیلی" },
   { value: "notifications", label: "اعلان‌های فنی" },
@@ -21,6 +28,16 @@ export default function HRDashboard() {
   const [activeTab, setActiveTab] = useState<HRTab>("kanban");
   const [activeJobId, setActiveJobId] = useState("");
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const role = useAppSelector((state) => state.auth.user?.role);
+  const canManageJobs = role !== undefined && JOB_MANAGER_ROLES.includes(role);
+  const visibleTabs = TABS.filter((tab) => !tab.managersOnly || canManageJobs);
+
+  function handleJobCreated(job: Job) {
+    queryClient.invalidateQueries({ queryKey: ["jobs", "active"] });
+    setActiveJobId(job.job_id);
+    setActiveTab("kanban");
+  }
 
   // آگهی‌های فعال برای منوی انتخاب آگهی؛ اولین آگهی به‌صورت پیش‌فرض انتخاب می‌شود
   const { data: jobs = [], isLoading: isLoadingJobs } = useQuery({ queryKey: ["jobs", "active"], queryFn: fetchActiveJobs });
@@ -74,10 +91,18 @@ export default function HRDashboard() {
               </option>
             ))}
           </select>
+          {!isLoadingJobs && jobs.length === 0 && canManageJobs && activeTab !== "new_job" && (
+            <button
+              onClick={() => setActiveTab("new_job")}
+              className="mt-1 self-start text-xs font-semibold text-blue-600 hover:underline"
+            >
+              ثبت اولین آگهی
+            </button>
+          )}
         </div>
 
         <div role="tablist" className="mb-4 flex gap-1 overflow-x-auto border-b border-slate-200">
-          {TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.value}
               role="tab"
@@ -100,6 +125,7 @@ export default function HRDashboard() {
         </div>
 
         {activeTab === "kanban" && <KanbanBoard jobId={activeJobId} />}
+        {activeTab === "new_job" && canManageJobs && <JobCreateForm onCreated={handleJobCreated} />}
         {activeTab === "interviews" && <TodayInterviewsPanel />}
         {activeTab === "analytics" && <AnalyticsDashboard jobId={activeJobId} />}
         {activeTab === "notifications" && <NotificationsPanel />}

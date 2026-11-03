@@ -436,6 +436,13 @@ docker compose -f docker-compose.yml -f security/docker-compose.zap.yml run --rm
 
 > **⚠️ کلید رمزنگاری داده‌های شخصی جزو پشتیبان نیست (عمداً).** داده‌های شخصی داخل dump و WAL به‌صورت رمزشده‌ی Fernet ذخیره شده‌اند. بازیابی، بدون همان `PII_ENCRYPTION_KEYS` (در `secrets/pii.env` سرور یا Secret `ats-pii-keys`)، جدول‌ها را برمی‌گرداند ولی نام، تلفن، آدرس و متن رزومه‌ها قابل خواندن نیست. کلید را جدا و آفلاین نگه دارید؛ سرویس `backup` آن را نمی‌بیند. بنگرید [`docs/privacy/ARCHITECTURE.md`](docs/privacy/ARCHITECTURE.md).
 
+**مقصد بک‌آپ روی سرور Production، پیش‌فرض محلی:** `/opt/ats-smart/backups` روی دیسک خود سرور، با rclone نوع `local`.
+- **کلید age:** `deploy/deploy.sh` یک‌بار روی خود سرور می‌سازد:
+  - عمومی: `backup/secrets/public/age-recipient.txt`
+  - خصوصی (۶۰۰، فقط برای بازیابی): `backup/secrets/private/age-identity.txt`
+- **بعد از ساخت:** کلید خصوصی را همراه `secrets/pii.env` آفلاین نگه دارید.
+- **محدودیت:** این حالت در برابر خرابی یا حذف دیتابیس و خطای انسانی محافظت می‌کند، **نه** از دست رفتن کل سرور. برای آن، فایل‌های `backups/` را دوره‌ای بیرون از سرور کپی کنید، یا Offsite واقعی (S3) را در `.env` تنظیم کنید: `OFFSITE_TYPE=s3`، `BACKUP_REMOTE=offsite:<bucket>`، `OFFSITE_S3_*`.
+
 ```
 PostgreSQL ──(archive_command: هر سگمنت WAL)──► wal_archive ─┐
      │                                                       ├─► backup: zstd ─► age (کلید عمومی) ─► rclone ─► Offsite

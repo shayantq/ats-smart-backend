@@ -109,11 +109,27 @@ services:
   # Offsite واقعی: فضایی بیرون از این سرور (پیش‌فرض S3 یا هر سرویس سازگار) — شبیه‌ساز لوکال خاموش
   # BACKUP_AGE_RECIPIENT (کلید عمومی age1...) و OFFSITE_S3_* در .env سرور لازم‌اند؛ عمداً اجباری
   # نشده‌اند تا نبودشان استقرار را نشکند — سرویس خطا می‌دهد و هشدار BackupNeverSucceeded می‌آید
+  # مقصد بک‌آپ: پیش‌فرض روی دیسک خود سرور (/opt/ats-smart/backups — rclone نوع local)، رمزشده با کلید عمومی age.
+  # در برابر خرابی/حذف دیتابیس و خطای انسانی محافظت می‌کند، نه از دست رفتن کل سرور. برای Offsite واقعی در .env:
+  #   OFFSITE_TYPE=s3 · BACKUP_REMOTE=offsite:<bucket> · OFFSITE_S3_* (بنگرید README بخش پشتیبان‌گیری)
   backup:
     environment:
-      RCLONE_CONFIG_OFFSITE_TYPE: ${OFFSITE_TYPE:-s3}
+      RCLONE_CONFIG_OFFSITE_TYPE: ${OFFSITE_TYPE:-local}
       RCLONE_CONFIG_OFFSITE_HOST: ${OFFSITE_SFTP_HOST:-}
       OFFSITE_SFTP_PASSWORD: ${OFFSITE_SFTP_PASSWORD:-}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-offsite:/backups}
+    volumes:
+      - ./backups:/backups
+
+  # بازیابی و تمرین DR (deploy/compose.sh --profile restore run --rm backup_restore …) از همان مقصد
+  backup_restore:
+    environment:
+      RCLONE_CONFIG_OFFSITE_TYPE: ${OFFSITE_TYPE:-local}
+      RCLONE_CONFIG_OFFSITE_HOST: ${OFFSITE_SFTP_HOST:-}
+      OFFSITE_SFTP_PASSWORD: ${OFFSITE_SFTP_PASSWORD:-}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-offsite:/backups}
+    volumes:
+      - ./backups:/backups
 
   # شبیه‌ساز Offsite فقط وقتی Offsite واقعی در دسترس نیست (COMPOSE_PROFILES=local-offsite در .env)
   offsite_storage:

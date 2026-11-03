@@ -39,6 +39,9 @@ k8s/overlays/local/genai-inference/model.env
 /secrets/
 k8s/overlays/*/secrets/service-auth/
 
+# بک‌آپ‌های رمزشده‌ی روی دیسک سرور (deploy/docker-compose.prod.yml — مقصد محلی)
+/backups/
+
 # مدیریت نشست‌ها: دیتابیس موقعیت IP (روی سرور با deploy/geoip-update.sh دانلود می‌شود)
 /geoip/
 *.mmdb
