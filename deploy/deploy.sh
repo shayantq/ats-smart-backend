@@ -187,8 +187,15 @@ rolling_update() {
 # -----------------------------------------------------------------------------
 log "۱/۵ کشیدن ایمیج‌های نسخه‌ی جدید: ${BACKEND_IMAGE} | ${FRONTEND_IMAGE}"
 # SKIP_PULL=1 فقط برای تست محلی اسکریپت با ایمیج‌هایی که در هیچ Registry نیستند
+# خطای گذرای Registry (یافته‌ی Production: Docker Hub وسط استقرار برای ایمیج فرانت‌اند 403 برگرداند) با سه تلاش
+# دوباره و فاصله‌ی ۲۰/۴۰/۶۰ ثانیه جبران می‌شود؛ تا این مرحله هیچ چیزی روی سرور عوض نشده است
 if [[ "${SKIP_PULL:-0}" != "1" ]]; then
-    compose pull --quiet backend_api frontend
+    for attempt in 1 2 3 4; do
+        compose pull --quiet backend_api frontend && break
+        ((attempt < 4)) || fail "کشیدن ایمیج‌ها از Registry بعد از ۴ تلاش ناموفق بود (نسخه‌ی فعلی دست‌نخورده است)"
+        log "کشیدن ایمیج‌ها ناموفق بود — تلاش دوباره ($((attempt + 1))/4) بعد از $((attempt * 20)) ثانیه"
+        sleep $((attempt * 20))
+    done
 fi
 
 log "۲/۵ اطمینان از سرویس‌های داده و اجرای مایگریشن‌ها"
