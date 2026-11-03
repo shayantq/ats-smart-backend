@@ -234,10 +234,21 @@ fi
 #   backups/                                  بک‌آپ‌های رمزشده (۷۰۰)، با سیاست نگهداری خودکار
 ensure_backup_storage() {
     local public="backup/secrets/public/age-recipient.txt" private="backup/secrets/private/age-identity.txt"
-    mkdir -p backups backup/secrets/public backup/secrets/private
-    chmod 700 backups backup/secrets/private
+    mkdir -p backups
+    chmod 700 backups
     [[ -s "${public}" ]] && return 0
     compose build backup > /dev/null
+    # Docker پوشه‌ی میزبانِ ناموجودِ یک Mount را با مالک root می‌سازد (یافته‌ی Production: backup/secrets/public از
+    # اولین استقرار متعلق به root بود و کاربر استقرار نمی‌توانست کلید را در آن بنویسد). مالکیت از داخل یک کانتینر
+    # موقت به کاربر استقرار برمی‌گردد — بدون نیاز به sudo
+    if [[ -e backup/secrets && ! -w backup/secrets ]] || [[ -e backup/secrets/public && ! -w backup/secrets/public ]]; then
+        compose run --rm --no-deps -T --user root -v "${PROJECT_DIR}/backup:/fix" --entrypoint chown backup \
+            -R "$(id -u):$(id -g)" /fix/secrets > /dev/null 2>&1 \
+            || fail "برگرداندن مالکیت backup/secrets به کاربر استقرار ناموفق بود"
+        log "مالکیت backup/secrets (ساخته‌شده توسط Docker با root) به کاربر استقرار برگشت"
+    fi
+    mkdir -p backup/secrets/public backup/secrets/private
+    chmod 700 backup/secrets/private
     if [[ ! -s "${private}" ]]; then
         (umask 077 && compose run --rm --no-deps -T --entrypoint age-keygen backup > "${private}" 2>/dev/null) \
             || fail "ساخت کلید رمزنگاری بک‌آپ ناموفق بود"
