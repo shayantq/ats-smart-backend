@@ -45,3 +45,8 @@ k8s/overlays/*/secrets/service-auth/
 # مدیریت نشست‌ها: دیتابیس موقعیت IP (روی سرور با deploy/geoip-update.sh دانلود می‌شود)
 /geoip/
 *.mmdb
+
+# دیتاست آموزش تکمیلی و توکنایزر محلی (app/datasets/finetune — هرگز در ریپو)
+/data/finetune/
+/data/tokenizer/
+/datasets/

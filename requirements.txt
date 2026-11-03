@@ -79,3 +79,7 @@ langchain-core==1.7.4
 # ---- مانیتورینگ (Prometheus) ----
 # متریک‌های HTTP (RPS/Latency/نرخ خطا) و طول صف RQ روی /metrics — بنگرید app/core/metrics.py
 prometheus-client==0.21.0
+
+# ---- دیتاست آموزش تکمیلی (app/datasets/finetune) ----
+# شمارش توکن و آزمون رفت‌وبرگشت با tokenizer.json مدل پایه‌ی هدف (کتابخانه‌ی سبک، بدون torch)
+tokenizers==0.22.1
