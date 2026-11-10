@@ -1,0 +1,5 @@
+# فقط کرنل آزمایشی و اختیاری؛ نسخهٔ سازگار با torch2.14 و Python3.13 ویندوز.
+# نصب جدا، بدون تغییر وابستگی‌های برنامه یا محیط آموزش پایه:
+# python -m pip install --target training/reports/kernel-deps --no-deps -r training/lora/requirements-kernels.txt
+triton-windows==3.8.0.post29; sys_platform == "win32"
+liger-kernel==0.8.5

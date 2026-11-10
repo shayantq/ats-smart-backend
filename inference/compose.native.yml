@@ -1,0 +1,6 @@
+# فقط ارزیابی موقت GPU ویندوز هنگام آماده‌سازی تصویر؛ مدل هنوز داخل کانتینر GPU اجرا نمی‌شود.
+services:
+  ats-inference:
+    environment:
+      INFERENCE_ENGINE: ollama
+      OLLAMA_URL: http://host.docker.internal:11436

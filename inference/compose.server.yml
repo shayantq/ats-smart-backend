@@ -1,0 +1,95 @@
+# سرویس مستقل CPU روی سرور مشترک؛ هیچ پورت عمومی یا دسترسی به دیتابیس ندارد.
+# فعال‌سازی Worker فقط پس از آزمون واقعی و بررسی زمان پاسخ انجام می‌شود.
+name: ats-inference-server
+services:
+  ats-engine:
+    image: ghcr.io/ggml-org/llama.cpp@sha256:4b7be0376002b4450a357a109bab804093ff9251193cc75ed4ce0cb39953ff5c
+    entrypoint: [/app/llama-server]
+    command:
+      - --model
+      - /models/ats-q4_k_m.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - '11434'
+      - --ctx-size
+      - '2048'
+      - --parallel
+      - '1'
+      - --n-predict
+      - '640'
+      - --threads
+      - '1'
+      - --threads-batch
+      - '1'
+      - --threads-http
+      - '2'
+      - --batch-size
+      - '128'
+      - --ubatch-size
+      - '128'
+      - --gpu-layers
+      - '0'
+      - --load-mode
+      - mmap
+      - --no-warmup
+      - --no-context-shift
+      - --cache-ram
+      - '0'
+      - --spec-type
+      - ngram-cache
+      - --lookup-cache-static
+      - /models/train-hybrid.bin
+      - --log-disable
+    volumes:
+      - ${INFERENCE_ROOT:-/opt/ats-inference-task4}/models:/models:ro
+    networks: [engine]
+    mem_limit: 1280m
+    memswap_limit: 1280m
+    cpus: 0.75
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp:size=16m]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: 'no'
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:11434/health]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+  ats-inference-api:
+    image: ats-inference-api:task4
+    environment:
+      OLLAMA_URL: http://ats-engine:11434
+      INFERENCE_ENGINE: llama_cpp
+      INFERENCE_MODEL: ats-q4
+      INFERENCE_TOKENIZER: /models/tokenizer.json
+      INFERENCE_GRAMMAR_FILE: /models/hybrid.json
+      INFERENCE_PARALLEL: '1'
+      INFERENCE_WAITING: '0'
+      INFERENCE_TIMEOUT: '180'
+      INFERENCE_STARTUP_TIMEOUT: '180'
+      INFERENCE_CPP_WARMUP: '0'
+      SERVICE_AUTH_PUBLIC_KEYS_DIR: /keys
+      SERVICE_NAME: ats-inference
+    volumes:
+      - ${INFERENCE_ROOT:-/opt/ats-inference-task4}/models:/models:ro
+      - /opt/ats-smart/secrets/service-auth/public:/keys:ro
+    networks: [engine, backend]
+    mem_limit: 160m
+    memswap_limit: 160m
+    cpus: 0.25
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp:size=16m]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    restart: 'no'
+networks:
+  engine:
+    internal: true
+  backend:
+    external: true
+    name: ${ATS_INTERNAL_NETWORK:-ats-smart_ats_internal}

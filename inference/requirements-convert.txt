@@ -1,0 +1,2 @@
+# فقط مسیر models/converter-deps؛ کنار محیط آموزشی موجود و خارج وابستگی‌های تولید.
+sentencepiece==0.2.1

@@ -1,0 +1,53 @@
+# آزمایش بدون مدل کمکی: هر توکن پیشنهادی دوباره با همان مدل اصلی تأیید می‌شود.
+services:
+  ats-engine:
+    entrypoint: [/usr/lib/ollama/llama-server]
+    environment:
+      GGML_BACKEND_PATH: /usr/lib/ollama/cuda_v13/libggml-cuda.so
+      LD_LIBRARY_PATH: /usr/lib/ollama:/usr/lib/ollama/cuda_v13
+    command:
+      - --model
+      - /gguf/ats-q4_k_m.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - '11434'
+      - --ctx-size
+      - '2048'
+      - --parallel
+      - '1'
+      - --n-predict
+      - '640'
+      - --threads
+      - '4'
+      - --threads-batch
+      - '4'
+      - --gpu-layers
+      - all
+      - --flash-attn
+      - 'on'
+      - --load-mode
+      - none
+      - --offline
+      - --no-webui
+      - --no-context-shift
+      - --cache-ram
+      - '0'
+      - --spec-type
+      - ngram-simple
+      - --spec-ngram-simple-size-n
+      - '3'
+      - --spec-ngram-simple-size-m
+      - '16'
+      - --log-disable
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/11434; printf "GET /health HTTP/1.0\r\n\r\n" >&3; IFS= read -r health_status_line <&3; [[ "$$health_status_line" == *"200 OK"* ]]'
+      interval: 15s
+      timeout: 3s
+      start_period: 180s
+  ats-inference:
+    environment:
+      INFERENCE_ENGINE: llama_cpp

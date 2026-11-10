@@ -1,0 +1,38 @@
+# فقط شاهد یکپارچگی محلی؛ اجرای CPU هیچ معیار سرعت GPU یا نبود نشت VRAM را تأیید نمی‌کند.
+services:
+  ats-engine:
+    image: ghcr.io/ggml-org/llama.cpp@sha256:4b7be0376002b4450a357a109bab804093ff9251193cc75ed4ce0cb39953ff5c
+    entrypoint: [/app/llama-server]
+    command:
+      - --model
+      - /gguf/ats-q4_k_m.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - '11434'
+      - --ctx-size
+      - '2048'
+      - --parallel
+      - '1'
+      - --n-predict
+      - '640'
+      - --threads
+      - '4'
+      - --threads-batch
+      - '4'
+      - --gpu-layers
+      - '0'
+      - --no-context-shift
+      - --log-disable
+    deploy:
+      resources:
+        reservations:
+          devices: !reset []
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:11434/health]
+      interval: 15s
+      timeout: 3s
+      start_period: 60s
+  ats-inference:
+    environment:
+      INFERENCE_ENGINE: llama_cpp

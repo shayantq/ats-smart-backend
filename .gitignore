@@ -50,3 +50,14 @@ k8s/overlays/*/secrets/service-auth/
 /data/finetune/
 /data/tokenizer/
 /datasets/
+
+# آموزش تکمیلی LoRA (training/lora): مدل پایه، وزن‌های آداپتر، checkpoint ها و لاگ TensorBoard هرگز در ریپو
+/models/
+/training/outputs/
+/training/runs/
+/training/reports/
+/training/lora/model.env
+checkpoint-*/
+
+# تنظیمات محلی سرویس استنتاج؛ نمونهٔ بدون راز قابل ثبت است.
+/inference/*.env

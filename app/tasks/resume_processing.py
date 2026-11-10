@@ -106,7 +106,12 @@ async def _process_resume_multi_agent(application_id: str, file_url: str, sessio
         return
 
     try:
-        result = await run_agent_pipeline(file_bytes, file_url, job_context)
+        if settings.RESUME_PIPELINE == "model":
+            from app.model_inference.pipeline import run_model_pipeline
+
+            result = await run_model_pipeline(file_bytes, file_url, job_context)
+        else:
+            result = await run_agent_pipeline(file_bytes, file_url, job_context)
     except UnreadableResumeFileError:
         logger.error(
             "استخراج متن رزومه ناموفق بود (فایل ناخوانا/خراب/قفل‌شده) | application_id=%s | resume_id=%s",

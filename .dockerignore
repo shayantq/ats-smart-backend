@@ -26,3 +26,11 @@ monitoring
 deploy
 docker-compose*.yml
 README.md
+
+# آموزش تکمیلی: مدل پایه (چند گیگابایت)، دیتاست و کد آموزش وارد context بیلد ایمیج نمی‌شوند
+models
+data
+training
+
+# سرویس استنتاج Dockerfile و context مستقل دارد.
+inference

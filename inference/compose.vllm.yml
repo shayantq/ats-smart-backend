@@ -1,0 +1,50 @@
+# موتور آزمایشی روی همان GGUF؛ پذیرش فقط با آزمون کامل کلاینت تا خروجی JSON است.
+services:
+  ats-engine:
+    image: vllm/vllm-openai:v0.6.6@sha256:6956052a3491118df885b37e240abebaf839b62495c3d54e617cb8401c54717b
+    entrypoint: [python3, -m, vllm.entrypoints.openai.api_server]
+    command:
+      - --model
+      - /gguf/ats-q4_k_m.gguf
+      - --tokenizer
+      - /tokenizer
+      - --served-model-name
+      - ats-q4
+      - --host
+      - 0.0.0.0
+      - --port
+      - '11434'
+      - --dtype
+      - half
+      - --max-model-len
+      - '2048'
+      - --max-num-seqs
+      - '1'
+      - --max-num-batched-tokens
+      - '2048'
+      - --gpu-memory-utilization
+      - '0.75'
+      - --seed
+      - '2026'
+      - --disable-log-requests
+    environment:
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      DO_NOT_TRACK: '1'
+      VLLM_NO_USAGE_STATS: '1'
+      OMP_NUM_THREADS: '4'
+    volumes:
+      - ../models/base-model:/tokenizer:ro
+    networks: [inference, gateway]
+    ports: [127.0.0.1:11435:11434]
+    tmpfs: !override [/tmp:size=512m]
+    shm_size: 256m
+    mem_limit: 3g
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:11434/health', timeout=2)"]
+      interval: 15s
+      timeout: 3s
+      start_period: 180s
+  ats-inference:
+    environment:
+      INFERENCE_ENGINE: vllm

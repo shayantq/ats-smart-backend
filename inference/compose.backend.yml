@@ -1,0 +1,7 @@
+# اختیاری: فقط پس از انتخاب میزبان و تأیید استقرار به Compose اصلی اضافه شود.
+services:
+  worker:
+    environment:
+      RESUME_PIPELINE: model
+      MODEL_INFERENCE_URL: ${MODEL_INFERENCE_URL:?نشانی خصوصی سرویس مدل لازم است}
+      MODEL_INFERENCE_TIMEOUT_SECONDS: '60'

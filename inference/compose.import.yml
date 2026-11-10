@@ -1,0 +1,5 @@
+# فقط هنگام واردکردن فایل محلی؛ پس از import سرویس با compose اصلی و وزن‌های فقط‌خواندنی اجرا شود.
+services:
+  ats-engine:
+    volumes:
+      - ../models/ollama:/models

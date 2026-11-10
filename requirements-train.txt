@@ -1,0 +1,24 @@
+# وابستگی‌های آموزش تکمیلی LoRA (training/lora) — فقط روی سیستم توسعه‌ی دارای GPU انویدیا.
+# هرگز وارد ایمیج Production یا CI نمی‌شود (requirements.txt / requirements-dev.txt جدا هستند).
+#
+# نصب (دانلود قطع‌شده از همان نقطه ادامه پیدا می‌کند):
+#   pip install --resume-retries 20 --retries 10 --timeout 120 -r requirements-train.txt
+#
+# torch با CUDA 13.0 (درایور انویدیا باید CUDA 13 یا جدیدتر را پشتیبانی کند — nvidia-smi)
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch==2.14.1+cu130
+
+# transformers 5.16 به بعد tokenizers>=0.23 می‌خواهد و با نسخه‌ی ثابت برنامه (tokenizers==0.22.1 در
+# requirements.txt) در یک venv ناسازگار است؛ 5.15.1 آخرین نسخه‌ی سازگار است
+transformers==5.15.1
+tokenizers==0.22.1
+huggingface_hub==1.33.0
+peft==0.21.2
+# کوانتیزاسیون ۴ بیتی NF4 (نسخه‌ی رسمی ویندوز هم دارد)
+bitsandbytes==0.50.2
+accelerate==1.15.0
+safetensors==0.8.0
+
+# پایش زنده‌ی آموزش و نمودار نهایی loss
+tensorboard==2.21.0
+matplotlib==3.11.2

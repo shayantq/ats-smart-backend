@@ -1,0 +1,14 @@
+**
+!inference/
+!inference/requirements.txt
+!inference/requirements.lock
+!inference/__init__.py
+!inference/service.py
+!app/
+!app/__init__.py
+!app/core/
+!app/core/__init__.py
+!app/core/config.py
+!app/core/service_auth.py
+!app/model_inference/
+!app/model_inference/*.py

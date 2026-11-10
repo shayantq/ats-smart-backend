@@ -1,0 +1,7 @@
+# قالب اختیاری؛ کل schema در درگاه کنترل می‌شود و checksum از ناسازگاری جلوگیری می‌کند.
+services:
+  ats-inference:
+    environment:
+      INFERENCE_GRAMMAR_FILE: /grammar/hybrid.json
+    volumes:
+      - ../models/grammar/hybrid-v2.json:/grammar/hybrid.json:ro

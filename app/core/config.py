@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # ---- پردازش رزومه (app/tasks/resume_processing.py) ----
     # multi_agent: عامل ناظر + سه عامل تخصصی موازی (app/agents)؛ linear: خط لوله‌ی ترتیبی قبلی (بازگشت فوری)
     RESUME_PIPELINE: str = "multi_agent"
+    # فقط RESUME_PIPELINE=model سرویس مستقل مدل را فعال می‌کند؛ پیش‌فرض تولید تغییر نمی‌کند.
+    MODEL_INFERENCE_URL: str = ""
+    MODEL_INFERENCE_TIMEOUT_SECONDS: float = 60.0
     # سقف زمان هر عامل؛ عامل کندتر «failed» علامت می‌خورد و بقیه‌ی گراف ادامه می‌دهد
     AGENT_TIMEOUT_SECONDS: float = 20.0
 
