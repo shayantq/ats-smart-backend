@@ -17,7 +17,22 @@ async def test_tests_run_on_a_separate_temporary_database(db_session):
 async def test_schema_comes_from_real_alembic_migrations(db_session):
     """اسکیمای دیتابیس تست همان اسکیمای Production است (کل زنجیره‌ی مایگریشن‌ها اجرا شده)."""
     version = (await db_session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-    assert version == "c4f1a8e2b7d9"
+    assert version == "e8a1c2d3f409"
+    nullable = (
+        await db_session.execute(
+            text(
+                "SELECT is_nullable FROM information_schema.columns "
+                "WHERE table_name = 'applications' AND column_name = 'resume_id'"
+            )
+        )
+    ).scalar_one()
+    assert nullable == "YES"
+    constraint = (
+        await db_session.execute(
+            text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'fk_applications_resume_id'")
+        )
+    ).scalar_one()
+    assert "FOREIGN KEY (resume_id) REFERENCES resumes(id)" in constraint
     tables = await db_session.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
     assert {"interview_question_sets", "interview_questions"} <= set(tables.scalars())  # بانک سؤال GenAI
     # چندمستاجری: RLS روی جدول‌های عملیاتی فعال است
