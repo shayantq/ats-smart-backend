@@ -27,7 +27,7 @@ interface FunnelDatum {
 }
 
 // از تیره به روشن — همان رنگ آبی اصلی پروژه (blue-700 بورد کانبان)، هرچه مرحله جلوتر روشن‌تر
-const FUNNEL_COLORS = ["#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe", "#dbeafe"];
+const FUNNEL_COLORS = ["#334155", "#3e5068", "#475569", "#4e6079", "#56677d", "#5f6e83", "#64748b"];
 
 function stageLabel(stage: string): string {
   return STATUS_COLUMNS.find((column) => column.value === stage)?.label ?? stage;
@@ -64,7 +64,7 @@ function FunnelTooltip({ active, payload }: FunnelTooltipProps) {
   const datum = payload[0].payload;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs ">
       <p className="mb-1 font-semibold text-slate-700">{datum.name}</p>
       <p className="text-slate-600">
         تعداد کارجو: <span className="font-bold text-slate-900">{datum.value}</span>
@@ -100,7 +100,7 @@ export default function RecruitmentFunnelChart({ stages }: RecruitmentFunnelChar
       <ResponsiveContainer width="100%" height="100%">
         <FunnelChart>
           <Tooltip content={<FunnelTooltip />} />
-          <Funnel dataKey="value" data={data} isAnimationActive nameKey="name">
+          <Funnel dataKey="value" data={data} isAnimationActive={false} nameKey="name">
             {data.map((entry, index) => (
               <Cell key={entry.stage} fill={FUNNEL_COLORS[index % FUNNEL_COLORS.length]} />
             ))}

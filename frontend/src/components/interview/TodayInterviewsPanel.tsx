@@ -34,7 +34,7 @@ export default function TodayInterviewsPanel() {
         </h2>
         <button
           onClick={() => setShowAllPending((value) => !value)}
-          className="self-start text-xs font-semibold text-blue-600 hover:underline sm:self-auto"
+          className="self-start text-xs font-semibold text-slate-700 hover:underline sm:self-auto"
         >
           {showAllPending ? "فقط امروز" : "نمایش همه‌ی معوقه‌ها"}
         </button>

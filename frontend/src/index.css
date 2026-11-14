@@ -1,3 +1,38 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/Vazirmatn.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  body { @apply bg-paper font-sans text-body text-ink; }
+  *, *::before, *::after { box-sizing: border-box; }
+  h1, h2, h3 { text-wrap: balance; }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  button, a { transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
+  [tabindex]:focus-visible { outline: 2px solid #475569; outline-offset: 3px; }
+}
+
+@layer components {
+  .editorial-shell { @apply mx-auto w-full min-w-0 max-w-[1600px] px-4 py-7 sm:px-8 lg:px-12 lg:py-10; }
+  .editorial-panel { @apply min-w-0 border-t border-rule py-6; }
+  .editorial-label { @apply text-caption font-medium text-muted; }
+  .reading-copy { @apply max-w-[68ch] whitespace-pre-wrap text-body; overflow-wrap: anywhere; unicode-bidi: plaintext; }
+  .dossier-dialog { @apply m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-lg border border-rule bg-paper p-0 text-ink; }
+  .dossier-dialog[open] { animation: dossier-in 200ms ease-out; }
+  .dossier-dialog::backdrop { background: rgb(15 23 42 / 35%); animation: backdrop-in 200ms ease-out; }
+}
+
+@keyframes dossier-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 0s !important; scroll-behavior: auto !important; }
+}

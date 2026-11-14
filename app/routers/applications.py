@@ -19,8 +19,9 @@ from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
 from app.core.state_machine import is_transition_allowed
 from app.core.status_notifier import trigger_status_change_email
 from app.db.session import get_db
-from app.models import Application, Candidate, StatusHistory, User
+from app.models import Application, Candidate, Resume, StatusHistory, User
 from app.schemas.applications import (
+    ApplicationDossierResponse,
     ApplicationListItem,
     ApplicationListResponse,
     ApplicationStatusUpdateRequest,
@@ -32,6 +33,40 @@ router = APIRouter()
 # طبق معیار پذیرش تسک، فقط مدیر سازمان (Admin) و کارشناس HR اجازه‌ی
 # جابه‌جایی وضعیت درخواست‌ها روی بورد کانبان را دارند.
 APPLICATION_MANAGER_ROLES = ("Admin", "HR_Manager")
+
+
+@router.get(
+    "/{application_id}/dossier",
+    response_model=ApplicationDossierResponse,
+    summary="پروندهٔ رزومهٔ مرتبط با درخواست؛ فقط HR/Admin همان سازمان",
+    dependencies=[Depends(require_roles(*APPLICATION_MANAGER_ROLES))],
+)
+async def get_application_dossier(application_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """فقط رزومهٔ همان درخواست، همان کارجو و همان سازمان؛ نه آخرین رزومهٔ حدس‌زده‌شده."""
+    application = (await db.execute(select(Application).where(Application.id == application_id))).scalar_one_or_none()
+    if application is None:
+        raise HTTPException(status_code=404, detail="درخواست یافت نشد.")
+    if application.resume_id is None:
+        return ApplicationDossierResponse(application_id=application.id)
+    resume = (
+        await db.execute(
+            select(Resume).where(
+                Resume.id == application.resume_id,
+                Resume.candidate_id == application.candidate_id,
+                Resume.tenant_id == application.tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if resume is None:
+        raise HTTPException(status_code=404, detail="رزومه یافت نشد.")
+    return ApplicationDossierResponse(
+        application_id=application.id,
+        resume_id=resume.id,
+        raw_text=resume.raw_text,
+        parsed_data=resume.parsed_data,
+        skill_analysis=resume.skill_analysis,
+        agent_analysis=resume.agent_analysis,
+    )
 
 
 @router.get(

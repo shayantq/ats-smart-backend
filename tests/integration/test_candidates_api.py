@@ -86,6 +86,7 @@ async def test_resume_upload_creates_resume_and_draft_application(client, db_ses
         await db_session.execute(select(Resume).where(Resume.candidate_id == application.candidate_id))
     ).scalar_one()
     assert resume.file_url.endswith("_my-cv.pdf")
+    assert application.resume_id == resume.id
     # پردازش هوش مصنوعی رزومه به صف پس‌زمینه سپرده شده است
     assert enqueued_tasks[0][0] == "process_resume_task"
     assert enqueued_tasks[0][1] == (str(application_id), resume.file_url)

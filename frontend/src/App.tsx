@@ -103,11 +103,11 @@ function App() {
       ) : (
         <>
           <header className="border-b border-slate-200 bg-white">
-            <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
+            <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
               <span className="text-sm font-bold text-slate-800">ATS Smart</span>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-500">
-                  <span dir="ltr">{user.email}</span> · {ROLE_LABELS[user.role] ?? user.role}
+              <div className="flex min-w-0 flex-wrap items-center gap-3">
+                <span className="min-w-0 break-words text-caption text-muted">
+                  <bdi>{user.email}</bdi> · {ROLE_LABELS[user.role] ?? user.role}
                 </span>
                 <button
                   onClick={() => setShowSessions((value) => !value)}

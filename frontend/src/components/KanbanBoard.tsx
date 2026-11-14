@@ -121,7 +121,7 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
   }
 
   return (
-    <div data-testid="kanban-board" className="flex gap-4 overflow-x-auto pb-4">
+    <div data-testid="kanban-board" aria-label="مراحل استخدام؛ برای دیدن مراحل بیشتر افقی پیمایش کنید" tabIndex={0} className="flex max-w-full min-w-0 items-start gap-3 overflow-x-auto overscroll-x-contain pb-5">
       {STATUS_COLUMNS.map((column) => (
         <KanbanColumn
           key={column.value}

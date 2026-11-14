@@ -24,7 +24,7 @@ const EDUCATION_OPTIONS = [
   { value: "دکتری", label: "دکتری" },
 ];
 
-const inputClass = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none";
+const inputClass = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-600 focus:outline-none";
 const labelClass = "block text-xs font-semibold text-slate-600";
 
 /**
@@ -76,7 +76,7 @@ export default function JobCreateForm({ onCreated }: { onCreated: (job: Job) => 
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-labelledby="job-create-title" className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
+    <form onSubmit={handleSubmit} aria-labelledby="job-create-title" className="editorial-panel max-w-4xl">
       <h2 id="job-create-title" className="mb-1 text-sm font-bold text-slate-700">
         ثبت آگهی شغلی تازه
       </h2>
@@ -136,7 +136,7 @@ export default function JobCreateForm({ onCreated }: { onCreated: (job: Job) => 
       <button
         type="submit"
         disabled={mutation.isPending || title.trim().length < 2}
-        className="mt-4 w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+        className="mt-4 w-full rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {mutation.isPending ? "در حال ثبت..." : "انتشار آگهی"}
       </button>

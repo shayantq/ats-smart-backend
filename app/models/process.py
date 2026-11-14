@@ -36,6 +36,10 @@ class Application(TenantMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False)
     candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False)
+    # اتصال دقیق به نسخهٔ رزومهٔ همین درخواست؛ رکورد قدیمی بدون نگاشت قطعی خالی می‌ماند.
+    resume_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("resumes.id", name="fk_applications_resume_id"), nullable=True
+    )
     current_status: Mapped[str] = mapped_column(String(50), default="Draft", nullable=False)
     score_ai: Mapped[int] = mapped_column(Integer, nullable=True)
     # زمان واقعی «ثبت درخواست» (آپلود رزومه) — برای گزارش‌های سری‌زمانی

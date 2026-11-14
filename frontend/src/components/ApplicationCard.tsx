@@ -1,4 +1,5 @@
-import type { DragEvent } from "react";
+import { useState, type DragEvent } from "react";
+import CandidateDossier from "./CandidateDossier";
 import type { ApplicationListItem } from "../types/application";
 
 interface ApplicationCardProps {
@@ -22,20 +23,22 @@ export default function ApplicationCard({
   onDragStart,
   onDragEnd,
 }: ApplicationCardProps) {
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   return (
+    <>
     <div
       draggable
       data-testid="application-card"
       onDragStart={(event) => onDragStart(event, application)}
       onDragEnd={onDragEnd}
-      className={`cursor-grab select-none rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-opacity active:cursor-grabbing ${
+      className={`cursor-grab select-none rounded border border-rule bg-white p-4 transition-[opacity,border-color] duration-200 hover:border-slate-400 active:cursor-grabbing ${
         isDragging ? "opacity-40" : "opacity-100"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800">{application.candidate_name}</p>
+        <p dir="auto" className="min-w-0 break-words text-sm font-semibold leading-7 text-ink">{application.candidate_name}</p>
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${scoreBadgeStyle(
+          className={`shrink-0 rounded px-2 py-0.5 text-caption font-medium tabular-nums ${scoreBadgeStyle(
             application.score_ai,
           )}`}
           title="بالاترین امتیاز محاسبه‌شده‌ی هوش مصنوعی"
@@ -43,9 +46,14 @@ export default function ApplicationCard({
           {application.score_ai !== null ? `${application.score_ai}%` : "بدون امتیاز"}
         </span>
       </div>
-      <p className="mt-1 text-xs text-slate-400">
+      <p className="mt-3 text-caption text-muted">
         آخرین به‌روزرسانی: {new Date(application.updated_at).toLocaleDateString("fa-IR")}
       </p>
+      <button type="button" draggable={false} onClick={() => setIsProfileOpen(true)} aria-label={`مشاهده پرونده ${application.candidate_name}`} className="mt-3 border-t border-rule pt-3 text-caption font-medium text-slate-700 hover:text-slate-950">
+        مشاهده پرونده <span aria-hidden="true">←</span>
+      </button>
     </div>
+    {isProfileOpen && <CandidateDossier application={application} onClose={() => setIsProfileOpen(false)} />}
+    </>
   );
 }

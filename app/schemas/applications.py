@@ -6,7 +6,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -63,3 +63,14 @@ class ApplicationListResponse(BaseModel):
     previous_cursor: Optional[str] = None
     has_next: bool = False
     has_previous: bool = False
+
+
+class ApplicationDossierResponse(BaseModel):
+    """جزئیات فقط از رزومهٔ صریحاً مرتبط؛ دادهٔ شخصی هرگز وارد لیست بورد نمی‌شود."""
+
+    application_id: uuid.UUID
+    resume_id: Optional[uuid.UUID] = None
+    raw_text: Optional[str] = None
+    parsed_data: Optional[dict[str, Any]] = None
+    skill_analysis: Optional[dict[str, Any]] = None
+    agent_analysis: Optional[dict[str, Any]] = None

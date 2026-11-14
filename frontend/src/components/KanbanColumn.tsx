@@ -38,15 +38,15 @@ export default function KanbanColumn({
         setIsOver(false);
         onDropOnColumn(status);
       }}
-      className={`flex w-72 shrink-0 flex-col rounded-xl border p-3 transition-colors sm:w-80 ${
-        isOver ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-slate-50"
+      className={`flex w-[17rem] shrink-0 flex-col rounded border p-3 transition-colors duration-200 sm:w-[19rem] ${
+        isOver ? "border-slate-500 bg-slate-100" : "border-rule bg-wash"
       }`}
     >
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-700">{label}</h3>
+      <div className="mb-4 flex items-center justify-between gap-2 border-b border-rule pb-3">
+        <h3 className="text-sm font-semibold leading-7 text-ink">{label}</h3>
         <span
           data-testid="column-count"
-          className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600"
+          className="text-caption tabular-nums text-muted"
         >
           {applications.length}
         </span>
@@ -54,7 +54,7 @@ export default function KanbanColumn({
 
       <div className="flex min-h-[80px] flex-col gap-2">
         {applications.length === 0 && (
-          <p className="rounded-lg border border-dashed border-slate-300 p-3 text-center text-xs text-slate-400">
+          <p className="px-2 py-8 text-center text-caption text-muted">
             کارتی در این مرحله نیست
           </p>
         )}

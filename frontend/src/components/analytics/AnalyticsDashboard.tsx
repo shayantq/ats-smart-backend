@@ -70,8 +70,8 @@ export default function AnalyticsDashboard({ jobId }: AnalyticsDashboardProps) {
       )}
 
       {/* روی صفحات کوچک زیر هم، از lg به بعد کنار هم — معیار پذیرش واکنش‌گرا بودن */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="grid min-w-0 grid-cols-1 gap-x-10 gap-y-6 xl:grid-cols-2">
+        <section className="editorial-panel">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div>
               <h2 className="text-sm font-bold text-slate-800">قیف استخدام</h2>
@@ -85,7 +85,7 @@ export default function AnalyticsDashboard({ jobId }: AnalyticsDashboardProps) {
           {funnelQuery.data && <RecruitmentFunnelChart stages={funnelQuery.data.stages} />}
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <section className="editorial-panel">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
             <div>
               <h2 className="text-sm font-bold text-slate-800">روند ثبت درخواست‌ها</h2>

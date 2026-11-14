@@ -5,7 +5,7 @@ import type { AppNotification } from "../../types/notification";
 
 const CATEGORY_LABELS: Record<string, { label: string; className: string }> = {
   alert: { label: "هشدار سرور", className: "bg-red-50 text-red-700 ring-red-200" },
-  deployment: { label: "استقرار / CI", className: "bg-blue-50 text-blue-700 ring-blue-200" },
+  deployment: { label: "استقرار / CI", className: "bg-slate-100 text-slate-700 ring-slate-300" },
 };
 
 function formatDateTime(isoDate: string): string {
@@ -18,11 +18,11 @@ function NotificationItem({ notification, onMarkRead }: { notification: AppNotif
   return (
     <li
       className={`rounded-lg border p-4 transition-colors ${
-        notification.is_read ? "border-slate-200 bg-white" : "border-blue-200 bg-blue-50/40"
+        notification.is_read ? "border-slate-200 bg-white" : "border-slate-300 bg-slate-50"
       }`}
     >
       <div className="mb-1 flex flex-wrap items-center gap-2">
-        {!notification.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" aria-label="خوانده‌نشده" />}
+        {!notification.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-slate-800" aria-label="خوانده‌نشده" />}
         <h3 className="text-sm font-bold text-slate-800">{notification.title}</h3>
         {category && (
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${category.className}`}>
@@ -44,7 +44,7 @@ function NotificationItem({ notification, onMarkRead }: { notification: AppNotif
           {formatDateTime(notification.created_at)}
         </time>
         {!notification.is_read && (
-          <button onClick={onMarkRead} className="text-xs font-semibold text-blue-600 hover:underline">
+          <button onClick={onMarkRead} className="text-xs font-semibold text-slate-700 hover:underline">
             خوانده شد
           </button>
         )}
@@ -79,7 +79,7 @@ export default function NotificationsPanel() {
           <button
             onClick={() => markAllMutation.mutate()}
             disabled={markAllMutation.isPending}
-            className="self-start text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50 sm:self-auto"
+            className="self-start text-xs font-semibold text-slate-700 hover:underline disabled:opacity-50 sm:self-auto"
           >
             علامت‌گذاری همه به‌عنوان خوانده‌شده ({unreadCount.toLocaleString("fa-IR")})
           </button>

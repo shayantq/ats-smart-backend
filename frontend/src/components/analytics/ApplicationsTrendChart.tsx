@@ -31,9 +31,9 @@ function TrendTooltip({ active, payload }: TrendTooltipProps) {
   const point = payload[0].payload;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs ">
       <p className="mb-1 font-semibold text-slate-700">{formatTooltipDate(point.date)}</p>
-      <p className="text-blue-700">
+      <p className="text-slate-700">
         تعداد درخواست ثبت‌شده: <span className="font-bold">{point.count}</span>
       </p>
     </div>
@@ -65,11 +65,12 @@ export default function ApplicationsTrendChart({ series }: ApplicationsTrendChar
           <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#64748b" }} width={28} />
           <Tooltip content={<TrendTooltip />} />
           <Line
+            isAnimationActive={false}
             type="monotone"
             dataKey="count"
-            stroke="#2563eb"
+            stroke="#475569"
             strokeWidth={2}
-            dot={{ r: 3, fill: "#2563eb" }}
+            dot={{ r: 3, fill: "#475569" }}
             activeDot={{ r: 5 }}
           />
         </LineChart>

@@ -5,6 +5,19 @@
  */
 
 import { apiRequest, fetchAllCursorPages } from "./apiClient";
+
+export interface ApplicationDossier {
+  application_id: string;
+  resume_id: string | null;
+  raw_text: string | null;
+  parsed_data: Record<string, unknown> | null;
+  skill_analysis: Record<string, unknown> | null;
+  agent_analysis: Record<string, unknown> | null;
+}
+
+export function fetchApplicationDossier(applicationId: string): Promise<ApplicationDossier> {
+  return apiRequest<ApplicationDossier>(`/applications/${applicationId}/dossier`);
+}
 import type {
   ApplicationListItem,
   ApplicationStatus,

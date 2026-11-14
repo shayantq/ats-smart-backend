@@ -106,8 +106,10 @@ async def upload_resume(
         # چندمستاجری: رزومه و درخواست متعلق به سازمانِ صاحب آگهی‌اند (کارجو خودش سازمانی ندارد)
         resume = Resume(candidate_id=candidate.id, file_url=file_url, tenant_id=job.tenant_id)
         db.add(resume)
+        await db.flush()
 
         application = Application(
+            resume_id=resume.id,
             job_id=job.id,
             candidate_id=candidate.id,
             tenant_id=job.tenant_id,

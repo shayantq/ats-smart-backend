@@ -97,10 +97,48 @@ async def test_direct_access_to_other_tenant_record_returns_404(client, db_sessi
     )
     assert status_change.status_code == 404
     assert (await client.delete(f"/api/v1/jobs/{job_a.id}", headers=hr_b)).status_code == 404
-
     await db_session.refresh(job_a)
     await db_session.refresh(application_a)
     assert job_a.status == "Active" and application_a.current_status == "Applied"
+
+
+async def test_dossier_uses_exact_resume_and_keeps_tenant_boundary(client, db_session, two_orgs):
+    a, b = two_orgs["A"], two_orgs["B"]
+    a["application"].resume_id = a["resume"].id
+    db_session.add(
+        Resume(
+            candidate_id=a["candidate"].id,
+            tenant_id=a["company"].id,
+            file_url="http://test/media/other-version.pdf",
+            raw_text="نسخهٔ دیگری که نباید نمایش داده شود",
+        )
+    )
+    a["resume"].parsed_data = {"work_experience": [{"company": "نمونه", "duration": "1400-1402"}]}
+    await db_session.commit()
+    path = f"/api/v1/applications/{a['application'].id}/dossier"
+    own = await client.get(path, headers=auth_headers(a["hr"]))
+    assert own.status_code == 200
+    assert own.json()["resume_id"] == str(a["resume"].id)
+    assert own.json()["raw_text"] == "Python developer"
+    assert own.json()["parsed_data"]["work_experience"][0]["company"] == "نمونه"
+    foreign = await client.get(path, headers=auth_headers(b["hr"]))
+    missing = await client.get(f"/api/v1/applications/{uuid.uuid4()}/dossier", headers=auth_headers(b["hr"]))
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.json() == missing.json()
+    assert (await client.get(path, headers=auth_headers(a["candidate_user"]))).status_code == 403
+    assert (await client.get(path)).status_code == 401
+
+
+async def test_dossier_does_not_guess_legacy_resume_or_accept_cross_org_link(client, db_session, two_orgs):
+    a, b = two_orgs["A"], two_orgs["B"]
+    path = f"/api/v1/applications/{a['application'].id}/dossier"
+    legacy = await client.get(path, headers=auth_headers(a["hr"]))
+    assert legacy.status_code == 200
+    assert legacy.json()["resume_id"] is None and legacy.json()["raw_text"] is None
+    # اتصال اشتباه حتی با وجود FK معتبر نباید باعث نمایش دادهٔ کارجو/سازمان دیگر شود.
+    a["application"].resume_id = b["resume"].id
+    await db_session.commit()
+    assert (await client.get(path, headers=auth_headers(a["hr"]))).status_code == 404
 
 
 async def _raw_rows(db_session, context: TenantContext, sql: str, **params) -> list:
