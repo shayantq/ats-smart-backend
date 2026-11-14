@@ -13,12 +13,12 @@ export default function TrackerTab() {
   });
 
   if (isLoading) {
-    return <p className="p-4 text-sm text-slate-500">در حال بارگذاری...</p>;
+    return <p className="p-4 text-sm text-slate-600 dark:text-slate-300">در حال بارگذاری...</p>;
   }
 
   if (isError) {
     return (
-      <p className="border-t border-red-200 py-6 text-sm text-red-700">
+      <p className="border-t border-red-200 dark:border-red-400 py-6 text-sm text-red-700 dark:text-red-300">
         خطا در دریافت وضعیت درخواست‌ها. اتصال به سرور را بررسی کن.
       </p>
     );

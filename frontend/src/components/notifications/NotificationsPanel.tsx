@@ -4,8 +4,8 @@ import { markAllNotificationsRead, markNotificationRead } from "../../services/n
 import type { AppNotification } from "../../types/notification";
 
 const CATEGORY_LABELS: Record<string, { label: string; className: string }> = {
-  alert: { label: "هشدار سرور", className: "bg-red-50 text-red-700 ring-red-200" },
-  deployment: { label: "استقرار / CI", className: "bg-slate-100 text-slate-700 ring-slate-300" },
+  alert: { label: "هشدار سرور", className: "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 ring-red-200 dark:ring-red-400" },
+  deployment: { label: "استقرار / CI", className: "bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-200 ring-slate-300 dark:ring-slate-500" },
 };
 
 function formatDateTime(isoDate: string): string {
@@ -18,12 +18,12 @@ function NotificationItem({ notification, onMarkRead }: { notification: AppNotif
   return (
     <li
       className={`rounded-lg border p-4 transition-colors ${
-        notification.is_read ? "border-slate-200 bg-white" : "border-slate-300 bg-slate-50"
+        notification.is_read ? "border-slate-200 dark:border-slate-500 bg-white dark:bg-slate-800" : "border-slate-500 dark:border-slate-500 bg-slate-50 dark:bg-slate-900"
       }`}
     >
       <div className="mb-1 flex flex-wrap items-center gap-2">
-        {!notification.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-slate-800" aria-label="خوانده‌نشده" />}
-        <h3 className="text-sm font-bold text-slate-800">{notification.title}</h3>
+        {!notification.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-slate-800 dark:bg-slate-700" aria-label="خوانده‌نشده" />}
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">{notification.title}</h3>
         {category && (
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${category.className}`}>
             {category.label}
@@ -34,17 +34,17 @@ function NotificationItem({ notification, onMarkRead }: { notification: AppNotif
       {notification.content && (
         // متن چندخطی هشدار/گزارش (منبع، زمان شروع، لینک اجرای CI و ...) — جهت LTR
         // برای خطوطی که با متن لاتین شروع می‌شوند با dir="auto" خودکار انتخاب می‌شود
-        <p dir="auto" className="whitespace-pre-line break-words text-xs leading-6 text-slate-600">
+        <p dir="auto" className="whitespace-pre-line break-words text-xs leading-6 text-slate-600 dark:text-slate-300">
           {notification.content}
         </p>
       )}
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <time className="text-[11px] text-slate-400" dateTime={notification.created_at}>
+        <time className="text-[11px] text-slate-600 dark:text-slate-300" dateTime={notification.created_at}>
           {formatDateTime(notification.created_at)}
         </time>
         {!notification.is_read && (
-          <button onClick={onMarkRead} className="text-xs font-semibold text-slate-700 hover:underline">
+          <button onClick={onMarkRead} className="text-xs font-semibold text-slate-700 dark:text-slate-200 hover:underline">
             خوانده شد
           </button>
         )}
@@ -72,30 +72,30 @@ export default function NotificationsPanel() {
     <div>
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-sm font-bold text-slate-700">اعلان‌های تیم فنی</h2>
-          <p className="text-xs text-slate-500">هشدارهای سرور و گزارش‌های استقرار — به‌روزرسانی خودکار</p>
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200">اعلان‌های تیم فنی</h2>
+          <p className="text-xs text-slate-600 dark:text-slate-300">هشدارهای سرور و گزارش‌های استقرار — به‌روزرسانی خودکار</p>
         </div>
         {unreadCount > 0 && (
           <button
             onClick={() => markAllMutation.mutate()}
             disabled={markAllMutation.isPending}
-            className="self-start text-xs font-semibold text-slate-700 hover:underline disabled:opacity-50 sm:self-auto"
+            className="self-start text-xs font-semibold text-slate-700 dark:text-slate-200 hover:underline disabled:opacity-50 sm:self-auto"
           >
             علامت‌گذاری همه به‌عنوان خوانده‌شده ({unreadCount.toLocaleString("fa-IR")})
           </button>
         )}
       </div>
 
-      {isLoading && <p className="p-4 text-sm text-slate-500">در حال بارگذاری...</p>}
+      {isLoading && <p className="p-4 text-sm text-slate-600 dark:text-slate-300">در حال بارگذاری...</p>}
 
       {isError && (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
+        <p className="rounded-lg border border-red-200 dark:border-red-400 bg-red-50 dark:bg-red-950 p-6 text-center text-sm text-red-600 dark:text-red-300">
           خطا در دریافت اعلان‌ها. اتصال به سرور را بررسی کن.
         </p>
       )}
 
       {!isLoading && !isError && notifications.length === 0 && (
-        <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+        <p className="rounded-lg border border-dashed border-slate-500 dark:border-slate-500 p-6 text-center text-sm text-slate-600 dark:text-slate-300">
           هیچ اعلانی نیست — همه‌چیز آرام است.
         </p>
       )}

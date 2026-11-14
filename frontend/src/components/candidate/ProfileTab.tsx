@@ -21,7 +21,7 @@ function DeleteAccountSection() {
 
   return (
     <div className="editorial-panel lg:col-span-2">
-      <h3 className="mb-1 text-sm font-bold text-red-700">حذف حساب</h3>
+      <h3 className="mb-1 text-sm font-bold text-red-700 dark:text-red-300">حذف حساب</h3>
       <p className="reading-copy mb-4 text-sm text-muted">
         نام، شماره‌ی تماس، آدرس، ایمیل و فایل و متن رزومه‌ی شما برای همیشه پاک می‌شود و دیگر نمی‌توانید با این حساب وارد
         شوید. فقط آمار بی‌نام درخواست‌ها برای سازمان‌ها باقی می‌ماند.
@@ -31,14 +31,14 @@ function DeleteAccountSection() {
           <button
             onClick={() => deleteMutation.mutate()}
             disabled={deleteMutation.isPending}
-            className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+            className="rounded-md bg-red-600 dark:bg-red-700 px-4 py-2 text-sm font-semibold text-white dark:text-slate-100 hover:bg-red-700 dark:hover:bg-red-800 disabled:opacity-60"
           >
             {deleteMutation.isPending ? "در حال حذف..." : "بله، حسابم برای همیشه حذف شود"}
           </button>
           <button
             onClick={() => setIsConfirming(false)}
             disabled={deleteMutation.isPending}
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+            className="rounded-md border border-slate-500 dark:border-slate-500 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
           >
             انصراف
           </button>
@@ -46,7 +46,7 @@ function DeleteAccountSection() {
       ) : (
         <button
           onClick={() => setIsConfirming(true)}
-          className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+          className="rounded-md border border-red-300 dark:border-red-400 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950"
         >
           حذف حساب
         </button>
@@ -98,12 +98,12 @@ export default function ProfileTab() {
   }
 
   if (isLoading) {
-    return <p className="p-4 text-sm text-slate-500">در حال بارگذاری پروفایل...</p>;
+    return <p className="p-4 text-sm text-slate-600 dark:text-slate-300">در حال بارگذاری پروفایل...</p>;
   }
 
   if (isError) {
     return (
-      <p className="border-t border-red-200 py-6 text-sm text-red-700">
+      <p className="border-t border-red-200 dark:border-red-400 py-6 text-sm text-red-700 dark:text-red-300">
         خطا در دریافت پروفایل. اتصال به سرور را بررسی کن.
       </p>
     );
@@ -157,7 +157,7 @@ export default function ProfileTab() {
         <button
           onClick={handleSave}
           disabled={updateMutation.isPending}
-          className="w-full rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="w-full rounded-md bg-slate-800 dark:bg-slate-700 px-4 py-2 text-sm font-semibold text-white dark:text-slate-100 transition-colors hover:bg-slate-900 dark:hover:bg-slate-950 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
         >
           {updateMutation.isPending ? "در حال ذخیره..." : "ذخیره‌ی تغییرات"}
         </button>

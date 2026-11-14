@@ -4,6 +4,7 @@ import { configureStore } from "@reduxjs/toolkit";
 import { Provider } from "react-redux";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import authReducer from "../store/slices/authSlice";
+import themeReducer from "../store/slices/themeSlice";
 import { ToastProvider } from "../context/ToastContext";
 
 /**
@@ -11,7 +12,7 @@ import { ToastProvider } from "../context/ToastContext";
  * نمونه‌های تازه برای هر تست تا هیچ وضعیتی بین تست‌ها نشت نکند.
  */
 export function renderWithProviders(ui: ReactElement) {
-  const store = configureStore({ reducer: { auth: authReducer } });
+  const store = configureStore({ reducer: { auth: authReducer, theme: themeReducer } });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
   const result = render(

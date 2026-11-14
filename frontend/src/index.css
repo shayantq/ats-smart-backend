@@ -11,20 +11,24 @@
 }
 
 @layer base {
+  :root { --paper: 252 252 250; --ink: 32 41 54; --muted: 92 103 117; --rule: 220 225 230; --wash: 243 244 244; --surface: #ffffff; --chart-text: #475569; --chart-grid: #cbd5e1; --chart-line: #475569; --focus: #475569; }
+  :root.dark { --paper: 18 24 34; --ink: 226 232 240; --muted: 170 184 202; --rule: 65 80 100; --wash: 29 40 55; --surface: #1d2837; --chart-text: #b8c5d6; --chart-grid: #52647a; --chart-line: #b8c5d6; --focus: #cbd5e1; }
+  html { background: rgb(var(--paper)); color: rgb(var(--ink)); }
   body { @apply bg-paper font-sans text-body text-ink; }
   *, *::before, *::after { box-sizing: border-box; }
   h1, h2, h3 { text-wrap: balance; }
   button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   button, a { transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease; }
   button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
-  [tabindex]:focus-visible { outline: 2px solid #475569; outline-offset: 3px; }
+  [tabindex]:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  input, select, textarea { @apply dark:bg-slate-800 dark:text-slate-200 dark:placeholder:text-slate-400; }
 }
 
 @layer components {
   .editorial-shell { @apply mx-auto w-full min-w-0 max-w-[1600px] px-4 py-7 sm:px-8 lg:px-12 lg:py-10; }
   .editorial-panel { @apply min-w-0 border-t border-rule py-6; }
   .editorial-label { @apply text-caption font-medium text-muted; }
-  .candidate-field { @apply block w-full min-w-0 rounded-sm border border-rule bg-white px-3 py-2.5 text-body text-ink; }
+  .candidate-field { @apply block w-full min-w-0 rounded-sm border border-slate-500 bg-white px-3 py-2.5 text-body text-ink dark:border-slate-500 dark:bg-slate-800; }
   .reading-copy { @apply max-w-[68ch] whitespace-pre-wrap text-body; overflow-wrap: anywhere; unicode-bidi: plaintext; }
   .dossier-dialog { @apply m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-lg border border-rule bg-paper p-0 text-ink; }
   .dossier-dialog[open] { animation: dossier-in 200ms ease-out; }

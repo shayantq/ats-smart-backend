@@ -11,10 +11,10 @@ interface ApplicationCardProps {
 
 /** رنگ نشان امتیاز هوش مصنوعی بر اساس بازه‌ی امتیاز */
 function scoreBadgeStyle(score: number | null): string {
-  if (score === null) return "bg-slate-200 text-slate-500";
-  if (score >= 80) return "bg-emerald-100 text-emerald-700";
-  if (score >= 50) return "bg-amber-100 text-amber-700";
-  return "bg-red-100 text-red-700";
+  if (score === null) return "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300";
+  if (score >= 80) return "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300";
+  if (score >= 50) return "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300";
+  return "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300";
 }
 
 export default function ApplicationCard({
@@ -31,7 +31,7 @@ export default function ApplicationCard({
       data-testid="application-card"
       onDragStart={(event) => onDragStart(event, application)}
       onDragEnd={onDragEnd}
-      className={`cursor-grab select-none rounded border border-rule bg-white p-4 transition-[opacity,border-color] duration-200 hover:border-slate-400 active:cursor-grabbing ${
+      className={`cursor-grab select-none rounded border border-rule bg-white dark:bg-slate-800 p-4 transition-[opacity,border-color] duration-200 hover:border-slate-400 dark:hover:border-slate-500 active:cursor-grabbing ${
         isDragging ? "opacity-40" : "opacity-100"
       }`}
     >
@@ -49,7 +49,7 @@ export default function ApplicationCard({
       <p className="mt-3 text-caption text-muted">
         آخرین به‌روزرسانی: {new Date(application.updated_at).toLocaleDateString("fa-IR")}
       </p>
-      <button type="button" draggable={false} onClick={() => setIsProfileOpen(true)} aria-label={`مشاهده پرونده ${application.candidate_name}`} className="mt-3 border-t border-rule pt-3 text-caption font-medium text-slate-700 hover:text-slate-950">
+      <button type="button" draggable={false} onClick={() => setIsProfileOpen(true)} aria-label={`مشاهده پرونده ${application.candidate_name}`} className="mt-3 border-t border-rule pt-3 text-caption font-medium text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-slate-200">
         مشاهده پرونده <span aria-hidden="true">←</span>
       </button>
     </div>

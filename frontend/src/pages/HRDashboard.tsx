@@ -74,7 +74,7 @@ export default function HRDashboard() {
         </p>
 
         <div className="mb-8 flex min-w-0 flex-col gap-2 sm:max-w-lg">
-          <label htmlFor="job-select" className="text-xs font-semibold text-slate-600">
+          <label htmlFor="job-select" className="text-xs font-semibold text-slate-600 dark:text-slate-300">
             آگهی شغلی
           </label>
           <select
@@ -82,7 +82,7 @@ export default function HRDashboard() {
             value={activeJobId}
             onChange={(event) => setActiveJobId(event.target.value)}
             disabled={isLoadingJobs || jobs.length === 0}
-            className="w-full min-w-0 rounded border border-rule bg-white px-3 py-2 text-body"
+            className="w-full min-w-0 rounded border border-slate-500 bg-white dark:bg-slate-800 px-3 py-2 text-body"
           >
             {isLoadingJobs && <option value="">در حال بارگذاری آگهی‌ها...</option>}
             {!isLoadingJobs && jobs.length === 0 && <option value="">هنوز هیچ آگهی فعالی ثبت نشده</option>}
@@ -95,7 +95,7 @@ export default function HRDashboard() {
           {!isLoadingJobs && jobs.length === 0 && canManageJobs && activeTab !== "new_job" && (
             <button
               onClick={() => setActiveTab("new_job")}
-              className="mt-1 self-start text-xs font-semibold text-blue-600 hover:underline"
+              className="mt-1 self-start text-xs font-semibold text-blue-600 dark:text-blue-300 hover:underline"
             >
               ثبت اولین آگهی
             </button>
@@ -123,13 +123,13 @@ export default function HRDashboard() {
               onClick={() => setActiveTab(tab.value)}
               className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium leading-7 transition-colors ${
                 activeTab === tab.value
-                  ? "border-slate-700 text-ink"
+                  ? "border-slate-700 dark:border-slate-500 text-ink"
                   : "border-transparent text-muted hover:bg-wash hover:text-ink"
               }`}
             >
               {tab.label}
               {tab.value === "notifications" && unreadCount > 0 && (
-                <span className="ms-1.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                <span className="ms-1.5 rounded-full bg-red-600 dark:bg-red-700 px-1.5 py-0.5 text-[10px] font-bold text-white dark:text-slate-100">
                   {unreadCount.toLocaleString("fa-IR")}
                 </span>
               )}

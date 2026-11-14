@@ -102,19 +102,19 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
 
   if (!jobId) {
     return (
-      <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+      <p className="rounded-lg border border-dashed border-slate-500 dark:border-slate-500 p-6 text-center text-sm text-slate-600 dark:text-slate-300">
         برای مشاهده‌ی بورد، ابتدا یک آگهی شغلی انتخاب کنید.
       </p>
     );
   }
 
   if (isLoading) {
-    return <p className="p-6 text-center text-sm text-slate-500">در حال بارگذاری بورد...</p>;
+    return <p className="p-6 text-center text-sm text-slate-600 dark:text-slate-300">در حال بارگذاری بورد...</p>;
   }
 
   if (isError) {
     return (
-      <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
+      <p className="rounded-lg border border-red-200 dark:border-red-400 bg-red-50 dark:bg-red-950 p-6 text-center text-sm text-red-600 dark:text-red-300">
         خطا در دریافت لیست درخواست‌ها. اتصال به سرور را بررسی کنید.
       </p>
     );

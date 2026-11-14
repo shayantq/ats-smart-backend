@@ -31,7 +31,7 @@ export default function SkillTagInput({ skills, onChange }: SkillTagInputProps) 
   }
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-sm border border-rule bg-white p-3">
+    <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-sm border border-rule bg-white dark:bg-slate-800 p-3">
       {skills.map((skill) => (
         <span
           key={skill}

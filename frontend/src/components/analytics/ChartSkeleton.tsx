@@ -16,12 +16,12 @@ export default function ChartSkeleton({ heightClass = "h-72" }: ChartSkeletonPro
     <div
       role="status"
       aria-label="در حال بارگذاری نمودار"
-      className={`${heightClass} w-full animate-pulse rounded-lg bg-slate-50 p-4`}
+      className={`${heightClass} w-full animate-pulse rounded-lg bg-slate-50 dark:bg-slate-900 p-4`}
     >
-      <div className="mb-4 h-3 w-1/3 rounded bg-slate-200" />
+      <div className="mb-4 h-3 w-1/3 rounded bg-slate-200 dark:bg-slate-700" />
       <div className="flex h-[calc(100%-1.5rem)] items-end gap-2">
         {BAR_HEIGHTS.map((height, index) => (
-          <div key={index} className="flex-1 rounded-t bg-slate-200" style={{ height: `${height}%` }} />
+          <div key={index} className="flex-1 rounded-t bg-slate-200 dark:bg-slate-700" style={{ height: `${height}%` }} />
         ))}
       </div>
     </div>

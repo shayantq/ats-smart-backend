@@ -17,7 +17,7 @@ export default function ApplicationTrackerCard({ application }: ApplicationTrack
       <div className="mb-5 flex flex-wrap items-start justify-between gap-2">
         <h3 className="min-w-0 text-heading text-ink [overflow-wrap:anywhere]">{application.job_title}</h3>
         {isRejected && (
-          <span className="shrink-0 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">
+          <span className="shrink-0 rounded-full bg-red-100 dark:bg-red-950 px-2.5 py-1 text-xs font-bold text-red-700 dark:text-red-300">
             رد شده
           </span>
         )}
@@ -33,9 +33,9 @@ export default function ApplicationTrackerCard({ application }: ApplicationTrack
                   <div
                     className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border text-xs font-medium ${
                       isCurrent
-                        ? "border-ink bg-ink text-white"
+                        ? "border-ink bg-ink dark:bg-slate-700 text-white dark:text-slate-100"
                         : isDone
-                          ? "border-slate-400 bg-wash text-ink"
+                          ? "border-slate-400 dark:border-slate-500 bg-wash text-ink"
                           : "border-rule text-muted"
                     }`}
                   >

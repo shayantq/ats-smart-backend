@@ -56,15 +56,15 @@ export default function EvaluationForm({ interview, onSubmitted }: EvaluationFor
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <h4 className="mb-3 text-xs font-bold text-slate-700">فرم ارزیابی مصاحبه</h4>
+    <div className="rounded-xl border border-slate-200 dark:border-slate-500 bg-slate-50 dark:bg-slate-900 p-4">
+      <h4 className="mb-3 text-xs font-bold text-slate-700 dark:text-slate-200">فرم ارزیابی مصاحبه</h4>
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {EVALUATION_CRITERIA.map((criterion) => (
-          <label key={criterion.key} className="block text-xs font-medium text-slate-600">
+          <label key={criterion.key} className="block text-xs font-medium text-slate-600 dark:text-slate-300">
             <div className="mb-1 flex items-center justify-between">
               <span>{criterion.label}</span>
-              <span className="font-bold text-blue-700">{scores[criterion.key]}/۱۰</span>
+              <span className="font-bold text-blue-700 dark:text-blue-300">{scores[criterion.key]}/۱۰</span>
             </div>
             <input
               type="range"
@@ -78,21 +78,21 @@ export default function EvaluationForm({ interview, onSubmitted }: EvaluationFor
         ))}
       </div>
 
-      <label className="mb-4 block text-xs font-medium text-slate-600">
+      <label className="mb-4 block text-xs font-medium text-slate-600 dark:text-slate-300">
         بازخورد کیفی
         <textarea
           value={feedbackText}
           onChange={(event) => setFeedbackText(event.target.value)}
           rows={4}
           placeholder="نقاط قوت، نقاط ضعف، و جمع‌بندی نهایی خود از این مصاحبه را بنویسید..."
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="mt-1 w-full rounded-md border border-slate-500 dark:border-slate-500 px-3 py-2 text-sm"
         />
       </label>
 
       <button
         onClick={handleSubmit}
         disabled={submitMutation.isPending}
-        className="w-full rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="w-full rounded-md bg-emerald-600 dark:bg-emerald-700 px-4 py-2 text-sm font-semibold text-white dark:text-slate-100 transition-colors hover:bg-emerald-700 dark:hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
       >
         {submitMutation.isPending ? "در حال ثبت..." : "ثبت ارزیابی"}
       </button>

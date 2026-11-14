@@ -47,24 +47,24 @@ export default function LoginPage({ notice = null, initialEmail = "", onRegister
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
       <form
         onSubmit={handleSubmit}
         aria-labelledby="login-title"
-        className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+        className="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-500 bg-white dark:bg-slate-800 p-6 shadow-sm"
       >
-        <h1 id="login-title" className="mb-1 text-xl font-bold text-slate-800">
+        <h1 id="login-title" className="mb-1 text-xl font-bold text-slate-800 dark:text-slate-200">
           ورود به ATS Smart
         </h1>
-        <p className="mb-6 text-sm text-slate-500">سامانه‌ی هوشمند جذب و استخدام</p>
+        <p className="mb-6 text-sm text-slate-600 dark:text-slate-300">سامانه‌ی هوشمند جذب و استخدام</p>
 
         {notice && (
-          <p role="status" className="mb-4 rounded-md bg-green-50 p-2 text-sm text-green-700">
+          <p role="status" className="mb-4 rounded-md bg-green-50 dark:bg-green-950 p-2 text-sm text-green-700 dark:text-green-300">
             {notice}
           </p>
         )}
 
-        <label htmlFor="login-email" className="mb-1 block text-sm font-semibold text-slate-700">
+        <label htmlFor="login-email" className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-200">
           ایمیل
         </label>
         <input
@@ -75,10 +75,10 @@ export default function LoginPage({ notice = null, initialEmail = "", onRegister
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          className="mb-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          className="mb-4 w-full rounded-md border border-slate-500 dark:border-slate-500 px-3 py-2 text-sm focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none"
         />
 
-        <label htmlFor="login-password" className="mb-1 block text-sm font-semibold text-slate-700">
+        <label htmlFor="login-password" className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-200">
           رمز عبور
         </label>
         <input
@@ -89,11 +89,11 @@ export default function LoginPage({ notice = null, initialEmail = "", onRegister
           required
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="mb-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          className="mb-4 w-full rounded-md border border-slate-500 dark:border-slate-500 px-3 py-2 text-sm focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none"
         />
 
         {errorMessage && (
-          <p role="alert" className="mb-4 rounded-md bg-red-50 p-2 text-sm text-red-600">
+          <p role="alert" className="mb-4 rounded-md bg-red-50 dark:bg-red-950 p-2 text-sm text-red-600 dark:text-red-300">
             {errorMessage}
           </p>
         )}
@@ -101,7 +101,7 @@ export default function LoginPage({ notice = null, initialEmail = "", onRegister
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-md bg-blue-600 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+          className="w-full rounded-md bg-blue-600 dark:bg-blue-700 py-2 text-sm font-semibold text-white dark:text-slate-100 hover:bg-blue-700 dark:hover:bg-blue-800 disabled:opacity-60"
         >
           {isSubmitting ? "در حال ورود..." : "ورود"}
         </button>
@@ -109,7 +109,7 @@ export default function LoginPage({ notice = null, initialEmail = "", onRegister
           <button
             type="button"
             onClick={onRegisterClick}
-            className="mt-3 w-full text-center text-xs font-semibold text-blue-600 hover:underline"
+            className="mt-3 w-full text-center text-xs font-semibold text-blue-600 dark:text-blue-300 hover:underline"
           >
             کارجو هستید و حساب ندارید؟ ثبت‌نام
           </button>

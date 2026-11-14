@@ -23,7 +23,7 @@ const TREND_DAY_OPTIONS = [7, 30, 90] as const;
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">{message}</p>
+    <p className="rounded-lg border border-red-200 dark:border-red-400 bg-red-50 dark:bg-red-950 p-6 text-center text-sm text-red-600 dark:text-red-300">{message}</p>
   );
 }
 
@@ -32,7 +32,7 @@ function RefreshButton({ onClick, isFetching }: { onClick: () => void; isFetchin
     <button
       onClick={onClick}
       disabled={isFetching}
-      className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      className="shrink-0 rounded-md border border-slate-500 dark:border-slate-500 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors hover:bg-slate-50 dark:hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {isFetching ? "در حال به‌روزرسانی..." : "به‌روزرسانی"}
     </button>
@@ -58,12 +58,12 @@ export default function AnalyticsDashboard({ jobId }: AnalyticsDashboardProps) {
   return (
     <div className="flex flex-col gap-6">
       {jobId && (
-        <label className="flex w-fit items-center gap-2 text-xs font-semibold text-slate-600">
+        <label className="flex w-fit items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
           <input
             type="checkbox"
             checked={scopeToJob}
             onChange={(event) => setScopeToJob(event.target.checked)}
-            className="h-3.5 w-3.5 rounded border-slate-300"
+            className="h-3.5 w-3.5 rounded border-slate-500 dark:border-slate-500"
           />
           فقط برای همین آگهی (Job ID بالای صفحه)
         </label>
@@ -74,8 +74,8 @@ export default function AnalyticsDashboard({ jobId }: AnalyticsDashboardProps) {
         <section className="editorial-panel">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div>
-              <h2 className="text-sm font-bold text-slate-800">قیف استخدام</h2>
-              <p className="text-xs text-slate-500">تعداد کارجویان و نرخ تبدیل در هر مرحله از فرآیند</p>
+              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">قیف استخدام</h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300">تعداد کارجویان و نرخ تبدیل در هر مرحله از فرآیند</p>
             </div>
             <RefreshButton onClick={() => void funnelQuery.refetch()} isFetching={funnelQuery.isFetching} />
           </div>
@@ -88,14 +88,14 @@ export default function AnalyticsDashboard({ jobId }: AnalyticsDashboardProps) {
         <section className="editorial-panel">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
             <div>
-              <h2 className="text-sm font-bold text-slate-800">روند ثبت درخواست‌ها</h2>
-              <p className="text-xs text-slate-500">تعداد درخواست‌های ثبت‌شده به تفکیک روز</p>
+              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">روند ثبت درخواست‌ها</h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300">تعداد درخواست‌های ثبت‌شده به تفکیک روز</p>
             </div>
             <div className="flex items-center gap-2">
               <select
                 value={trendDays}
                 onChange={(event) => setTrendDays(Number(event.target.value))}
-                className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                className="rounded-md border border-slate-500 dark:border-slate-500 px-2 py-1 text-xs"
               >
                 {TREND_DAY_OPTIONS.map((option) => (
                   <option key={option} value={option}>

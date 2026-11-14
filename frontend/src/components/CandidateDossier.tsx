@@ -55,7 +55,7 @@ export default function CandidateDossier({ application, onClose }: CandidateDoss
         </header>
         <p id={note} className="my-5 max-w-prose text-caption text-muted">اطلاعات رزومهٔ مرتبط با همین درخواست؛ دادهٔ غایب به معنی نداشتن مهارت یا سابقه نیست.</p>
         {query.isPending && <p role="status">در حال دریافت پرونده…</p>}
-        {query.isError && <div role="alert" className="my-4 border-s-2 border-red-300 ps-4 text-red-800">دریافت جزئیات پرونده ممکن نشد؛ دسترسی و اتصال را بررسی کنید. <button onClick={()=>void query.refetch()} className="underline">تلاش مجدد</button></div>}
+        {query.isError && <div role="alert" className="my-4 border-s-2 border-red-300 dark:border-red-400 ps-4 text-red-800 dark:text-red-300">دریافت جزئیات پرونده ممکن نشد؛ دسترسی و اتصال را بررسی کنید. <button onClick={()=>void query.refetch()} className="underline">تلاش مجدد</button></div>}
         {query.data && !query.data.resume_id && <p role="status" className="my-4 text-caption text-muted">این درخواست قدیمی هنوز به نسخهٔ مشخصی از رزومه متصل نشده است.</p>}
         <div className="grid min-w-0 gap-x-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           <aside className="min-w-0">
@@ -81,7 +81,7 @@ export default function CandidateDossier({ application, onClose }: CandidateDoss
                 <h4 className="font-medium">{text(entry.job_title) || "عنوان ثبت نشده"}</h4>
                 <p className="text-body" dir="auto">{text(entry.company)}</p>
                 <p className="text-caption text-muted" dir="auto">{text(entry.duration)}</p>
-                {entry.is_valid === false && <p className="text-caption text-amber-800">نیازمند بررسی: {text(entry.flag_reason) || "بازهٔ زمانی تأیید نشده است."}</p>}
+                {entry.is_valid === false && <p className="text-caption text-amber-800 dark:text-amber-300">نیازمند بررسی: {text(entry.flag_reason) || "بازهٔ زمانی تأیید نشده است."}</p>}
               </li>)}</ol> : <p className="reading-copy mt-3 text-muted">سوابق کاری هنوز استخراج نشده است.</p>}
             </section>
             <section className="editorial-panel" aria-labelledby={`${title}-resume`}>

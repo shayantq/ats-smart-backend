@@ -24,8 +24,8 @@ const EDUCATION_OPTIONS = [
   { value: "دکتری", label: "دکتری" },
 ];
 
-const inputClass = "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-600 focus:outline-none";
-const labelClass = "block text-xs font-semibold text-slate-600";
+const inputClass = "mt-1 w-full rounded-md border border-slate-500 dark:border-slate-500 px-3 py-2 text-sm focus:border-slate-600 dark:focus:border-slate-500 focus:outline-none";
+const labelClass = "block text-xs font-semibold text-slate-600 dark:text-slate-300";
 
 /**
  * ثبت آگهی شغلی تازه برای سازمان کاربر (POST /api/v1/jobs/ — Admin/HR_Manager). مهارت‌ها، سطح ارشدیت، تحصیلات و
@@ -77,10 +77,10 @@ export default function JobCreateForm({ onCreated }: { onCreated: (job: Job) => 
 
   return (
     <form onSubmit={handleSubmit} aria-labelledby="job-create-title" className="editorial-panel max-w-4xl">
-      <h2 id="job-create-title" className="mb-1 text-sm font-bold text-slate-700">
+      <h2 id="job-create-title" className="mb-1 text-sm font-bold text-slate-700 dark:text-slate-200">
         ثبت آگهی شغلی تازه
       </h2>
-      <p className="mb-4 text-xs text-slate-500">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         آگهی بلافاصله فعال می‌شود. مهارت‌ها، سطح ارشدیت، تحصیلات و موقعیت در نمره‌ی تطابق رزومه‌ها به کار می‌روند.
       </p>
 
@@ -136,7 +136,7 @@ export default function JobCreateForm({ onCreated }: { onCreated: (job: Job) => 
       <button
         type="submit"
         disabled={mutation.isPending || title.trim().length < 2}
-        className="mt-4 w-full rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+        className="mt-4 w-full rounded-md bg-slate-800 dark:bg-slate-700 px-4 py-2 text-sm font-semibold text-white dark:text-slate-100 hover:bg-slate-950 dark:hover:bg-slate-950 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {mutation.isPending ? "در حال ثبت..." : "انتشار آگهی"}
       </button>

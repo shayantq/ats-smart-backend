@@ -51,7 +51,7 @@ export default function CandidatePortal() {
               className={`border-b-2 py-3 text-sm font-medium transition-colors duration-200 ${
                 activeTab === tab.value
                   ? "border-ink text-ink"
-                  : "border-transparent text-muted hover:border-slate-300 hover:text-ink"
+                  : "border-transparent text-muted hover:border-slate-300 dark:hover:border-slate-500 hover:text-ink"
               }`}
             >
               {tab.label}

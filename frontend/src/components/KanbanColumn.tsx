@@ -39,7 +39,7 @@ export default function KanbanColumn({
         onDropOnColumn(status);
       }}
       className={`flex w-[17rem] shrink-0 flex-col rounded border p-3 transition-colors duration-200 sm:w-[19rem] ${
-        isOver ? "border-slate-500 bg-slate-100" : "border-rule bg-wash"
+        isOver ? "border-slate-500 dark:border-slate-500 bg-slate-100 dark:bg-slate-900" : "border-rule bg-wash"
       }`}
     >
       <div className="mb-4 flex items-center justify-between gap-2 border-b border-rule pb-3">

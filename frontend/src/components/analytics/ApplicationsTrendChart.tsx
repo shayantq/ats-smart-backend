@@ -31,9 +31,9 @@ function TrendTooltip({ active, payload }: TrendTooltipProps) {
   const point = payload[0].payload;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs ">
-      <p className="mb-1 font-semibold text-slate-700">{formatTooltipDate(point.date)}</p>
-      <p className="text-slate-700">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-500 bg-white dark:bg-slate-800 px-3 py-2 text-xs ">
+      <p className="mb-1 font-semibold text-slate-700 dark:text-slate-200">{formatTooltipDate(point.date)}</p>
+      <p className="text-slate-700 dark:text-slate-200">
         تعداد درخواست ثبت‌شده: <span className="font-bold">{point.count}</span>
       </p>
     </div>
@@ -45,7 +45,7 @@ export default function ApplicationsTrendChart({ series }: ApplicationsTrendChar
 
   if (isEmpty) {
     return (
-      <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+      <p className="rounded-lg border border-dashed border-slate-500 dark:border-slate-500 p-6 text-center text-sm text-slate-600 dark:text-slate-300">
         در این بازه‌ی زمانی هیچ درخواستی ثبت نشده است.
       </p>
     );
@@ -55,22 +55,22 @@ export default function ApplicationsTrendChart({ series }: ApplicationsTrendChar
     <div dir="ltr" className="h-72 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={series} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
           <XAxis
             dataKey="date"
             tickFormatter={formatAxisDate}
-            tick={{ fontSize: 11, fill: "#64748b" }}
+            tick={{ fontSize: 11, fill: "var(--chart-text)" }}
             minTickGap={24}
           />
-          <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#64748b" }} width={28} />
+          <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--chart-text)" }} width={28} />
           <Tooltip content={<TrendTooltip />} />
           <Line
             isAnimationActive={false}
             type="monotone"
             dataKey="count"
-            stroke="#475569"
+            stroke="var(--chart-line)"
             strokeWidth={2}
-            dot={{ r: 3, fill: "#475569" }}
+            dot={{ r: 3, fill: "var(--chart-line)" }}
             activeDot={{ r: 5 }}
           />
         </LineChart>

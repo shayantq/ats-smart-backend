@@ -27,7 +27,7 @@ interface FunnelDatum {
 }
 
 // از تیره به روشن — همان رنگ آبی اصلی پروژه (blue-700 بورد کانبان)، هرچه مرحله جلوتر روشن‌تر
-const FUNNEL_COLORS = ["#334155", "#3e5068", "#475569", "#4e6079", "#56677d", "#5f6e83", "#64748b"];
+const FUNNEL_COLORS = ["#334155", "#3e5068", "#475569", "#4e6079", "#56677d", "#5f6e83", "#5f6e83"];
 
 function stageLabel(stage: string): string {
   return STATUS_COLUMNS.find((column) => column.value === stage)?.label ?? stage;
@@ -64,19 +64,19 @@ function FunnelTooltip({ active, payload }: FunnelTooltipProps) {
   const datum = payload[0].payload;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs ">
-      <p className="mb-1 font-semibold text-slate-700">{datum.name}</p>
-      <p className="text-slate-600">
-        تعداد کارجو: <span className="font-bold text-slate-900">{datum.value}</span>
+    <div className="rounded-lg border border-slate-200 dark:border-slate-500 bg-white dark:bg-slate-800 px-3 py-2 text-xs ">
+      <p className="mb-1 font-semibold text-slate-700 dark:text-slate-200">{datum.name}</p>
+      <p className="text-slate-600 dark:text-slate-300">
+        تعداد کارجو: <span className="font-bold text-slate-900 dark:text-slate-200">{datum.value}</span>
       </p>
       {datum.conversionFromPrevious !== null && (
-        <p className="text-slate-600">
-          نرخ تبدیل از مرحله‌ی قبل: <span className="font-bold text-slate-900">٪{datum.conversionFromPrevious}</span>
+        <p className="text-slate-600 dark:text-slate-300">
+          نرخ تبدیل از مرحله‌ی قبل: <span className="font-bold text-slate-900 dark:text-slate-200">٪{datum.conversionFromPrevious}</span>
         </p>
       )}
       {datum.conversionFromFirst !== null && (
-        <p className="text-slate-600">
-          نرخ تبدیل از ابتدای قیف: <span className="font-bold text-slate-900">٪{datum.conversionFromFirst}</span>
+        <p className="text-slate-600 dark:text-slate-300">
+          نرخ تبدیل از ابتدای قیف: <span className="font-bold text-slate-900 dark:text-slate-200">٪{datum.conversionFromFirst}</span>
         </p>
       )}
     </div>
@@ -89,7 +89,7 @@ export default function RecruitmentFunnelChart({ stages }: RecruitmentFunnelChar
 
   if (isEmpty) {
     return (
-      <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+      <p className="rounded-lg border border-dashed border-slate-500 dark:border-slate-500 p-6 text-center text-sm text-slate-600 dark:text-slate-300">
         هنوز هیچ درخواستی برای نمایش در قیف استخدام ثبت نشده است.
       </p>
     );
@@ -104,8 +104,8 @@ export default function RecruitmentFunnelChart({ stages }: RecruitmentFunnelChar
             {data.map((entry, index) => (
               <Cell key={entry.stage} fill={FUNNEL_COLORS[index % FUNNEL_COLORS.length]} />
             ))}
-            <LabelList dataKey="name" position="right" fill="#334155" stroke="none" fontSize={12} />
-            <LabelList dataKey="value" position="center" fill="#ffffff" stroke="none" fontSize={13} fontWeight={700} />
+            <LabelList dataKey="name" position="right" fill="var(--chart-text)" stroke="none" fontSize={12} />
+            <LabelList dataKey="value" position="center" fill="#f1f5f9" stroke="none" fontSize={13} fontWeight={700} />
           </Funnel>
         </FunnelChart>
       </ResponsiveContainer>

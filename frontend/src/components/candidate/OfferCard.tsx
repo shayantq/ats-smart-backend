@@ -37,14 +37,14 @@ export default function OfferCard({ offer }: OfferCardProps) {
         <button
           onClick={() => respondMutation.mutate("accept")}
           disabled={respondMutation.isPending}
-          className="rounded-sm bg-ink px-5 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="rounded-sm bg-ink dark:bg-slate-700 px-5 py-2.5 text-sm font-medium text-white dark:text-slate-100 hover:bg-slate-700 dark:hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
         >
           قبول پیشنهاد
         </button>
         <button
           onClick={() => respondMutation.mutate("reject")}
           disabled={respondMutation.isPending}
-          className="rounded-sm border border-red-200 px-5 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-sm border border-red-200 dark:border-red-400 px-5 py-2.5 text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950 disabled:cursor-not-allowed disabled:opacity-50"
         >
           رد پیشنهاد
         </button>

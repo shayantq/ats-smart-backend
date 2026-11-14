@@ -12,6 +12,7 @@ import { logoutCurrentSession } from "./services/sessionsApi";
 import { clearToken, getToken } from "./services/tokenStorage";
 import { useAppDispatch, useAppSelector } from "./store/hooks";
 import { clearUser, setUser } from "./store/slices/authSlice";
+import ThemeControl from "./components/ThemeControl";
 
 const ROLE_LABELS: Record<string, string> = {
   Admin: "مدیر سیستم",
@@ -75,11 +76,12 @@ function App() {
   }
 
   if (isRestoringSession) {
-    return <p className="p-6 text-center text-sm text-slate-500">در حال بارگذاری...</p>;
+    return <p className="p-6 text-center text-sm text-slate-600 dark:text-slate-300">در حال بارگذاری...</p>;
   }
 
   return (
     <ToastProvider>
+      {user === null && <div className="flex justify-end px-4 py-3"><ThemeControl /></div>}
       {user === null ? (
         authView === "register" ? (
           <RegisterPage
@@ -102,23 +104,24 @@ function App() {
         )
       ) : (
         <>
-          <header className="border-b border-slate-200 bg-white">
+          <header className="border-b border-slate-200 dark:border-slate-500 bg-white dark:bg-slate-800">
             <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
-              <span className="text-sm font-bold text-slate-800">ATS Smart</span>
+              <span className="text-sm font-bold text-slate-800 dark:text-slate-200">ATS Smart</span>
               <div className="flex min-w-0 flex-wrap items-center gap-3">
+                <ThemeControl />
                 <span className="min-w-0 break-words text-caption text-muted">
                   <bdi>{user.email}</bdi> · {ROLE_LABELS[user.role] ?? user.role}
                 </span>
                 <button
                   onClick={() => setShowSessions((value) => !value)}
                   aria-pressed={showSessions}
-                  className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="rounded-md border border-slate-500 dark:border-slate-500 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
                 >
                   {showSessions ? "بازگشت" : "نشست‌های فعال"}
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="rounded-md border border-slate-500 dark:border-slate-500 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
                 >
                   خروج
                 </button>

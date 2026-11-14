@@ -2,8 +2,14 @@
 const { chromium } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
-const out = path.resolve(__dirname, '../training/reports/editorial');
+const theme = process.env.ATS_TEST_THEME || 'light';
+const out = path.resolve(__dirname, '../training/reports/editorial', process.env.ATS_TEST_THEME ? `darkmode/${theme}` : '');
+fs.mkdirSync(out,{recursive:true});
 const phase = process.argv[2] || 'after';
+const contrast=[];
+const {contrastAudit}=require('./theme-browser-check.cjs');
+async function audit(page){if(process.env.ATS_TEST_THEME){await page.waitForTimeout(250);contrast.push(...await contrastAudit(page));}}
+
 const pageOf = items => ({items,has_next:false,has_previous:false,next_cursor:null,previous_cursor:null});
 (async()=>{
  const browser=await chromium.launch({channel:'msedge',headless:true});
@@ -12,6 +18,7 @@ const pageOf = items => ({items,has_next:false,has_previous:false,next_cursor:nu
  for(const width of [375,768,1440]){
   const context=await browser.newContext({viewport:{width,height:1000},locale:'fa-IR'});
   await context.addInitScript(()=>localStorage.setItem('ats_smart_access_token','synthetic-fixture'));
+  await context.addInitScript(value=>localStorage.setItem('ats_theme',value),theme);
   const page=await context.newPage();const errors=[];let empty=false;
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/api/v1/**',route=>{
@@ -31,11 +38,11 @@ const pageOf = items => ({items,has_next:false,has_previous:false,next_cursor:nu
    await page.getByRole('tab').nth(i).click();
    if(i===1)await page.getByText(/آخرین به‌روزرسانی/).first().waitFor();
    if(i===2)await page.getByRole('button',{name:'قبول پیشنهاد'}).waitFor();
-   await page.screenshot({path:path.join(out,`candidate-${phase}-${['profile','tracker','offers'][i]}-${width}.png`),fullPage:true});
+   await audit(page);await page.screenshot({path:path.join(out,`candidate-${phase}-${['profile','tracker','offers'][i]}-${width}.png`),fullPage:true});
    checks.push(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   }
   empty=true;await page.reload();
-  for(let i=1;i<3;i++){await page.getByRole('tab').nth(i).click();await page.getByText(i===1?'هنوز برای هیچ آگهی‌ای درخواست نداده‌ای.':'فعلاً هیچ پیشنهاد شغلی فعالی نداری.').waitFor();await page.screenshot({path:path.join(out,`candidate-${phase}-empty-${i}-${width}.png`),fullPage:true});}
+  for(let i=1;i<3;i++){await page.getByRole('tab').nth(i).click();await page.getByText(i===1?'هنوز برای هیچ آگهی‌ای درخواست نداده‌ای.':'فعلاً هیچ پیشنهاد شغلی فعالی نداری.').waitFor();await audit(page);await page.screenshot({path:path.join(out,`candidate-${phase}-empty-${i}-${width}.png`),fullPage:true});}
   if(phase==='after'){
    await page.getByRole('tab').first().focus();await page.keyboard.press('End');
    if(await page.getByRole('tab').nth(2).getAttribute('aria-selected')!=='true')throw Error('End navigation');
@@ -48,6 +55,7 @@ const pageOf = items => ({items,has_next:false,has_previous:false,next_cursor:nu
   if(phase==='after'&&(!checks.every(Boolean)||errors.length))throw Error(JSON.stringify(results));
   await context.close();
  }
+ fs.writeFileSync(path.join(out,'candidate-contrast.json'),JSON.stringify(contrast,null,2));
  fs.writeFileSync(path.join(out,`candidate-${phase}-checks.json`),JSON.stringify(results,null,2));console.log(JSON.stringify(results));
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1)});

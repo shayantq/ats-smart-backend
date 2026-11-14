@@ -83,7 +83,7 @@ export default function ResumeUploadWidget() {
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
         className={`rounded-sm border border-dashed p-6 text-center text-sm transition-colors duration-200 ${
-          isDragOver ? "border-slate-500 bg-wash" : "border-rule text-muted"
+          isDragOver ? "border-slate-500 dark:border-slate-500 bg-wash" : "border-rule text-muted"
         }`}
       >
         {selectedFile ? (
@@ -91,7 +91,7 @@ export default function ResumeUploadWidget() {
         ) : (
           <p>فایل PDF یا DOCX را اینجا رها کن یا با دکمهٔ زیر انتخاب کن.</p>
         )}
-        <button type="button" className="mt-3 border-b border-slate-400 px-2 py-1 text-ink hover:bg-wash" onClick={() => fileInputRef.current?.click()}>انتخاب فایل رزومه</button>
+        <button type="button" className="mt-3 border-b border-slate-400 dark:border-slate-500 px-2 py-1 text-ink hover:bg-wash" onClick={() => fileInputRef.current?.click()}>انتخاب فایل رزومه</button>
         <input
           ref={fileInputRef}
           type="file"
@@ -105,7 +105,7 @@ export default function ResumeUploadWidget() {
       <button
         onClick={handleSubmit}
         disabled={!selectedFile || !selectedJobId || uploadMutation.isPending}
-        className="mt-3 w-full rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="mt-3 w-full rounded-md bg-ink dark:bg-slate-700 px-4 py-2 text-sm font-semibold text-white dark:text-slate-100 transition-colors hover:bg-slate-700 dark:hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
       >
         {uploadMutation.isPending ? "در حال ارسال..." : "ارسال رزومه"}
       </button>

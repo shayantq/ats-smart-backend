@@ -1,11 +1,12 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
       fontFamily: { sans: ['Vazirmatn', 'Tahoma', 'sans-serif'] },
       colors: {
-        paper: '#fcfcfa', ink: '#202936', muted: '#5c6775', rule: '#dce1e6', wash: '#f3f4f4',
+        paper: 'rgb(var(--paper) / <alpha-value>)', ink: 'rgb(var(--ink) / <alpha-value>)', muted: 'rgb(var(--muted) / <alpha-value>)', rule: 'rgb(var(--rule) / <alpha-value>)', wash: 'rgb(var(--wash) / <alpha-value>)',
       },
       fontSize: {
         xs: ['0.75rem', { lineHeight: '1.85' }],
