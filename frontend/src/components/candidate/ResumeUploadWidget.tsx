@@ -56,15 +56,15 @@ export default function ResumeUploadWidget() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="mb-3 text-sm font-bold text-slate-700">آپلود رزومه</h3>
+    <div className="editorial-panel">
+      <h3 className="mb-5 text-heading text-ink">آپلود رزومه</h3>
 
-      <label className="mb-3 block text-xs font-medium text-slate-600">
+      <label className="mb-3 block text-caption font-medium text-muted">
         آگهی شغلی مقصد
         <select
           value={selectedJobId}
           onChange={(event) => setSelectedJobId(event.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          className="candidate-field mt-2"
         >
           <option value="">-- انتخاب کنید --</option>
           {jobs.map((job) => (
@@ -82,20 +82,21 @@ export default function ResumeUploadWidget() {
         }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`cursor-pointer rounded-lg border-2 border-dashed p-6 text-center text-sm transition-colors ${
-          isDragOver ? "border-blue-400 bg-blue-50" : "border-slate-300 text-slate-500"
+        className={`rounded-sm border border-dashed p-6 text-center text-sm transition-colors duration-200 ${
+          isDragOver ? "border-slate-500 bg-wash" : "border-rule text-muted"
         }`}
       >
         {selectedFile ? (
-          <p className="font-medium text-slate-700">{selectedFile.name}</p>
+          <p className="font-medium text-ink [overflow-wrap:anywhere]"><bdi>{selectedFile.name}</bdi></p>
         ) : (
-          <p>فایل PDF یا DOCX را اینجا رها کن، یا کلیک کن تا انتخاب کنی</p>
+          <p>فایل PDF یا DOCX را اینجا رها کن یا با دکمهٔ زیر انتخاب کن.</p>
         )}
+        <button type="button" className="mt-3 border-b border-slate-400 px-2 py-1 text-ink hover:bg-wash" onClick={() => fileInputRef.current?.click()}>انتخاب فایل رزومه</button>
         <input
           ref={fileInputRef}
           type="file"
           accept=".pdf,.docx"
+          aria-label="فایل رزومه"
           className="hidden"
           onChange={(event) => handleFileSelected(event.target.files?.[0])}
         />
@@ -104,7 +105,7 @@ export default function ResumeUploadWidget() {
       <button
         onClick={handleSubmit}
         disabled={!selectedFile || !selectedJobId || uploadMutation.isPending}
-        className="mt-3 w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="mt-3 w-full rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
         {uploadMutation.isPending ? "در حال ارسال..." : "ارسال رزومه"}
       </button>

@@ -18,7 +18,7 @@ export default function TrackerTab() {
 
   if (isError) {
     return (
-      <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
+      <p className="border-t border-red-200 py-6 text-sm text-red-700">
         خطا در دریافت وضعیت درخواست‌ها. اتصال به سرور را بررسی کن.
       </p>
     );
@@ -26,14 +26,14 @@ export default function TrackerTab() {
 
   if (applications.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+      <p className="border-y border-rule py-12 text-body text-muted">
         هنوز برای هیچ آگهی‌ای درخواست نداده‌ای.
       </p>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <div className="grid min-w-0 grid-cols-1 gap-x-12 gap-y-6 lg:grid-cols-2">
       {applications.map((application) => (
         <ApplicationTrackerCard key={application.application_id} application={application} />
       ))}

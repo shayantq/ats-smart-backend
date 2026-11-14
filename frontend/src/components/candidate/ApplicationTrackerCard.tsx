@@ -13,9 +13,9 @@ export default function ApplicationTrackerCard({ application }: ApplicationTrack
   const currentStepIndex = MAIN_TRACK.findIndex((step) => step.value === application.current_status);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-bold text-slate-800">{application.job_title}</h3>
+    <div className="editorial-panel">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-2">
+        <h3 className="min-w-0 text-heading text-ink [overflow-wrap:anywhere]">{application.job_title}</h3>
         {isRejected && (
           <span className="shrink-0 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">
             رد شده
@@ -24,42 +24,37 @@ export default function ApplicationTrackerCard({ application }: ApplicationTrack
       </div>
 
       {!isRejected && (
-        <div className="flex items-start overflow-x-auto pb-2">
+        <ol aria-label="مراحل درخواست" className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-4">
           {MAIN_TRACK.map((step, index) => {
             const isDone = index < currentStepIndex;
             const isCurrent = index === currentStepIndex;
             return (
-              <div key={step.value} className="flex shrink-0 items-start">
-                <div className="flex flex-col items-center">
+              <li key={step.value} aria-current={isCurrent ? "step" : undefined} className="flex min-w-0 items-start gap-2">
                   <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border text-xs font-medium ${
                       isCurrent
-                        ? "bg-blue-600 text-white ring-4 ring-blue-100"
+                        ? "border-ink bg-ink text-white"
                         : isDone
-                          ? "bg-emerald-500 text-white"
-                          : "bg-slate-200 text-slate-500"
+                          ? "border-slate-400 bg-wash text-ink"
+                          : "border-rule text-muted"
                     }`}
                   >
                     {isDone ? "✓" : index + 1}
                   </div>
                   <span
-                    className={`mt-1 w-16 text-center text-[10px] leading-tight ${
-                      isCurrent ? "font-bold text-blue-700" : "text-slate-400"
+                    className={`text-caption ${
+                      isCurrent ? "font-semibold text-ink" : "text-muted"
                     }`}
                   >
                     {step.label}
                   </span>
-                </div>
-                {index < MAIN_TRACK.length - 1 && (
-                  <div className={`mt-3.5 h-0.5 w-6 shrink-0 ${isDone ? "bg-emerald-500" : "bg-slate-200"}`} />
-                )}
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ol>
       )}
 
-      <p className="mt-2 text-xs text-slate-400">
+      <p className="mt-2 text-caption text-muted">
         آخرین به‌روزرسانی: {new Date(application.updated_at).toLocaleDateString("fa-IR")}
       </p>
     </div>

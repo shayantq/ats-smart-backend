@@ -20,9 +20,9 @@ function DeleteAccountSection() {
   });
 
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50/40 p-4 lg:col-span-2">
+    <div className="editorial-panel lg:col-span-2">
       <h3 className="mb-1 text-sm font-bold text-red-700">حذف حساب</h3>
-      <p className="mb-3 text-xs leading-6 text-slate-600">
+      <p className="reading-copy mb-4 text-sm text-muted">
         نام، شماره‌ی تماس، آدرس، ایمیل و فایل و متن رزومه‌ی شما برای همیشه پاک می‌شود و دیگر نمی‌توانید با این حساب وارد
         شوید. فقط آمار بی‌نام درخواست‌ها برای سازمان‌ها باقی می‌ماند.
       </p>
@@ -103,54 +103,56 @@ export default function ProfileTab() {
 
   if (isError) {
     return (
-      <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
+      <p className="border-t border-red-200 py-6 text-sm text-red-700">
         خطا در دریافت پروفایل. اتصال به سرور را بررسی کن.
       </p>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-sm font-bold text-slate-700">مشخصات فردی</h3>
+    <div className="grid min-w-0 grid-cols-1 items-start gap-x-12 gap-y-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+      <div className="editorial-panel">
+        <h3 className="mb-5 text-heading text-ink">مشخصات فردی</h3>
+        <p className="mb-6 break-all text-sm text-muted"><bdi>{profile?.email}</bdi></p>
 
         <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="text-xs font-medium text-slate-600">
+          <label className="text-caption font-medium text-muted">
             نام
             <input
               type="text"
               value={firstName}
               onChange={(event) => setFirstName(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              className="candidate-field mt-2"
             />
           </label>
-          <label className="text-xs font-medium text-slate-600">
+          <label className="text-caption font-medium text-muted">
             نام خانوادگی
             <input
               type="text"
               value={lastName}
               onChange={(event) => setLastName(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+              className="candidate-field mt-2"
             />
           </label>
         </div>
 
-        <label className="mb-3 block text-xs font-medium text-slate-600">
+        <label className="mb-3 block text-caption font-medium text-muted">
           شماره تماس
           <input
-            type="text"
+            type="tel"
+            dir="ltr"
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+            className="candidate-field mt-2"
           />
         </label>
 
-        <label className="mb-4 block text-xs font-medium text-slate-600">
-          مهارت‌ها
+        <div className="mb-6 text-caption font-medium text-muted">
+          <p>مهارت‌ها</p>
           <div className="mt-1">
             <SkillTagInput skills={skills} onChange={setSkills} />
           </div>
-        </label>
+        </div>
 
         <button
           onClick={handleSave}

@@ -24,6 +24,7 @@
   .editorial-shell { @apply mx-auto w-full min-w-0 max-w-[1600px] px-4 py-7 sm:px-8 lg:px-12 lg:py-10; }
   .editorial-panel { @apply min-w-0 border-t border-rule py-6; }
   .editorial-label { @apply text-caption font-medium text-muted; }
+  .candidate-field { @apply block w-full min-w-0 rounded-sm border border-rule bg-white px-3 py-2.5 text-body text-ink; }
   .reading-copy { @apply max-w-[68ch] whitespace-pre-wrap text-body; overflow-wrap: anywhere; unicode-bidi: plaintext; }
   .dossier-dialog { @apply m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-lg border border-rule bg-paper p-0 text-ink; }
   .dossier-dialog[open] { animation: dossier-in 200ms ease-out; }

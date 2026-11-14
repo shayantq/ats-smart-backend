@@ -31,17 +31,17 @@ export default function SkillTagInput({ skills, onChange }: SkillTagInputProps) 
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-300 p-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-sm border border-rule bg-white p-3">
       {skills.map((skill) => (
         <span
           key={skill}
-          className="flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700"
+          className="flex min-w-0 max-w-full items-center gap-2 rounded-sm bg-wash px-2.5 py-1 text-caption text-ink"
         >
-          {skill}
+          <bdi className="min-w-0 [overflow-wrap:anywhere]">{skill}</bdi>
           <button
             type="button"
             onClick={() => removeSkill(skill)}
-            className="text-blue-500 hover:text-blue-800"
+            className="shrink-0 px-1 text-muted hover:text-ink"
             aria-label={`حذف مهارت ${skill}`}
           >
             ×
@@ -55,7 +55,8 @@ export default function SkillTagInput({ skills, onChange }: SkillTagInputProps) 
         onKeyDown={handleKeyDown}
         onBlur={addSkill}
         placeholder="مهارت را بنویس و Enter بزن"
-        className="min-w-[140px] flex-1 border-none text-sm outline-none"
+        aria-label="افزودن مهارت"
+        className="min-w-0 basis-48 flex-1 bg-transparent px-1 py-2 text-sm"
       />
     </div>
   );
