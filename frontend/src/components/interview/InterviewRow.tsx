@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import EvaluationForm from "./EvaluationForm";
 import type { Interview } from "../../types/interview";
 
@@ -8,6 +8,8 @@ interface InterviewRowProps {
 
 export default function InterviewRow({ interview }: InterviewRowProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const formId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
   const isCompleted = interview.status === "Completed";
 
   return (
@@ -30,6 +32,10 @@ export default function InterviewRow({ interview }: InterviewRowProps) {
             </span>
           ) : (
             <button
+              ref={trigger}
+              aria-expanded={isFormOpen}
+              aria-controls={isFormOpen ? formId : undefined}
+              aria-label={`${isFormOpen ? "بستن فرم" : "ثبت ارزیابی"}؛ ${interview.candidate_name || "بدون نام"}`}
               onClick={() => setIsFormOpen((open) => !open)}
               className="rounded-md bg-slate-800 dark:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white dark:text-slate-100 transition-colors hover:bg-slate-950 dark:hover:bg-slate-950"
             >
@@ -40,8 +46,8 @@ export default function InterviewRow({ interview }: InterviewRowProps) {
       </div>
 
       {!isCompleted && isFormOpen && (
-        <div className="mt-4">
-          <EvaluationForm interview={interview} onSubmitted={() => setIsFormOpen(false)} />
+        <div id={formId} className="mt-4">
+          <EvaluationForm interview={interview} onSubmitted={() => { setIsFormOpen(false); trigger.current?.focus(); }} />
         </div>
       )}
 

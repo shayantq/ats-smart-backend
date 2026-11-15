@@ -92,7 +92,7 @@ export default function EvaluationForm({ interview, onSubmitted }: EvaluationFor
       <button
         onClick={handleSubmit}
         disabled={submitMutation.isPending}
-        className="w-full rounded-md bg-emerald-600 dark:bg-emerald-700 px-4 py-2 text-sm font-semibold text-white dark:text-slate-100 transition-colors hover:bg-emerald-700 dark:hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
+        className="w-full rounded-md bg-emerald-700 dark:bg-emerald-700 px-4 py-2 text-sm font-semibold text-white dark:text-slate-100 transition-colors hover:bg-emerald-800 dark:hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
       >
         {submitMutation.isPending ? "در حال ثبت..." : "ثبت ارزیابی"}
       </button>

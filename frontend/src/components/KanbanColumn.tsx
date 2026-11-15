@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react";
+import { useState, type DragEvent, type ComponentProps } from "react";
 import ApplicationCard from "./ApplicationCard";
 import type { ApplicationListItem, ApplicationStatus } from "../types/application";
 
@@ -10,6 +10,7 @@ interface KanbanColumnProps {
   onDragStart: (event: DragEvent<HTMLDivElement>, application: ApplicationListItem) => void;
   onDragEnd: (event: DragEvent<HTMLDivElement>) => void;
   onDropOnColumn: (status: ApplicationStatus) => void;
+  cardControls?: (application: ApplicationListItem) => Partial<ComponentProps<typeof ApplicationCard>>;
 }
 
 export default function KanbanColumn({
@@ -20,6 +21,7 @@ export default function KanbanColumn({
   onDragStart,
   onDragEnd,
   onDropOnColumn,
+  cardControls,
 }: KanbanColumnProps) {
   const [isOver, setIsOver] = useState(false);
 
@@ -43,7 +45,7 @@ export default function KanbanColumn({
       }`}
     >
       <div className="mb-4 flex items-center justify-between gap-2 border-b border-rule pb-3">
-        <h3 className="text-sm font-semibold leading-7 text-ink">{label}</h3>
+        <h2 className="text-sm font-semibold leading-7 text-ink">{label}</h2>
         <span
           data-testid="column-count"
           className="text-caption tabular-nums text-muted"
@@ -65,6 +67,7 @@ export default function KanbanColumn({
             isDragging={draggedApplicationId === application.application_id}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
+            {...cardControls?.(application)}
           />
         ))}
       </div>

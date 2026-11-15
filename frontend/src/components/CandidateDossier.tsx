@@ -30,6 +30,7 @@ export default function CandidateDossier({ application, onClose }: CandidateDoss
       element?.close();
       document.body.style.overflow = overflow;
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+      else document.querySelector<HTMLElement>('[role="tabpanel"], #main-content')?.focus();
     };
   }, []);
 

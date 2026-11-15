@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react";
+import { useState, type DragEvent, type ButtonHTMLAttributes } from "react";
 import CandidateDossier from "./CandidateDossier";
 import type { ApplicationListItem } from "../types/application";
 
@@ -7,6 +7,9 @@ interface ApplicationCardProps {
   isDragging: boolean;
   onDragStart: (event: DragEvent<HTMLDivElement>, application: ApplicationListItem) => void;
   onDragEnd: (event: DragEvent<HTMLDivElement>) => void;
+  moveControl?: ButtonHTMLAttributes<HTMLButtonElement>;
+  moveLabel?: string;
+  canDrag?: boolean;
 }
 
 /** رنگ نشان امتیاز هوش مصنوعی بر اساس بازه‌ی امتیاز */
@@ -22,12 +25,15 @@ export default function ApplicationCard({
   isDragging,
   onDragStart,
   onDragEnd,
+  moveControl,
+  moveLabel,
+  canDrag = true,
 }: ApplicationCardProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   return (
     <>
     <div
-      draggable
+      draggable={canDrag}
       data-testid="application-card"
       onDragStart={(event) => onDragStart(event, application)}
       onDragEnd={onDragEnd}
@@ -52,6 +58,7 @@ export default function ApplicationCard({
       <button type="button" draggable={false} onClick={() => setIsProfileOpen(true)} aria-label={`مشاهده پرونده ${application.candidate_name}`} className="mt-3 border-t border-rule pt-3 text-caption font-medium text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-slate-200">
         مشاهده پرونده <span aria-hidden="true">←</span>
       </button>
+      {moveControl && <button type="button" draggable={false} {...moveControl} className="mt-3 block w-full rounded-sm border border-slate-500 px-2 py-2 text-caption text-ink hover:bg-wash aria-disabled:cursor-not-allowed">{moveLabel || "تغییر وضعیت"}</button>}
     </div>
     {isProfileOpen && <CandidateDossier application={application} onClose={() => setIsProfileOpen(false)} />}
     </>

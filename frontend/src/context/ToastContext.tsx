@@ -41,7 +41,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={toast.id}
             role="alert"
             className={`rounded-lg px-4 py-3 text-sm font-medium text-white dark:text-slate-100 shadow-lg ${
-              toast.type === "success" ? "bg-emerald-600 dark:bg-emerald-700" : "bg-red-600 dark:bg-red-700"
+              toast.type === "success" ? "bg-emerald-700 dark:bg-emerald-700" : "bg-red-600 dark:bg-red-700"
             }`}
           >
             {toast.message}

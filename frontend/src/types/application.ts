@@ -27,6 +27,13 @@ export const STATUS_COLUMNS: { value: ApplicationStatus; label: string }[] = [
   { value: "Rejected", label: "رد شده" },
 ];
 
+/** آینهٔ قانون app/core/state_machine.py؛ سرور همچنان مرجع نهایی مجوز و وضعیت است. */
+export function allowedDestinations(status: ApplicationStatus): ApplicationStatus[] {
+  if (status === "Hired" || status === "Rejected") return [];
+  const index = STATUS_COLUMNS.findIndex(column => column.value === status);
+  return index < 0 ? [] : [STATUS_COLUMNS[index + 1].value, "Rejected"];
+}
+
 /** ساختار هر کارت روی بورد کانبان — خروجی GET /api/v1/applications/ */
 export interface ApplicationListItem {
   application_id: string;

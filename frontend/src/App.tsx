@@ -104,6 +104,7 @@ function App() {
         )
       ) : (
         <>
+          <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:right-2 focus:z-50 focus:rounded focus:bg-paper focus:p-3 focus:text-ink">رفتن به محتوای اصلی</a>
           <header className="border-b border-slate-200 dark:border-slate-500 bg-white dark:bg-slate-800">
             <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
               <span className="text-sm font-bold text-slate-800 dark:text-slate-200">ATS Smart</span>
@@ -128,7 +129,9 @@ function App() {
               </div>
             </div>
           </header>
+          <main id="main-content" tabIndex={-1}>
           {showSessions ? <ActiveSessionsPanel /> : user.role === "Candidate" ? <CandidatePortal /> : <HRDashboard />}
+          </main>
         </>
       )}
     </ToastProvider>
