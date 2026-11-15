@@ -30,7 +30,7 @@ test("درگ و دراپ مجاز: کارت به مرحله‌ی بعد می‌�
 
   await draftCard.dragTo(page.getByTestId("kanban-column-Applied"));
 
-  await expect(page.getByRole("alert").filter({ hasText: "وضعیت کارجو با موفقیت به‌روزرسانی شد." })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("وضعیت Sara E2E با موفقیت به ثبت اولیه تغییر کرد.");
   await expect(cardInColumn(page, "Applied", "Sara E2E")).toBeVisible();
   await expect(cardInColumn(page, "Draft", "Sara E2E")).toHaveCount(0);
 
@@ -49,7 +49,7 @@ test("درگ و دراپ غیرمجاز: پرش از غربالگری به مص�
 
   await screeningCard.dragTo(page.getByTestId("kanban-column-HR Interview"));
 
-  await expect(page.getByRole("alert").filter({ hasText: "این جابه‌جایی طبق قوانین ماشین وضعیت مجاز نیست." })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("انتقال Reza E2E به مصاحبه HR طبق قوانین مجاز نیست.");
   await expect(cardInColumn(page, "Screening", "Reza E2E")).toBeVisible();
   await expect(cardInColumn(page, "HR Interview", "Reza E2E")).toHaveCount(0);
 
