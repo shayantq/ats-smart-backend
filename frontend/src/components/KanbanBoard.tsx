@@ -1,10 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import KanbanColumn from "./KanbanColumn";
 import { allowedDestinations, STATUS_COLUMNS } from "../types/application";
 import { useAppSelector } from "../store/hooks";
-import type { ApplicationListItem, ApplicationStatus } from "../types/application";
-import { fetchApplicationsForJob, updateApplicationStatus } from "../services/applicationsApi";
+import type { ApplicationListItem, ApplicationStatus, ApplicationListResponse } from "../types/application";
+import { updateApplicationStatus } from "../services/applicationsApi";
+import { columnKey, useKanbanPages } from "../hooks/useKanbanPages";
+import CandidateDossier from "./CandidateDossier";
+import { apiRequest } from "../services/apiClient";
 import { ApiError } from "../services/apiClient";
 
 interface KanbanBoardProps {
@@ -25,16 +28,19 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
 
   const applicationsQueryKey = ["applications", jobId];
 
-  const {
-    data: applications = [],
-    isLoading,
-    isError,
-  } = useQuery({
-    queryKey: applicationsQueryKey,
-    queryFn: () => fetchApplicationsForJob(jobId),
-    enabled: Boolean(jobId),
-  });
-
+  const pages = useKanbanPages(jobId);
+  const [overrides,setOverrides]=useState<Map<string,ApplicationListItem>>(new Map());
+  const [dossier,setDossier]=useState<ApplicationListItem|null>(null);
+  const dossierTrigger=useRef<Element|null>(null);
+  const columnHandles=useRef(new Map<ApplicationStatus,(id:string)=>void>());
+  const counts=useQuery({queryKey:["application-counts",jobId],queryFn:()=>apiRequest<Record<string,number>>('/applications/counts?job_id='+encodeURIComponent(jobId)),enabled:!!jobId});
+  const applications=useMemo(()=>{
+    const items=new Map<string,ApplicationListItem>();
+    pages.forEach(query=>query.data?.pages.forEach(page=>page.items.forEach(item=>items.set(item.application_id,item))));
+    overrides.forEach((item,id)=>items.set(id,item));return [...items.values()];
+  },[...pages.map(query=>query.data),overrides]);
+  const isLoading=applications.length===0 && pages.some(query=>query.isPending && !query.data);
+  const isError=pages.some(query=>query.isError && !query.data);
   // گروه‌بندی کارت‌ها بر اساس ستون (وضعیت فعلی)، همگام با ترتیب STATUS_COLUMNS
   const applicationsByStatus = useMemo(() => {
     const grouped = new Map<ApplicationStatus, ApplicationListItem[]>();
@@ -46,12 +52,15 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
   }, [applications]);
 
   function focusCard(id: string) {
+    const item=applications.find(item=>item.application_id===id);
+    if(item) columnHandles.current.get(item.current_status)?.(id);
     const element = Array.from(board.current?.querySelectorAll<HTMLButtonElement>('[data-move-id]') ?? []).find(button => button.dataset.moveId === id);
-    (element ?? board.current)?.focus();
+    element?.focus();
     element?.scrollIntoView?.({block:"nearest",inline:"nearest"});
   }
   useLayoutEffect(() => {
     if (restore.current) {
+      if(!applications.some(item=>item.application_id===restore.current))return;
       if (document.activeElement === document.body || board.current?.contains(document.activeElement)) focusCard(restore.current);
       restore.current = null;
     }
@@ -63,25 +72,15 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
     // جابه‌جایی فوری کارت روی صفحه، پیش از دریافت پاسخ سرور (برای حس واکنش‌گرا)
     onMutate: async ({ applicationId, newStatus }) => {
       await queryClient.cancelQueries({ queryKey: applicationsQueryKey });
-      const previousApplications = queryClient.getQueryData<ApplicationListItem[]>(applicationsQueryKey);
-
-      queryClient.setQueryData<ApplicationListItem[]>(applicationsQueryKey, (old) =>
-        (old ?? []).map((application) =>
-          application.application_id === applicationId
-            ? { ...application, current_status: newStatus }
-            : application,
-        ),
-      );
-
-      return { previousApplications };
+      const original=applications.find(item=>item.application_id===applicationId);
+      if(original) setOverrides(previous=>new Map(previous).set(applicationId,{...original,current_status:newStatus}));
+      return {original};
     },
     // پرش غیرمجاز (400) یا هر خطای دیگر: کارت به ستون مبدا برمی‌گردد (Snap Back)
     onError: (error, _variables, context) => {
-      const original = context?.previousApplications?.find(item => item.application_id === _variables.applicationId);
+      const original = context?.original;
       restore.current = _variables.applicationId;
-      if (context?.previousApplications) {
-        queryClient.setQueryData(applicationsQueryKey, context.previousApplications);
-      }
+      setOverrides(previous=>{const next=new Map(previous);next.delete(_variables.applicationId);return next;});
       const rawMessage = error instanceof ApiError ? error.message : "خطا در ارتباط با سرور";
       const friendlyMessage =
         rawMessage === "Business Logic Violation"
@@ -90,13 +89,15 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
       setAnnouncement(`انتقال ${original?.candidate_name ?? "کارجو"} به ${label(_variables.newStatus)} ناموفق بود؛ وضعیت ${label(original?.current_status ?? _variables.currentStatus)} بازگردانده شد. ${friendlyMessage}`);
     },
     onSuccess: (_result, variables, context) => {
-      const name = context?.previousApplications?.find(item => item.application_id === variables.applicationId)?.candidate_name ?? "کارجو";
+      const name = context?.original?.candidate_name ?? "کارجو";
       setAnnouncement(`وضعیت ${name} با موفقیت به ${label(variables.newStatus)} تغییر کرد.`);
     },
     // در هر دو حالت، داده را با نسخه‌ی واقعی سرور همگام می‌کنیم
-    onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: applicationsQueryKey });
-      busy.current = false;
+    onSettled: async (_data,_error,variables) => {
+      restore.current=variables.applicationId;
+      await Promise.all([variables.currentStatus,variables.newStatus].map(status=>queryClient.resetQueries({queryKey:columnKey(jobId,status),exact:true})));
+      setOverrides(previous=>{const next=new Map(previous);next.delete(variables.applicationId);return next;});
+      void queryClient.invalidateQueries({queryKey:["application-counts",jobId]});busy.current=false;
     },
   });
 
@@ -141,6 +142,16 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
     if (["ArrowDown","ArrowUp"].includes(event.key)) {
       const next = cards[index + (event.key === "ArrowDown" ? 1 : -1)];
       if (next) focusCard(next.application_id);
+      else if(event.key==="ArrowDown") {
+        const query=pages[column];
+        if(query.hasNextPage) void query.loadMore().then(()=>{
+          if((document.activeElement as HTMLElement)?.dataset.moveId!==application.application_id)return;
+          const data=queryClient.getQueryData<InfiniteData<ApplicationListResponse>>(columnKey(jobId,application.current_status));
+          const all=[...new Map(data?.pages.flatMap(page=>page.items).map(item=>[item.application_id,item])??[]).values()];
+          const next=all[all.findIndex(item=>item.application_id===application.application_id)+1];
+          if(next)columnHandles.current.get(application.current_status)?.(next.application_id);
+        });
+      }
     } else {
       const step = event.key === "ArrowLeft" ? 1 : -1;
       for (let next=column+step;next>=0&&next<STATUS_COLUMNS.length;next+=step) {
@@ -186,9 +197,10 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
 
   if (isError) {
     return (
-      <p className="rounded-lg border border-red-200 dark:border-red-400 bg-red-50 dark:bg-red-950 p-6 text-center text-sm text-red-600 dark:text-red-300">
-        خطا در دریافت لیست درخواست‌ها. اتصال به سرور را بررسی کنید.
-      </p>
+      <div role="alert" className="border border-red-200 dark:border-red-400 p-6 text-sm text-red-700 dark:text-red-300">
+        <p>خطا در دریافت لیست درخواست‌ها. اتصال به سرور را بررسی کنید.</p>
+        <button className="mt-3 border border-slate-500 px-3 py-2" onClick={()=>{pages.filter(query=>query.isError).forEach(query=>void query.refetch());}}>تلاش مجدد</button>
+      </div>
     );
   }
 
@@ -197,17 +209,22 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
     <p id={instructions} className="mb-4 text-caption text-muted">روی کنترل تغییر وضعیت: بالا و پایین برای کارت‌های همان ستون، چپ برای ستون بعدی و راست برای قبلی. Enter یا فاصله برای انتخاب مقصد؛ جهت‌ها برای تغییر مقصد، Enter یا فاصله برای تأیید و Escape برای انصراف. مشاهدهٔ پرونده دکمهٔ جداگانه دارد.</p>
     <p role="status" aria-live="polite" aria-atomic="true" className="mb-3 text-sm text-ink">{announcement}</p>
     <div ref={board} role="region" data-testid="kanban-board" aria-describedby={instructions} aria-label="مراحل استخدام؛ برای دیدن مراحل بیشتر افقی پیمایش کنید" tabIndex={0} className="flex max-w-full min-w-0 items-start gap-3 overflow-x-auto overscroll-x-contain pb-5">
-      {STATUS_COLUMNS.map((column) => (
+      {STATUS_COLUMNS.map((column,index) => (
         <KanbanColumn
           key={column.value}
           status={column.value}
+          total={counts.data?.[column.value]}
+          hasMore={pages[index].hasNextPage} fetching={pages[index].isFetchingNextPage} loadError={pages[index].isFetchNextPageError}
+          onLoadMore={()=>{void pages[index].loadMore();}}
+          registerFocus={handler=>{columnHandles.current.set(column.value,handler);}}
+          pinnedIds={[draggedApplication?.application_id,choice?.id,dossier?.application_id].filter((id):id is string=>!!id)}
           label={column.label}
           applications={applicationsByStatus.get(column.value) ?? []}
           draggedApplicationId={draggedApplication?.application_id ?? null}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onDropOnColumn={handleDropOnColumn}
-          cardControls={application => ({canDrag:canManage && !statusMutation.isPending, moveLabel:choice?.id === application.application_id ? `مقصد: ${label(choice.target)}؛ تأیید با Enter` : undefined,
+          cardControls={application => ({onOpenDossier:()=>{dossierTrigger.current=document.activeElement;setDossier(application);},canDrag:canManage && !statusMutation.isPending, moveLabel:choice?.id === application.application_id ? `مقصد: ${label(choice.target)}؛ تأیید با Enter` : undefined,
             moveControl:{'data-move-id':application.application_id, 'aria-label':choice?.id === application.application_id ? `مقصد: ${label(choice.target)}؛ تأیید با Enter؛ ${application.candidate_name}` : `تغییر وضعیت ${application.candidate_name}؛ ${label(application.current_status)}`, 'aria-describedby':instructions,
               'aria-disabled':!canManage || statusMutation.isPending || allowedDestinations(application.current_status).length===0,
               'aria-pressed':choice?.id===application.application_id,
@@ -215,6 +232,7 @@ export default function KanbanBoard({ jobId }: KanbanBoardProps) {
         />
       ))}
     </div>
+    {dossier && <CandidateDossier application={dossier} onClose={()=>{setDossier(null);requestAnimationFrame(()=>{if(dossierTrigger.current instanceof HTMLElement && dossierTrigger.current.isConnected)dossierTrigger.current.focus();else focusCard(dossier.application_id);});}} />}
     </>
   );
 }

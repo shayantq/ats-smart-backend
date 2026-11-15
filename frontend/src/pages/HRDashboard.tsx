@@ -138,7 +138,7 @@ export default function HRDashboard() {
         </div>
 
         <section role="tabpanel" id={`hr-panel-${activeTab}`} aria-labelledby={`hr-tab-${activeTab}`} tabIndex={0}>
-        {activeTab === "kanban" && <KanbanBoard jobId={activeJobId} />}
+        {activeTab === "kanban" && <KanbanBoard key={activeJobId} jobId={activeJobId} />}
         {activeTab === "new_job" && canManageJobs && <JobCreateForm onCreated={handleJobCreated} />}
         {activeTab === "interviews" && <TodayInterviewsPanel />}
         {activeTab === "analytics" && <Suspense fallback={<p role="status">در حال بارگذاری داشبورد…</p>}><AnalyticsDashboard jobId={activeJobId} /></Suspense>}

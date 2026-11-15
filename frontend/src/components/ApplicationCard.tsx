@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type ButtonHTMLAttributes } from "react";
+import { memo, useState, type DragEvent, type ButtonHTMLAttributes } from "react";
 import CandidateDossier from "./CandidateDossier";
 import type { ApplicationListItem } from "../types/application";
 
@@ -10,6 +10,7 @@ interface ApplicationCardProps {
   moveControl?: ButtonHTMLAttributes<HTMLButtonElement>;
   moveLabel?: string;
   canDrag?: boolean;
+  onOpenDossier?: () => void;
 }
 
 /** رنگ نشان امتیاز هوش مصنوعی بر اساس بازه‌ی امتیاز */
@@ -20,7 +21,7 @@ function scoreBadgeStyle(score: number | null): string {
   return "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300";
 }
 
-export default function ApplicationCard({
+function ApplicationCard({
   application,
   isDragging,
   onDragStart,
@@ -28,6 +29,7 @@ export default function ApplicationCard({
   moveControl,
   moveLabel,
   canDrag = true,
+  onOpenDossier,
 }: ApplicationCardProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   return (
@@ -55,7 +57,7 @@ export default function ApplicationCard({
       <p className="mt-3 text-caption text-muted">
         آخرین به‌روزرسانی: {new Date(application.updated_at).toLocaleDateString("fa-IR")}
       </p>
-      <button type="button" draggable={false} onClick={() => setIsProfileOpen(true)} aria-label={`مشاهده پرونده ${application.candidate_name}`} className="mt-3 border-t border-rule pt-3 text-caption font-medium text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-slate-200">
+      <button type="button" draggable={false} onClick={() => onOpenDossier ? onOpenDossier() : setIsProfileOpen(true)} aria-label={`مشاهده پرونده ${application.candidate_name}`} className="mt-3 border-t border-rule pt-3 text-caption font-medium text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-slate-200">
         مشاهده پرونده <span aria-hidden="true">←</span>
       </button>
       {moveControl && <button type="button" draggable={false} {...moveControl} className="mt-3 block w-full rounded-sm border border-slate-500 px-2 py-2 text-caption text-ink hover:bg-wash aria-disabled:cursor-not-allowed">{moveLabel || "تغییر وضعیت"}</button>}
@@ -64,3 +66,5 @@ export default function ApplicationCard({
     </>
   );
 }
+
+export default memo(ApplicationCard);

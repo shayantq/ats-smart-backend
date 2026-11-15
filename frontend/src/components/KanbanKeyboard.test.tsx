@@ -11,7 +11,7 @@ function setup(role="HR_Manager") {
   const view=renderWithProviders(<KanbanBoard jobId="j" />);
   act(()=>{view.store.dispatch(setUser({id:"hr",email:"hr@example.test",role}));});return view;
 }
-beforeEach(()=>{jest.clearAllMocks();jest.mocked(api.fetchApplicationsForJob).mockResolvedValue([item]);});
+beforeEach(()=>{jest.clearAllMocks();jest.mocked(api.fetchApplicationsForJob).mockResolvedValue([item]);jest.mocked(api.fetchApplicationPage).mockImplementation(async (job,status)=>({items:(await api.fetchApplicationsForJob(job)).filter(x=>x.current_status===status),has_next:false,has_previous:false,next_cursor:null,previous_cursor:null}));});
 test("مقصدها با ماشین وضعیت خطی و حالت نهایی منطبق‌اند",()=>{
   for(let i=0;i<7;i++)expect(allowedDestinations(STATUS_COLUMNS[i].value)).toEqual([STATUS_COLUMNS[i+1].value,"Rejected"]);
   expect(allowedDestinations("Hired")).toEqual([]);expect(allowedDestinations("Rejected")).toEqual([]);
@@ -55,4 +55,31 @@ test("نقش بدون مجوز و پرش ماوس هیچ mutation نمی‌فر�
   act(()=>{view.store.dispatch(setUser({id:"hr",email:"hr@example.test",role:"HR_Manager"}));});
   fireEvent.dragStart(screen.getByTestId("application-card"));fireEvent.drop(screen.getByTestId("kanban-column-Hired"));
   expect(api.updateApplicationStatus).not.toHaveBeenCalled();expect(screen.getByRole("status")).toHaveTextContent("طبق قوانین مجاز نیست");
+});
+
+test("صفحهٔ بعد فقط با درخواست کاربر می‌آید؛ شناسهٔ تکراری و cursor تکراری حلقه نمی‌سازند",async()=>{
+  const initial=Array.from({length:50},(_,i)=>({...item,application_id:`p${i}`,candidate_name:`Applicant ${i}`}));
+  jest.mocked(api.fetchApplicationPage).mockImplementation(async (_job,status,cursor)=>({items:status!=="Screening"?[]:cursor?[initial[0],{...item,application_id:"next",candidate_name:"Next page"}]:initial,has_next:status==="Screening",has_previous:false,next_cursor:status==="Screening"?"opaque-cursor":null,previous_cursor:null}));
+  setup();const column=await screen.findByTestId("kanban-column-Screening");
+  await within(column).findByText("Applicant 0");
+  expect(jest.mocked(api.fetchApplicationPage).mock.calls.filter(call=>call[1]==="Screening")).toHaveLength(1);
+  await userEvent.click(within(column).getByRole("button",{name:"بارگذاری بیشتر"}));
+  await waitFor(()=>expect(jest.mocked(api.fetchApplicationPage).mock.calls.filter(call=>call[1]==="Screening")).toHaveLength(2));
+  await waitFor(()=>expect(within(column).queryByRole("button",{name:"بارگذاری بیشتر"})).not.toBeInTheDocument());
+  expect(within(column).getAllByText("Applicant 0")).toHaveLength(1);
+});
+
+test("خطای صفحهٔ بعد دادهٔ موجود را نگه می‌دارد و فقط با تلاش مجدد ادامه می‌دهد",async()=>{
+  const initial=Array.from({length:50},(_,i)=>({...item,application_id:`retry${i}`,candidate_name:`Retry ${i}`}));let failed=false;
+  jest.mocked(api.fetchApplicationPage).mockImplementation(async (_job,status,cursor)=>{
+    if(status==="Screening" && cursor && !failed){failed=true;throw Error("offline");}
+    return {items:status!=="Screening"?[]:cursor?[]:initial,has_next:status==="Screening"&&!cursor,has_previous:false,next_cursor:status==="Screening"&&!cursor?"retry-cursor":null,previous_cursor:null};
+  });
+  setup();const column=await screen.findByTestId("kanban-column-Screening");await within(column).findByText("Retry 0");
+  await userEvent.click(within(column).getByRole("button",{name:"بارگذاری بیشتر"}));
+  expect(await within(column).findByRole("alert")).toHaveTextContent("دریافت صفحهٔ بعد ناموفق بود");
+  expect(within(column).getByText("Retry 0")).toBeInTheDocument();
+  await userEvent.click(within(column).getByRole("button",{name:"تلاش مجدد"}));
+  await waitFor(()=>expect(within(column).queryByRole("alert")).not.toBeInTheDocument());
+  expect(jest.mocked(api.fetchApplicationPage).mock.calls.filter(call=>call[1]==="Screening")).toHaveLength(3);
 });

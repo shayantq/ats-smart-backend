@@ -22,7 +22,14 @@ import type {
   ApplicationListItem,
   ApplicationStatus,
   ApplicationStatusUpdateResult,
+  ApplicationListResponse,
 } from "../types/application";
+
+export function fetchApplicationPage(jobId: string, status: ApplicationStatus, cursor: string | null, signal?: AbortSignal): Promise<ApplicationListResponse> {
+  const params = new URLSearchParams({job_id:jobId,current_status:status,limit:"50"});
+  if(cursor) params.set("cursor",cursor);
+  return apiRequest(`/applications/?${params}`,{signal});
+}
 
 export async function fetchApplicationsForJob(jobId: string): Promise<ApplicationListItem[]> {
   return fetchAllCursorPages<ApplicationListItem>("/applications/", { params: { job_id: jobId } });

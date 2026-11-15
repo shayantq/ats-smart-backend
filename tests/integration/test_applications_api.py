@@ -12,6 +12,29 @@ def _move(current: str, new: str) -> dict:
     return {"current_status": current, "new_status": new}
 
 
+async def test_status_filter_and_counts_preserve_job_scope(client, make_user, make_application):
+    first, _, job = await make_application(status="Applied")
+    await make_application(status="Screening", job=job)
+    await make_application(status="Applied")
+    headers = auth_headers(await make_user(role="HR_Manager"))
+    response = await client.get(
+        "/api/v1/applications/",
+        params={"job_id": str(job.id), "current_status": "Applied", "limit": 1},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert [row["application_id"] for row in response.json()["items"]] == [str(first.id)]
+    counts = await client.get("/api/v1/applications/counts", params={"job_id": str(job.id)}, headers=headers)
+    assert counts.status_code == 200
+    assert counts.json()["Applied"] == 1
+    assert counts.json()["Screening"] == 1
+    assert sum(counts.json().values()) == 2
+    invalid = await client.get(
+        "/api/v1/applications/", params={"job_id": str(job.id), "current_status": "invalid"}, headers=headers
+    )
+    assert invalid.status_code == 422
+
+
 async def _history(db_session, application_id) -> list[tuple[str, str]]:
     rows = await db_session.execute(
         select(StatusHistory.old_status, StatusHistory.new_status)
@@ -19,6 +42,32 @@ async def _history(db_session, application_id) -> list[tuple[str, str]]:
         .order_by(StatusHistory.changed_at)
     )
     return [tuple(row) for row in rows.all()]
+
+
+async def test_filtered_cursor_and_counts_tenant_isolation(client, make_user, make_application, make_tenant):
+    first, _, job = await make_application(status="Applied")
+    second, _, _ = await make_application(status="Applied", job=job)
+    headers = auth_headers(await make_user(role="HR_Manager"))
+    params = {"job_id": str(job.id), "current_status": "Applied", "limit": 1}
+    page1 = (await client.get("/api/v1/applications/", params=params, headers=headers)).json()
+    assert page1["has_next"] is True
+    page2 = (
+        await client.get("/api/v1/applications/", params={**params, "cursor": page1["next_cursor"]}, headers=headers)
+    ).json()
+    assert page2["has_next"] is False
+    assert {row["application_id"] for row in page1["items"] + page2["items"]} == {str(first.id), str(second.id)}
+    other, _ = await make_tenant("Other count tenant")
+    outsider = await make_user(role="HR_Manager", tenant=other)
+    response = await client.get(
+        "/api/v1/applications/counts", params={"job_id": str(job.id)}, headers=auth_headers(outsider)
+    )
+    assert response.status_code == 200
+    assert sum(response.json().values()) == 0
+    candidate = await make_user(role="Candidate")
+    denied = await client.get(
+        "/api/v1/applications/counts", params={"job_id": str(job.id)}, headers=auth_headers(candidate)
+    )
+    assert denied.status_code == 403
 
 
 async def test_allowed_transition_updates_status_and_writes_history(client, db_session, make_user, make_application):

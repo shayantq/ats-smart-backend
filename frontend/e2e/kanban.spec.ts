@@ -15,6 +15,8 @@ test("بورد کانبان: همه‌ی ستون‌ها به ترتیب و هر
 
   await expect(cardInColumn(page, "Draft", "Sara E2E")).toBeVisible();
   await expect(cardInColumn(page, "Screening", "Reza E2E")).toBeVisible();
+  // ستون خارج از viewport عمداً کارت نصب‌شده ندارد؛ ابتدا خود ستون به دید می‌آید.
+  await page.getByTestId("kanban-column-Offer").scrollIntoViewIfNeeded();
   await expect(cardInColumn(page, "Offer", "Nima E2E")).toBeVisible();
   await expect(cardInColumn(page, "Offer", "Nima E2E")).toContainText("64%");
 

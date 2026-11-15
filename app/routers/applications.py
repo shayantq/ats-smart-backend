@@ -11,12 +11,12 @@ import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
 from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
-from app.core.state_machine import is_transition_allowed
+from app.core.state_machine import ApplicationStatus, is_transition_allowed
 from app.core.status_notifier import trigger_status_change_email
 from app.db.session import get_db
 from app.models import Application, Candidate, Resume, StatusHistory, User
@@ -33,6 +33,19 @@ router = APIRouter()
 # طبق معیار پذیرش تسک، فقط مدیر سازمان (Admin) و کارشناس HR اجازه‌ی
 # جابه‌جایی وضعیت درخواست‌ها روی بورد کانبان را دارند.
 APPLICATION_MANAGER_ROLES = ("Admin", "HR_Manager")
+
+
+@router.get("/counts", dependencies=[Depends(require_roles(*APPLICATION_MANAGER_ROLES))])
+async def application_counts(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> dict[str, int]:
+    """شمارش واقعی ستون‌ها با همان محدودیت tenant نشست دیتابیس."""
+    rows = await db.execute(
+        select(Application.current_status, func.count(Application.id))
+        .where(Application.job_id == job_id)
+        .group_by(Application.current_status)
+    )
+    counts = {item.value: 0 for item in ApplicationStatus}
+    counts.update({row[0]: row[1] for row in rows})
+    return counts
 
 
 @router.get(
@@ -81,6 +94,7 @@ async def list_applications(
     job_id: uuid.UUID = Query(..., description="شناسه‌ی آگهی شغلی موردنظر"),
     db: AsyncSession = Depends(get_db),
     page: CursorParams = Depends(cursor_params),
+    current_status: ApplicationStatus | None = Query(None),
 ) -> ApplicationListResponse:
     """
     لیست درخواست‌های یک آگهی شغلی خاص را برمی‌گرداند — دقیقاً همان داده‌ای
@@ -106,6 +120,9 @@ async def list_applications(
         .join(Candidate, Candidate.id == Application.candidate_id)
         .where(Application.job_id == job_id)
     )
+
+    if current_status is not None:
+        query = query.where(Application.current_status == current_status.value)
 
     cursor_page = await paginate_by_cursor(
         db,

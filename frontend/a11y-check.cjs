@@ -3,14 +3,14 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const {pathToFileURL}=require('node:url');
 const {chromium}=require('@playwright/test');
 const {contrastAudit}=require('./theme-browser-check.cjs');
-const out=path.resolve(__dirname,'../training/reports/a11y');
+const out=path.resolve(__dirname,process.env.ATS_A11Y_OUTPUT||'../training/reports/a11y');
 const root=path.resolve(__dirname,'dist');const url='http://127.0.0.1:4174';
 const states=['Draft','Applied','Screening','Technical Interview','HR Interview','Offer','Accepted','Hired','Rejected'];
 const pageOf=items=>({items,has_next:false,has_previous:false,next_cursor:null,previous_cursor:null});
 const seed=()=>states.map((s,i)=>({application_id:'fixture-'+i,candidate_id:'candidate-'+i,candidate_name:i===2?'مریم احمدی — نمونهٔ ساختگی / Python & React با نام طولانی':'کارجوی ساختگی '+i,current_status:s,score_ai:i===0?null:82,updated_at:'2026-11-15T10:00:00Z'}));
 let cards=seed(),fail=false,role='HR_Manager';
 const server=http.createServer(async(req,res)=>{
- const p=new URL(req.url,url).pathname;res.setHeader('Cache-Control','no-store');
+ const params=new URL(req.url,url).searchParams;const p=new URL(req.url,url).pathname;res.setHeader('Cache-Control','no-store');
  if(p.startsWith('/api/v1/')){
   res.setHeader('Content-Type','application/json');let result;
   if(p.endsWith('/auth/me'))result={id:'synthetic-user',email:'user@example.test',role};
@@ -24,7 +24,8 @@ const server=http.createServer(async(req,res)=>{
    else if(!card||card.current_status!==body.current_status||['Hired','Rejected'].includes(card.current_status)||![states[states.indexOf(card.current_status)+1],'Rejected'].includes(body.new_status)){res.statusCode=400;result={detail:'Business Logic Violation'};}
    else {const previous_status=card.current_status;card.current_status=body.new_status;result={application_id:card.application_id,previous_status,new_status:card.current_status,updated_at:card.updated_at};}
   }
-  else if(p.includes('/applications/'))result=pageOf(cards);
+  else if(p.endsWith('/applications/counts'))result=Object.fromEntries(states.map(s=>[s,cards.filter(c=>c.current_status===s).length]));
+  else if(p.includes('/applications/')){const list=cards.filter(c=>!params.get('current_status')||c.current_status===params.get('current_status'));const offset=Number(params.get('cursor')||0);const limit=Number(params.get('limit')||50);result={...pageOf(list.slice(offset,offset+limit)),has_next:offset+limit<list.length,next_cursor:offset+limit<list.length?String(offset+limit):null};}
   else if(p.includes('/notifications/'))result={...pageOf([]),unread_count:0};
   else {res.statusCode=404;result={detail:'مسیر دادهٔ ساختگی تعریف نشده است'};}
   res.end(JSON.stringify(result));return;
@@ -34,7 +35,7 @@ const server=http.createServer(async(req,res)=>{
  res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.woff2')?'font/woff2':'text/html');
  res.end(fs.readFileSync(file));
 });
-async function tabTo(page,locator){for(let i=0;i<110;i++){await page.keyboard.press('Tab');if(await locator.evaluate(el=>el===document.activeElement))return;}throw Error('keyboard target unreachable');}
+async function tabTo(page,locator){for(let i=0;i<110;i++){await page.keyboard.press('Tab');if(await locator.count() && await locator.evaluate(el=>el===document.activeElement))return;}throw Error('keyboard target unreachable');}
 (async()=>{
  fs.mkdirSync(out,{recursive:true});await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(4174,'127.0.0.1',resolve)});
  const context=await chromium.launchPersistentContext(path.join(out,'browser-profile'),{channel:'msedge',headless:true,args:['--remote-debugging-port=9228']});
@@ -50,7 +51,7 @@ async function tabTo(page,locator){for(let i=0;i<110;i++){await page.keyboard.pr
   await page.getByRole('dialog').waitFor();await page.getByText(/رزومهٔ کاملاً ساختگی/).waitFor();
   await page.keyboard.press('Shift+Tab');const trapped=await page.getByRole('dialog').evaluate(el=>el.contains(document.activeElement));
   await page.screenshot({path:path.join(out,`dossier-${theme}-${width}.png`),fullPage:true});
-  await page.keyboard.press('Escape');if(!await open.evaluate(el=>el===document.activeElement))throw Error('dialog focus restoration');
+  await page.keyboard.press('Escape');if(!await open.evaluate(el=>el===document.activeElement))throw Error('dialog focus restoration '+theme+' '+width+' '+await page.evaluate(()=>document.activeElement.outerHTML.slice(0,180)));
   const move=page.getByRole('button',{name:/تغییر وضعیت مریم/});await tabTo(page,move);
   await page.keyboard.press('Space');await page.keyboard.press('Escape');
   await page.keyboard.press('Enter');await page.keyboard.press('Enter');
