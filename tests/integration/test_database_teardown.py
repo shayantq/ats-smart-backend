@@ -3,9 +3,12 @@
 """
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import func, select, text
 
 from app.models import Job, User
+from tests.integration.conftest import PROJECT_ROOT
 
 
 async def test_tests_run_on_a_separate_temporary_database(db_session):
@@ -15,9 +18,12 @@ async def test_tests_run_on_a_separate_temporary_database(db_session):
 
 
 async def test_schema_comes_from_real_alembic_migrations(db_session):
-    """اسکیمای دیتابیس تست همان اسکیمای Production است (کل زنجیره‌ی مایگریشن‌ها اجرا شده)."""
+    """اسکیمای دیتابیس تست تا آخرین migration مخزن بالا آمده است."""
     version = (await db_session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
-    assert version == "e8a1c2d3f409"
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    assert head is not None and version == head
     nullable = (
         await db_session.execute(
             text(
@@ -34,12 +40,29 @@ async def test_schema_comes_from_real_alembic_migrations(db_session):
     ).scalar_one()
     assert "FOREIGN KEY (resume_id) REFERENCES resumes(id)" in constraint
     tables = await db_session.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
-    assert {"interview_question_sets", "interview_questions"} <= set(tables.scalars())  # بانک سؤال GenAI
+    dossier_tables = {
+        "dossier_review_heads",
+        "dossier_review_events",
+        "dossier_analysis_versions",
+        "dossier_reanalysis_batches",
+    }
+    assert {"interview_question_sets", "interview_questions"} | dossier_tables <= set(tables.scalars())
+    processing_type = (
+        await db_session.execute(
+            text(
+                "SELECT udt_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'resumes' AND column_name = 'processing_state'"
+            )
+        )
+    ).scalar_one()
+    assert processing_type == "jsonb"
     # چندمستاجری: RLS روی جدول‌های عملیاتی فعال است
     rls_tables = await db_session.execute(
         text("SELECT relname FROM pg_class WHERE relrowsecurity AND relnamespace = 'public'::regnamespace")
     )
-    assert {"jobs", "applications", "resumes", "interviews", "candidates", "skills"} <= set(rls_tables.scalars())
+    assert {"jobs", "applications", "resumes", "interviews", "candidates", "skills"} | dossier_tables <= set(
+        rls_tables.scalars()
+    )
     indexes = await db_session.execute(text("SELECT indexname FROM pg_indexes WHERE tablename = 'resumes'"))
     names = set(indexes.scalars())
     assert {"ix_resumes_search_tokens_gin", "ix_resumes_skill_keys_gin", "ix_resumes_experience_years"} <= names
