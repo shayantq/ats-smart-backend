@@ -1,0 +1,105 @@
+# فقط بازیابی دیپلوی؛ ایمیج‌ها در Docker Hub باقی می‌مانند و بیلد/تست تکرار نمی‌شوند.
+name: Deploy existing Docker Hub release
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full commit SHA with successful checks and Docker Hub build
+        required: true
+        default: 49abb47bffffe9b911feeca61eeea820fe4dea0f
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ats-production-recovery
+  cancel-in-progress: false
+jobs:
+  deploy:
+    name: Recover deployment of verified images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/ats-smart' }}
+      IMAGE_NAMESPACE: ${{ secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+      - name: Verify previously successful checks and image build
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,re,urllib.request
+          sha=os.environ['SOURCE_SHA']
+          assert re.fullmatch(r'[a-f0-9]{40}',sha),'full_commit_sha_required'
+          base='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']
+          def get(path):
+              req=urllib.request.Request(base+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'User-Agent':'ats-release-recovery'})
+              with urllib.request.urlopen(req,timeout=20) as response:return json.load(response)
+          runs=get('/actions/runs?head_sha='+sha+'&per_page=20')['workflow_runs']
+          required={'Lint (Black + Flake8)','Tests (Pytest)','Frontend build','E2E (Playwright)','Build & push images'}
+          assert any(required <= {j['name'] for j in get('/actions/runs/'+str(r['id'])+'/jobs?per_page=100')['jobs'] if j['conclusion']=='success'} for r in runs if r['path']=='.github/workflows/ci-cd.yml'),'successful_checks_and_build_required'
+          PY
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host production
+            HostName ${SSH_HOST}
+            User ${SSH_USER}
+            Port ${SSH_PORT}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 15
+            ServerAliveCountMax 8
+          EOF
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Transfer published Docker Hub images over SSH
+        run: |
+          set -euo pipefail
+          tag="sha-$(git rev-parse --short=7 HEAD)"
+          backend="${IMAGE_NAMESPACE}/ats-smart-backend:${tag}"
+          frontend="${IMAGE_NAMESPACE}/ats-smart-frontend:${tag}"
+          timeout 300 docker pull "$backend"
+          timeout 300 docker pull "$frontend"
+          size=$(docker image inspect --format '{{.Size}}' "$backend" "$frontend" | awk '{n+=$1} END {printf "%.0f",n}')
+          free=$(ssh production "df -B1 --output=avail '${DEPLOY_PATH}' | tail -1" | tr -d ' ')
+          (( free - size > 10737418240 )) || { echo 'Insufficient disk reserve'; exit 1; }
+          timeout 900 bash -o pipefail -c 'docker save "$1" "$2" | gzip -1 | ssh production "gzip -dc | docker load"' _ "$backend" "$frontend"
+          for image in "$backend" "$frontend"; do
+            expected=$(docker image inspect --format '{{.Id}}' "$image")
+            actual=$(ssh production "docker image inspect --format '{{.Id}}' '$image'")
+            [[ "$expected" == "$actual" ]] || { echo 'Image identity mismatch'; exit 1; }
+          done
+      - name: Upload tested deployment files
+        run: |
+          set -euo pipefail
+          tar czf - docker-compose.yml deploy monitoring backup loadtest/agent_benchmark.py \
+            | ssh production "mkdir -p '${DEPLOY_PATH}' && tar xzf - -C '${DEPLOY_PATH}'"
+      - name: Zero-downtime rollout using verified local images
+        run: |
+          tag="sha-$(git rev-parse --short=7 HEAD)"
+          backend="${IMAGE_NAMESPACE}/ats-smart-backend:${tag}"
+          frontend="${IMAGE_NAMESPACE}/ats-smart-frontend:${tag}"
+          ssh production "cd '${DEPLOY_PATH}' && SKIP_PULL=1 BACKEND_IMAGE='$backend' FRONTEND_IMAGE='$frontend' bash ./deploy/deploy.sh"
+      - name: Sanity check
+        if: vars.PRODUCTION_URL != ''
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: bash deploy/sanity_check.sh "$PRODUCTION_URL" "sha-$(git rev-parse --short=7 HEAD)"
