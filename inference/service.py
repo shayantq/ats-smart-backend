@@ -4,11 +4,12 @@ import asyncio
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 from contextlib import aclosing, asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -16,7 +17,7 @@ from tokenizers import Tokenizer
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core.service_auth import require_service_token
-from app.model_inference.client import Capacity, InferenceError
+from app.model_inference.client import Capacity, InferenceError, SAFE_TIMINGS
 from app.model_inference.contract import (
     Analysis,
     AnalyzeRequest,
@@ -201,10 +202,14 @@ class Engine:
         self.ready = True
 
     async def analyze(self, request: AnalyzeRequest):
+        started = time.perf_counter()
         prompt = chat_prompt(request)
         tokens = len(self.tokenizer.encode(prompt, add_special_tokens=False).ids)
+        timings = {"prompt_tokenization_ms": (time.perf_counter() - started) * 1000}
         if tokens + self.output > self.context:
-            raise InferenceError("context_limit_exceeded", 422)
+            error = InferenceError("context_limit_exceeded", 422)
+            error.metrics = {"input_tokens": tokens, "context_limit": self.context, "output_limit": self.output}
+            raise error
         try:
             async with asyncio.timeout(self.deadline), self.capacity.slot():
                 payload = {
@@ -257,6 +262,7 @@ class Engine:
                         "stop": ["<|im_end|>", "<|endoftext|>"],
                     }
                 endpoint = {"ollama": "/api/generate", "llama_cpp": "/completion", "vllm": "/v1/completions"}[self.kind]
+                started = time.perf_counter()
                 async with self.http.stream(
                     "POST",
                     endpoint,
@@ -270,7 +276,13 @@ class Engine:
                             if len(body) > 131072:
                                 raise InferenceError("engine_response_too_large", 502)
                 data = json.loads(body)
+                timings["engine_request_ms"] = (time.perf_counter() - started) * 1000
+                started = time.perf_counter()
                 if self.kind == "llama_cpp":
+                    for key in ("prompt_ms", "predicted_ms"):
+                        value = data.get("timings", {}).get(key)
+                        if isinstance(value, (int, float)) and 0 <= value < 1e9:
+                            timings["engine_" + key] = value
                     data = {
                         "done": data.get("stop_type") in ("eos", "word") and not data.get("truncated", False),
                         "done_reason": "length" if data.get("stop_type") == "limit" else "stop",
@@ -290,12 +302,15 @@ class Engine:
                 generated = GeneratedAnalysis.model_validate_json(data["response"])
                 payload = generated.model_dump()
                 payload["hr_outcome"] = None
-                return AnalyzeResponse(
+                timings["response_validation_ms"] = (time.perf_counter() - started) * 1000
+                result = AnalyzeResponse(
                     analysis=Analysis.model_validate(payload),
                     input_tokens=tokens,
                     output_tokens=data["eval_count"],
                     model=self.model,
                 )
+                result._timings_ms = timings
+                return result
         except (TimeoutError, httpx.TimeoutException):
             raise InferenceError("engine_deadline_exceeded", 504) from None
         except httpx.HTTPError:
@@ -349,6 +364,7 @@ def create_app(engine=None):
     async def analyze(
         body: AnalyzeRequest,
         request: Request,
+        response: Response,
         claims=Depends(require_service_token("backend-api", "worker", audience="ats-inference")),
     ):
         async def disconnected():
@@ -360,10 +376,19 @@ def create_app(engine=None):
         try:
             done, _ = await asyncio.wait((task, monitor), return_when=asyncio.FIRST_COMPLETED)
             if task in done:
-                return await task
+                result = await task
+                for key in SAFE_TIMINGS:
+                    if key in result.timings_ms:
+                        response.headers["X-ATS-Time-" + key.replace("_", "-")] = str(result.timings_ms[key])
+                return result
             raise HTTPException(499, "client_disconnected")
         except InferenceError as error:
-            raise HTTPException(error.status_code, error.code) from None
+            headers = {
+                "X-ATS-" + key.replace("_", "-"): str(value)
+                for key, value in error.metrics.items()
+                if key in ("input_tokens", "context_limit", "output_limit")
+            }
+            raise HTTPException(error.status_code, error.code, headers=headers) from None
         finally:
             task.cancel()
             monitor.cancel()

@@ -145,7 +145,7 @@ def _get_spacy_model():
     return _spacy_model
 
 
-def parse_resume_text(raw_text: str) -> ParsedResumeData:
+def parse_resume_text(raw_text: str, *, layout=None, reference=None) -> ParsedResumeData:
     """
     نقطه‌ی ورود اصلی ماژول: متن خام (raw_text) را می‌گیرد و شیء ساختاریافته‌ی
     نهایی (اطلاعات فردی + سوابق تحصیلی + تجربیات شغلی) را برمی‌گرداند تا به
@@ -154,14 +154,27 @@ def parse_resume_text(raw_text: str) -> ParsedResumeData:
     normalized_text = _normalize_digits(raw_text)
     sections = _split_into_sections(normalized_text)
 
-    personal_info = _extract_personal_info(sections["header"], normalized_text)
-    work_experience = _extract_work_experience(sections["experience"])
+    from app.core.employment_evidence import extract_employment
+
+    supported = extract_employment(raw_text, layout=layout, reference=reference)
+    work_experience = [WorkExperienceEntry(**entry) for entry in supported]
     education = _extract_education(sections["education"])
+    from app.core.structured_resume import build_structured
+
+    structured = build_structured(raw_text, layout, reference)
+    name = structured["identity"]["name"]["value"]
+    contacts = structured["contacts"]
+    personal_info = PersonalInfo(
+        name=name,
+        email=next((x["value"] for x in contacts if "@" in (x["value"] or "") and x["status"] == "extracted"), None),
+        phone=next((_normalize_digits(x["value"]) for x in contacts if "@" not in (x["value"] or "")), None),
+    )
 
     return ParsedResumeData(
         personal_info=personal_info,
         education=education,
         work_experience=work_experience,
+        structured=structured,
     )
 
 
@@ -170,20 +183,17 @@ def _split_into_sections(text: str) -> dict[str, str]:
     متن را بر اساس هدینگ‌های شناخته‌شده به سه بخش می‌شکند: header (هرچه پیش از
     اولین هدینگ شناخته‌شده، معمولاً شامل اطلاعات فردی)، experience، و education.
     """
+    from app.core.resume_sections import heading
+
     lines = text.splitlines()
     sections: dict[str, list[str]] = {"header": [], "experience": [], "education": []}
     current_section = "header"
 
     for line in lines:
-        normalized_line = line.strip().lower()
-        is_short_line = len(normalized_line) < _MAX_SECTION_HEADER_LINE_LENGTH
-
-        if is_short_line and any(header in normalized_line for header in _EXPERIENCE_SECTION_HEADERS):
-            current_section = "experience"
-            continue
-
-        if is_short_line and any(header in normalized_line for header in _EDUCATION_SECTION_HEADERS):
-            current_section = "education"
+        section = heading(line)
+        if section:
+            current_section = section
+            sections.setdefault(section, [])
             continue
 
         sections[current_section].append(line)

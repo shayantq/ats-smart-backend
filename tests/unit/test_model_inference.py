@@ -221,6 +221,25 @@ async def test_cancel_releases_slot_and_connection():
         assert client.capacity.pending == 0
 
 
+async def test_timing_metadata_preserves_strict_json_contract_and_ignores_invalid_headers():
+    async def handler(req):
+        return httpx.Response(
+            200,
+            json=response().model_dump(),
+            headers={
+                "X-ATS-Time-engine-request-ms": "123.5",
+                "X-ATS-Time-engine-prompt-ms": "NaN",
+                "X-ATS-Time-response-validation-ms": "private text",
+            },
+        )
+
+    async with InferenceClient("http://local", lambda: "test", transport=httpx.MockTransport(handler)) as client:
+        result = await client.analyze(request())
+    assert result.timings_ms == {"engine_request_ms": 123.5}
+    assert "timings_ms" not in result.model_dump()
+    assert "timings_ms" not in AnalyzeResponse.model_json_schema()["properties"]
+
+
 @pytest.mark.parametrize("mode,code", [("slow", 504), ("invalid", 502), ("down", 503), ("huge", 502)])
 async def test_failures_sanitized_and_bounded(mode, code):
     async def handler(req):
@@ -243,6 +262,86 @@ async def test_failures_sanitized_and_bounded(mode, code):
 class FakeTokenizer:
     def encode(self, text, **kwargs):
         return type("Encoded", (), {"ids": list(range(10))})()
+
+
+@pytest.mark.parametrize(
+    "status,detail,expected,retryable",
+    [
+        (503, "engine_unavailable", "engine_unavailable", True),
+        (504, "engine_deadline_exceeded", "engine_deadline_exceeded", True),
+        (429, "overloaded", "overloaded", True),
+        (422, "context_limit_exceeded", "context_limit_exceeded", False),
+        (502, "incomplete_generation", "incomplete_generation", False),
+        (401, "private token", "inference_http_error", False),
+        (502, {"private": "resume"}, "inference_http_error", False),
+        (503, "x" * 5000, "inference_http_error", True),
+    ],
+)
+async def test_gateway_error_codes_are_safe_and_classified(status, detail, expected, retryable):
+    async def handler(req):
+        return httpx.Response(status, json={"detail": detail})
+
+    async with InferenceClient("http://local", lambda: "test", transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(InferenceError) as caught:
+            await client.analyze(request())
+    assert str(caught.value) == expected
+    assert caught.value.retryable is retryable
+
+
+async def test_pipeline_persists_intermediates_before_unavailable_model(monkeypatch):
+    from app.model_inference import pipeline
+
+    saved = []
+
+    async def persist(text, parsed, stage, metrics):
+        saved.append((text, parsed, stage))
+
+    class Unavailable:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            assert saved == [("synthetic", None, "parsing"), ("synthetic", {"skills": []}, "inference")]
+            raise InferenceError("engine_unavailable", 503)
+
+        async def __aexit__(self, *args):
+            pass
+
+    monkeypatch.setattr(pipeline, "InferenceClient", Unavailable)
+    monkeypatch.setattr(pipeline, "extract_raw_text", lambda *args, **kwargs: "synthetic")
+    monkeypatch.setattr(pipeline, "parse_resume_text", lambda text: SimpleNamespace(model_dump=lambda: {"skills": []}))
+    with pytest.raises(InferenceError, match="engine_unavailable"):
+        await pipeline.run_model_pipeline(b"test", "test.pdf", {"title": "Developer"}, persist=persist)
+    assert len(saved) == 3
+
+
+async def test_pipeline_reuses_caller_verified_intermediates(monkeypatch):
+    from app.model_inference import pipeline
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("cached extraction must not repeat OCR or parsing")
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def analyze(self, body):
+            return response()
+
+    monkeypatch.setattr(pipeline, "InferenceClient", Client)
+    monkeypatch.setattr(pipeline, "extract_raw_text", unexpected)
+    monkeypatch.setattr(pipeline, "parse_resume_text", unexpected)
+    result = await pipeline.run_model_pipeline(
+        b"test", "test.pdf", {"title": "Developer"}, saved_text="synthetic", saved_parsed={}
+    )
+    assert result.metrics["input_tokens"] == 100
+    assert result.metrics["output_tokens"] == 200
 
 
 async def test_readiness_warms_generation_with_synthetic_input():
@@ -467,8 +566,12 @@ async def test_model_pipeline_waits_outside_database_and_preserves_hr(monkeypatc
     from app.models import Application, Resume
     from app.tasks import resume_processing as processing
 
-    application = SimpleNamespace(status="Applied", score_ai=None)
-    resume = SimpleNamespace(id="resume-id", candidate_id="candidate-id")
+    application = SimpleNamespace(
+        status="Applied", score_ai=None, resume_id="resume-id", candidate_id="candidate-id", tenant_id="tenant-id"
+    )
+    resume = SimpleNamespace(
+        id="resume-id", candidate_id="candidate-id", processing_state=None, raw_text=None, parsed_data=None
+    )
     active = 0
 
     class Session:
@@ -482,7 +585,7 @@ async def test_model_pipeline_waits_outside_database_and_preserves_hr(monkeypatc
             active -= 1
 
         async def execute(self, query):
-            return SimpleNamespace(scalar_one_or_none=lambda: resume)
+            return SimpleNamespace(scalar_one_or_none=lambda: resume, scalar_one=lambda: resume)
 
         async def get(self, model, identifier):
             return resume if model is Resume else application if model is Application else None
@@ -490,19 +593,34 @@ async def test_model_pipeline_waits_outside_database_and_preserves_hr(monkeypatc
         async def commit(self):
             pass
 
-    async def model_pipeline(*args):
+    async def model_pipeline(*args, **kwargs):
         assert active == 0
+        await kwargs["persist"]("Python", {}, "inference", {})
         await asyncio.sleep(0.01)
-        return SimpleNamespace(raw_text="Python", parsed_data={}, analysis=map_analysis(response(), "Python", {}, 20))
+        return SimpleNamespace(
+            raw_text="Python", parsed_data={}, analysis=map_analysis(response(), "Python", {}, 20), metrics={}
+        )
 
     monkeypatch.setattr(settings, "RESUME_PIPELINE", "model")
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_URL", "http://local.invalid")
     monkeypatch.setattr(processing, "_load_job_context", AsyncMock(return_value={"title": "Developer"}))
     monkeypatch.setattr(processing, "_download_file", lambda url: b"test")
     monkeypatch.setattr("app.model_inference.pipeline.run_model_pipeline", model_pipeline)
+
+    async def snapshot(db, current_application, current_resume, context, analysis, metrics):
+        assert active == 1
+        assert current_application is application and current_resume is resume
+        assert context == {"title": "Developer"} and analysis["schema_version"] == "agents-v1"
+
+    recorded = AsyncMock(side_effect=snapshot)
+    monkeypatch.setattr("app.tasks.resume_model.record_analysis_version", recorded)
     await processing._process_resume_async("00000000-0000-0000-0000-000000000001", "local.pdf", Session)
+    recorded.assert_awaited_once()
     assert application.status == "Applied"
     assert application.score_ai == 70
     assert resume.agent_analysis["schema_version"] == "agents-v1"
+    assert resume.processing_state["status"] == "succeeded"
+    assert resume.raw_text == "Python"
     assert active == 0
 
 

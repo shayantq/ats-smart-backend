@@ -10,6 +10,9 @@ export default function TrackerTab() {
   } = useQuery({
     queryKey: ["candidate", "applications"],
     queryFn: fetchMyApplications,
+    refetchInterval: (query) => query.state.error || query.state.dataUpdateCount >= 120 ? false :
+      query.state.data?.some(item => item.processing_state && ["queued", "processing", "retrying"].includes(item.processing_state.status)) ? 5000 : false,
+    refetchIntervalInBackground: false,
   });
 
   if (isLoading) {

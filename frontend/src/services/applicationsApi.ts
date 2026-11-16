@@ -5,8 +5,10 @@
  */
 
 import { apiRequest, fetchAllCursorPages } from "./apiClient";
+import type { ProcessingState } from "../types/processing";
 
 export interface ApplicationDossier {
+  processing_state?: ProcessingState | null;
   application_id: string;
   resume_id: string | null;
   raw_text: string | null;
@@ -17,6 +19,11 @@ export interface ApplicationDossier {
 
 export function fetchApplicationDossier(applicationId: string): Promise<ApplicationDossier> {
   return apiRequest<ApplicationDossier>(`/applications/${applicationId}/dossier`);
+}
+
+export interface DocumentPage {page:number;pages:number;width:number;height:number;coordinate_space:string;file_sha256:string;image:string}
+export function fetchApplicationDocument(applicationId:string,page:number,hash:string,signal:AbortSignal):Promise<DocumentPage> {
+  return apiRequest(`/applications/${encodeURIComponent(applicationId)}/document/${page}${hash?`?expected_sha256=${encodeURIComponent(hash)}`:''}`,{signal,cache:'no-store'});
 }
 import type {
   ApplicationListItem,

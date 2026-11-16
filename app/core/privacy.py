@@ -25,7 +25,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import delete_cached
@@ -34,7 +34,16 @@ from app.core.security import hash_password_async
 from app.core.sessions import KNOWN_DEVICES_KEY_PREFIX, LOGIN_HISTORY_KEY_PREFIX, revoke_all_sessions
 from app.core.storage import get_storage_backend
 from app.core.tenancy import system_scope
-from app.models import Candidate, Resume, User
+from app.models import (
+    Candidate,
+    Resume,
+    User,
+    DossierReviewEvent,
+    DossierAnalysisVersion,
+    DossierReviewHead,
+    Application,
+    DossierReanalysisBatch,
+)
 
 logger = logging.getLogger("ats_smart.privacy")
 
@@ -67,13 +76,55 @@ async def anonymize_candidate_account(db: AsyncSession, user: User) -> Anonymiza
         file_urls: list[str] = []
         resumes: list[Resume] = []
         if candidate is not None:
-            resumes = list((await db.execute(select(Resume).where(Resume.candidate_id == candidate.id))).scalars())
+            resumes = list(
+                (
+                    await db.execute(
+                        select(Resume).where(Resume.candidate_id == candidate.id).order_by(Resume.id).with_for_update()
+                    )
+                ).scalars()
+            )
+            application_ids = list(
+                (await db.execute(select(Application.id).where(Application.candidate_id == candidate.id))).scalars()
+            )
+            if application_ids:
+                await db.execute(
+                    delete(DossierReviewEvent).where(DossierReviewEvent.application_id.in_(application_ids))
+                )
+                await db.execute(
+                    delete(DossierAnalysisVersion).where(DossierAnalysisVersion.application_id.in_(application_ids))
+                )
+                await db.execute(delete(DossierReviewHead).where(DossierReviewHead.application_id.in_(application_ids)))
+                # گروه‌ها فقط شناسه دارند؛ شناسهٔ همین کارجو از payload رمز‌شده حذف می‌شود.
+                batches = (
+                    await db.execute(
+                        select(DossierReanalysisBatch).where(
+                            DossierReanalysisBatch.job_id.in_(
+                                select(Application.job_id).where(Application.id.in_(application_ids))
+                            )
+                        )
+                    )
+                ).scalars()
+                removed = {str(i) for i in application_ids}
+                for batch in batches:
+                    values = dict(batch.payload)
+                    if not removed.intersection(values.get("items", {})):
+                        continue
+                    values["items"] = {k: v for k, v in values.get("items", {}).items() if k not in removed}
+                    batch.payload = values
             for resume in resumes:
                 if not resume.file_url.startswith(DELETED_FILE_URL_PREFIX):
                     file_urls.append(resume.file_url)
                 resume.file_url = f"{DELETED_FILE_URL_PREFIX}{resume.id}"
                 resume.raw_text = None  # ایندکس کور جستجو هم خودکار پاک می‌شود (listener مدل Resume)
                 resume.parsed_data = None
+                resume.agent_analysis = None
+                resume.processing_state = dict(
+                    status="failed",
+                    stage="privacy",
+                    error_code="account_anonymized",
+                    attempt_id=str(uuid.uuid4()),
+                    expires_at=0,
+                )
                 resume.skill_analysis = _anonymous_skill_analysis(resume.skill_analysis)
             candidate.first_name = ANONYMIZED_FIRST_NAME
             candidate.last_name = f"#{secrets.token_hex(3)}"

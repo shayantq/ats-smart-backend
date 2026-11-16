@@ -39,7 +39,29 @@ def process_resume_task(application_id: str, file_url: str) -> None:
     می‌کند)، پس با asyncio.run() یک event loop مستقل برای اجرای این Job
     ساخته می‌شود — و اتصال دیتابیس هم مخصوص همین loop (بنگرید worker_session_factory).
     """
-    asyncio.run(_run_job(application_id, file_url))
+    from rq import get_current_job
+    from app.tasks.resume_model import ResumeProcessingError
+
+    try:
+        asyncio.run(_run_job(application_id, file_url))
+    except ResumeProcessingError as error:
+        job = get_current_job()
+        if job and not error.retryable:
+            job.retries_left = 0
+        raise
+    except Exception as error:
+        if settings.RESUME_PIPELINE != "model":
+            raise
+        from rq.timeouts import JobTimeoutException
+        from sqlalchemy.exc import OperationalError
+
+        # خطای پیش از تصاحب رکورد هم نباید بدنهٔ SQL یا مسیر فایل را وارد لاگ RQ کند.
+        retryable = isinstance(error, (OSError, OperationalError, JobTimeoutException))
+        job = get_current_job()
+        if job and not retryable:
+            job.retries_left = 0
+        code = "infrastructure_unavailable" if retryable else "processing_internal_error"
+        raise ResumeProcessingError(code, retryable) from None
 
 
 async def _run_job(application_id: str, file_url: str) -> None:
@@ -48,10 +70,18 @@ async def _run_job(application_id: str, file_url: str) -> None:
 
 
 async def _process_resume_async(application_id: str, file_url: str, session_factory) -> None:
-    if settings.RESUME_PIPELINE == "linear":
+    if settings.RESUME_PIPELINE == "model":
+        from app.tasks.resume_model import run_model_job
+
+        await run_model_job(application_id, file_url, session_factory, _download_file)
+    elif settings.RESUME_PIPELINE == "linear":
         await _process_resume_linear(application_id, file_url, session_factory)
-    else:
+    elif settings.RESUME_PIPELINE == "multi_agent":
         await _process_resume_multi_agent(application_id, file_url, session_factory)
+    else:
+        from app.tasks.resume_model import ResumeProcessingError
+
+        raise ResumeProcessingError("pipeline_not_configured")
 
 
 async def _load_job_context(db, application_id: str, resume: Resume) -> dict | None:
@@ -82,7 +112,7 @@ async def _process_resume_multi_agent(application_id: str, file_url: str, sessio
     تخصصی (مهارت، اعتبارسنجی سوابق، مهارت نرم) را موازی اجرا و خروجی‌شان را جمع‌بندی می‌کند — بنگرید
     docs/agents/ARCHITECTURE.md. لاگ‌ها فقط شناسه و عدد دارند (بدون آدرس فایل یا متن رزومه).
     """
-    # ایمپورت تنبل: LangGraph فقط در پردازه‌ی Worker بارگذاری شود، نه در API
+    # این تابع فقط در مسیر صریح چندعاملی فراخوانی می‌شود.
     from app.agents.graph import run_agent_pipeline
     from app.agents.supervisor import to_skill_analysis
 
@@ -106,12 +136,7 @@ async def _process_resume_multi_agent(application_id: str, file_url: str, sessio
         return
 
     try:
-        if settings.RESUME_PIPELINE == "model":
-            from app.model_inference.pipeline import run_model_pipeline
-
-            result = await run_model_pipeline(file_bytes, file_url, job_context)
-        else:
-            result = await run_agent_pipeline(file_bytes, file_url, job_context)
+        result = await run_agent_pipeline(file_bytes, file_url, job_context)
     except UnreadableResumeFileError:
         logger.error(
             "استخراج متن رزومه ناموفق بود (فایل ناخوانا/خراب/قفل‌شده) | application_id=%s | resume_id=%s",

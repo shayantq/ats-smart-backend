@@ -20,6 +20,7 @@ export interface CandidateProfileUpdatePayload {
 
 /** یک ردیف از سیستم رهگیر وضعیت */
 export interface ApplicationTrackerItem {
+  processing_state?: import("./processing").ProcessingState | null;
   application_id: string;
   job_id: string;
   job_title: string;

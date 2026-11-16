@@ -4,7 +4,7 @@ const {pathToFileURL}=require('node:url');
 const {chromium}=require('@playwright/test');
 const {contrastAudit}=require('./theme-browser-check.cjs');
 const out=path.resolve(__dirname,process.env.ATS_A11Y_OUTPUT||'../training/reports/a11y');
-const root=path.resolve(__dirname,'dist');const url='http://127.0.0.1:4174';
+const root=path.resolve(__dirname,process.env.ATS_A11Y_DIST||'dist');const url='http://127.0.0.1:4174';
 const states=['Draft','Applied','Screening','Technical Interview','HR Interview','Offer','Accepted','Hired','Rejected'];
 const pageOf=items=>({items,has_next:false,has_previous:false,next_cursor:null,previous_cursor:null});
 const seed=()=>states.map((s,i)=>({application_id:'fixture-'+i,candidate_id:'candidate-'+i,candidate_name:i===2?'مریم احمدی — نمونهٔ ساختگی / Python & React با نام طولانی':'کارجوی ساختگی '+i,current_status:s,score_ai:i===0?null:82,updated_at:'2026-11-15T10:00:00Z'}));

@@ -109,6 +109,8 @@ class Resume(TenantMixin, Base):
     skill_analysis: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # خروجی یکپارچه‌ی اکوسیستم چندعاملی (app/agents) — رمزشده، چون نام شرکت‌ها و سوابق کاری را دارد
     agent_analysis: Mapped[dict | None] = mapped_column(EncryptedJSON, nullable=True)
+    # فقط فرادادهٔ عملیاتی؛ متن، نشانی فایل و دادهٔ شخصی در این ستون قرار نمی‌گیرند.
+    processing_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     candidate: Mapped["Candidate"] = relationship()
 

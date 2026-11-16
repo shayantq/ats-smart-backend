@@ -36,6 +36,7 @@ from app.core.search_query import (
 )
 from app.core.state_machine import ApplicationStatus, is_transition_allowed
 from app.db.session import get_db
+from app.tasks.resume_model import public_state
 from app.models import Application, Candidate, Company, Job, Resume, StatusHistory, User
 from app.schemas.candidate_search import CandidateSearchItem, CandidateSearchResponse
 from app.schemas.candidates import (
@@ -163,8 +164,16 @@ async def list_my_applications(
     candidate = await get_or_create_candidate_profile(db, current_user)
 
     query = (
-        select(Application.id, Application.job_id, Job.title, Application.current_status, Application.updated_at)
+        select(
+            Application.id,
+            Application.job_id,
+            Job.title,
+            Application.current_status,
+            Application.updated_at,
+            Resume.processing_state,
+        )
         .join(Job, Job.id == Application.job_id)
+        .outerjoin(Resume, Resume.id == Application.resume_id)
         .where(Application.candidate_id == candidate.id)
     )
 
@@ -184,6 +193,7 @@ async def list_my_applications(
             job_title=row.title,
             current_status=row.current_status,
             updated_at=row.updated_at,
+            processing_state=public_state(row.processing_state),
         )
         for row in cursor_page.items
     ]

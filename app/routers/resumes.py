@@ -10,21 +10,24 @@
 فقط کاربرانی با نقش Candidate اجازه‌ی آپلود رزومه‌ی خودشان را دارند.
 """
 
-import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.candidate_utils import get_or_create_candidate_profile
 from app.core.deps import get_current_user, require_roles
 from app.core.queue import enqueue_task
 from app.core.storage import get_storage_backend
+from app.core.storage import resolve_local_media_path
+from fastapi.responses import FileResponse
+from app.core.tenancy import system_scope
 from app.db.session import get_db
 from app.models import Application, Job, Resume, User
 from app.schemas.resumes import ResumeDetailResponse, ResumeUploadResponse
 from app.tasks.resume_processing import process_resume_task
+from app.tasks.resume_model import now, public_state
 
 router = APIRouter()
 
@@ -104,7 +107,18 @@ async def upload_resume(
 
     try:
         # چندمستاجری: رزومه و درخواست متعلق به سازمانِ صاحب آگهی‌اند (کارجو خودش سازمانی ندارد)
-        resume = Resume(candidate_id=candidate.id, file_url=file_url, tenant_id=job.tenant_id)
+        resume = Resume(
+            candidate_id=candidate.id,
+            file_url=file_url,
+            tenant_id=job.tenant_id,
+            processing_state={
+                "status": "queued",
+                "stage": "queued",
+                "attempt": 0,
+                "updated_at": now(),
+                "expires_at": now() + 86400,
+            },
+        )
         db.add(resume)
         await db.flush()
 
@@ -127,9 +141,25 @@ async def upload_resume(
 
     await db.refresh(application)
 
-    # ارسال کار پردازش رزومه به صف Redis — عمداً با create_task (نه await مستقیم)
-    # تا خودِ درخواست HTTP اصلی معطل ارتباط با Redis نماند و پاسخ 202 فوری برگردد.
-    asyncio.create_task(enqueue_task(process_resume_task, str(application.id), file_url))
+    # enqueue در thread انجام می‌شود؛ دریافت شناسه مانع اعلام صف‌گیری کاذب است.
+    queued = await enqueue_task(process_resume_task, str(application.id), file_url, description="resume_analysis")
+    if not queued:
+        failed_state = {
+            "status": "failed",
+            "stage": "queued",
+            "attempt": 0,
+            "updated_at": now(),
+            "error_code": "queue_unavailable",
+        }
+        # کارجو حق UPDATE رزومه ندارد؛ فقط فرادادهٔ رکوردی که همین درخواست ساخته ثبت می‌شود.
+        async with system_scope(db):
+            await db.execute(
+                update(Resume)
+                .where(Resume.id == resume.id, Resume.candidate_id == candidate.id, Resume.tenant_id == job.tenant_id)
+                .values(processing_state=failed_state)
+            )
+            await db.commit()
+        raise HTTPException(status_code=503, detail="فایل ذخیره شد؛ صف تحلیل موقتاً در دسترس نیست.")
 
     return ResumeUploadResponse(
         application_id=application.id,
@@ -155,4 +185,47 @@ async def get_resume(resume_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -
     resume = (await db.execute(select(Resume).where(Resume.id == resume_id))).scalar_one_or_none()
     if resume is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="رزومه یافت نشد.")
-    return ResumeDetailResponse.model_validate(resume)
+    result = ResumeDetailResponse.model_validate(resume)
+    result.processing_state = public_state(resume.processing_state)
+    return result
+
+
+@router.get("/{resume_id}/processing", summary="وضعیت تحلیل؛ صاحب رزومه یا HR همان سازمان")
+async def resume_processing_status(
+    resume_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # RLS و فیلتر ORM دسترسی کارجو به رزومهٔ خودش و HR به سازمان خودش را اعمال می‌کنند.
+    if user.role not in (*RESUME_VIEWER_ROLES, "Candidate"):
+        raise HTTPException(status_code=403, detail="دسترسی مجاز نیست.")
+    resume = (await db.execute(select(Resume).where(Resume.id == resume_id))).scalar_one_or_none()
+    if resume is None:
+        raise HTTPException(status_code=404, detail="رزومه یافت نشد.")
+    return {"processing_state": public_state(resume.processing_state)}
+
+
+@router.get("/{resume_id}/file", summary="دریافت خصوصی فایل؛ صاحب رزومه یا HR همان سازمان")
+async def private_resume_file(
+    resume_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+):
+    if user.role not in (*RESUME_VIEWER_ROLES, "Candidate"):
+        raise HTTPException(403, "دسترسی مجاز نیست.")
+    resume = (await db.execute(select(Resume).where(Resume.id == resume_id))).scalar_one_or_none()
+    if resume is None or resume.file_url.startswith("deleted:"):
+        raise HTTPException(404, "رزومه یافت نشد.")
+    path = resolve_local_media_path(resume.file_url)
+    if path is None:
+        raise HTTPException(501, "private_storage_download_unavailable")
+    if not path.is_file():
+        raise HTTPException(404, "document_missing")
+    media_type = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename="resume" + path.suffix.lower(),
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )

@@ -10,6 +10,7 @@
 from typing import Optional
 
 from pydantic import BaseModel, Field
+from app.schemas.structured_resume import StructuredResume
 
 
 class PersonalInfo(BaseModel):
@@ -21,6 +22,8 @@ class PersonalInfo(BaseModel):
 
 
 class WorkExperienceEntry(BaseModel):
+    evidence: Optional[str] = None
+    source: Optional[str] = None
     """یک ردیف تجربه‌ی شغلی استخراج‌شده."""
 
     company: Optional[str] = None
@@ -42,3 +45,4 @@ class ParsedResumeData(BaseModel):
     personal_info: PersonalInfo = Field(default_factory=PersonalInfo)
     education: list[EducationEntry] = Field(default_factory=list)
     work_experience: list[WorkExperienceEntry] = Field(default_factory=list)
+    structured: StructuredResume | None = None

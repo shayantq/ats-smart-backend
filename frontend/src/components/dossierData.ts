@@ -12,11 +12,21 @@ export function dossierData(data: ApplicationDossier | undefined) {
   const skills = object(agent.skills);
   const experience = object(agent.experience);
   const soft = object(agent.soft_skills);
-  const skillNames = array(skills.status === "completed" ? skills.items : data?.skill_analysis?.skills)
+  const profile=object(data?.parsed_data?._evidence_analysis);
+  const skillNames = array(['evidence-analysis-v1','evidence-analysis-v2','evidence-analysis-v2.1'].includes(text(profile.version))?array(profile.skills).map(object).filter(s=>s.basis==='explicit'&&!s.conflict):skills.status === "completed" ? skills.items : data?.skill_analysis?.skills)
     .map(value => typeof value === "string" ? value : text(object(value).name)).filter(Boolean);
-  const source = Array.isArray(experience.entries) && experience.entries.length ? experience.entries
-    : array(data?.skill_analysis?.experience_entries).length ? data?.skill_analysis?.experience_entries
-    : data?.parsed_data?.work_experience;
+  const supported = (value:unknown) => array(value).map(object).filter(entry => ["resume_evidence_v2","resume_evidence_v3"].includes(text(entry.source)) && !!text(entry.evidence));
+  const rich=object(data?.parsed_data?.structured);
+  const grounded=rich.version==="resume-structured-v1" ? array(rich.activities).map(object).filter(x=>["employment","internship","freelance"].includes(text(x.kind))).map(x=>{
+    const fields=object(x.fields), dates=object(x.dates);
+    return {job_title:text(object(fields.job_title).value),company:text(object(fields.company).value),duration:text(object(fields.duration).value),
+      start_year:object(dates.start).year,start_year_gregorian:Number(text(object(dates.start).earliest).slice(0,4)) || undefined,
+      is_valid:dates.status==="valid",fields,claims:x.claims,kind:x.kind,
+      flag_reason:dates.status!=="valid"?"تاریخ این سابقه مشخص یا معتبر نیست؛ مدت آن به جمع سابقه افزوده نشده است.":null};
+  }) : null;
+  const source = grounded ?? (experience.status === "completed" && supported(experience.entries).length ? supported(experience.entries)
+    : supported(data?.parsed_data?.work_experience).length ? supported(data?.parsed_data?.work_experience)
+    : supported(data?.skill_analysis?.experience_entries));
   const entries: (Record<string, unknown> & {originalIndex:number})[] = array(source).map(object).map((value,index) => ({...value, originalIndex:index}));
   // تقویم‌های بدون معادل استاندارد جدا مرتب می‌شوند؛ تبدیل تقریبی تاریخ انجام نمی‌دهیم.
   entries.sort((a,b) => {

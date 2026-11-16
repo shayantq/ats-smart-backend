@@ -1,6 +1,8 @@
 """کلاینت async با صف محدود، مهلت سراسری و اتصال‌های قابل استفادهٔ مجدد."""
 
 import asyncio
+import json
+import math
 from contextlib import aclosing, asynccontextmanager
 
 import httpx
@@ -14,6 +16,56 @@ class InferenceError(Exception):
         super().__init__(code)
         self.code = code
         self.status_code = status_code
+        self.metrics = {}
+
+    @property
+    def retryable(self) -> bool:
+        """فقط خطاهای موقتی شبکه و ظرفیت اجازهٔ تلاش مجدد دارند."""
+        return self.status_code in (429, 503, 504)
+
+
+SAFE_GATEWAY_ERRORS = frozenset(
+    {
+        "overloaded",
+        "model_not_ready",
+        "context_limit_exceeded",
+        "incomplete_generation",
+        "invalid_engine_response",
+        "engine_response_too_large",
+        "engine_deadline_exceeded",
+        "engine_unavailable",
+        "client_disconnected",
+    }
+)
+
+SAFE_TIMINGS = (
+    "prompt_tokenization_ms",
+    "engine_request_ms",
+    "engine_prompt_ms",
+    "engine_predicted_ms",
+    "response_validation_ms",
+)
+
+
+async def _gateway_error(response: httpx.Response) -> InferenceError:
+    """فقط کدهای ثابت قرارداد منتقل می‌شوند؛ بدنهٔ خطا ممکن است دادهٔ حساس داشته باشد."""
+    body = bytearray()
+    async with aclosing(response.aiter_bytes()) as stream:
+        async for chunk in stream:
+            if len(body) + len(chunk) > 4096:
+                break
+            body.extend(chunk)
+    try:
+        detail = json.loads(body).get("detail")
+    except (ValueError, AttributeError):
+        detail = None
+    code = detail if isinstance(detail, str) and detail in SAFE_GATEWAY_ERRORS else "inference_http_error"
+    error = InferenceError(code, response.status_code)
+    for key in ("input_tokens", "context_limit", "output_limit"):
+        value = response.headers.get("X-ATS-" + key.replace("_", "-"), "")
+        if value.isascii() and value.isdigit() and len(value) <= 9:
+            error.metrics[key] = int(value)
+    return error
 
 
 class Capacity:
@@ -67,15 +119,22 @@ class InferenceClient:
                     "POST", "/v1/analyze", json=request.model_dump(), headers={"X-Internal-Auth": token}
                 ) as response:
                     if response.status_code != 200:
-                        code = response.status_code if response.status_code in (429, 503, 504) else 502
-                        raise InferenceError("inference_http_error", code)
+                        raise await _gateway_error(response)
                     body = bytearray()
                     async with aclosing(response.aiter_bytes()) as stream:
                         async for chunk in stream:
                             body.extend(chunk)
                             if len(body) > 65536:
                                 raise InferenceError("response_too_large", 502)
-                return AnalyzeResponse.model_validate_json(bytes(body))
+                result = AnalyzeResponse.model_validate_json(bytes(body))
+                for key in SAFE_TIMINGS:
+                    try:
+                        value = float(response.headers.get("X-ATS-Time-" + key.replace("_", "-"), ""))
+                    except ValueError:
+                        continue
+                    if math.isfinite(value) and 0 <= value < 1e9:
+                        result._timings_ms[key] = value
+                return result
         except (TimeoutError, httpx.TimeoutException):
             raise InferenceError("deadline_exceeded", 504) from None
         except httpx.HTTPError:

@@ -1,0 +1,43 @@
+# محیط توسعهٔ محلی؛ نام volumeها با محیط موجود یکسان است تا داده‌ها حفظ شوند.
+name: ats-editorial-preview
+services:
+  api:
+    image: ${ATS_LOCAL_API_IMAGE:-ats-editorial-api:employment}
+    command: [uvicorn, app.main:app, --host, 0.0.0.0, --port, '8000']
+    env_file: ${ATS_LOCAL_ROOT:?}/secrets/editorial-docker.env
+    volumes:
+      - ${ATS_LOCAL_ROOT:?}/app:/app/app:ro
+      - ${ATS_LOCAL_ROOT:?}/training/reports/editorial/local-media:/app/media
+    ports: [127.0.0.1:8000:8000]
+    mem_limit: 512m
+    cpus: 1
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${LOCAL_PG_PASSWORD:?}
+      POSTGRES_DB: ats_preview
+    ports: [127.0.0.1:15439:5432]
+    volumes: [editorial_db:/var/lib/postgresql/data]
+    mem_limit: 384m
+    cpus: 1
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d ats_preview]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes', --maxmemory, 64mb, --maxmemory-policy, noeviction]
+    ports: [127.0.0.1:16379:6379]
+    volumes: [editorial_redis:/data]
+    mem_limit: 96m
+    cpus: 0.5
+volumes:
+  editorial_db:
+  editorial_redis:

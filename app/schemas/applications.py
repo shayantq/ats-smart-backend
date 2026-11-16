@@ -66,6 +66,7 @@ class ApplicationListResponse(BaseModel):
 
 
 class ApplicationDossierResponse(BaseModel):
+    processing_state: dict | None = None
     """جزئیات فقط از رزومهٔ صریحاً مرتبط؛ دادهٔ شخصی هرگز وارد لیست بورد نمی‌شود."""
 
     application_id: uuid.UUID

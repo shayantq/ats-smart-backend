@@ -1,6 +1,7 @@
 from app.models.base import Base
 from app.models.core import Candidate, Company, Job, User
 from app.models.genai import InterviewQuestion, InterviewQuestionSet
+from app.models.dossier import DossierReviewHead, DossierReviewEvent, DossierAnalysisVersion, DossierReanalysisBatch
 from app.models.process import Application, Interview, Resume, Skill
 from app.models.security import (
     Audit,
@@ -13,6 +14,10 @@ from app.models.security import (
 
 __all__ = [
     "Base",
+    "DossierReviewHead",
+    "DossierReviewEvent",
+    "DossierAnalysisVersion",
+    "DossierReanalysisBatch",
     "User",
     "Company",
     "Candidate",

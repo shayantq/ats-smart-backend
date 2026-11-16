@@ -23,7 +23,7 @@ import logging
 import sys
 
 from redis import Redis
-from rq import SimpleWorker
+from rq import SimpleWorker, Worker
 from rq.timeouts import TimerDeathPenalty
 
 from app.core.config import settings
@@ -31,6 +31,16 @@ from app.core.crypto import validate_keys
 from app.core.queue import ALL_QUEUES
 
 logging.basicConfig(level=logging.INFO)
+
+
+class ResumeLogFilter(logging.Filter):
+    """RQ آرگومان‌ها را به‌عنوان extra ثبت می‌کند؛ نشانی فایل نباید وارد لاگ شود."""
+
+    def filter(self, record):
+        if str(getattr(record, "func", "")).startswith("app.tasks.resume_processing"):
+            record.arguments = ()
+            record.kwargs = {}
+        return True
 
 
 class WindowsCompatibleWorker(SimpleWorker):
@@ -49,7 +59,10 @@ def main(queue_names: list[str] | None = None) -> None:
     # health_check_interval: اتصال قطع‌شده (مثلاً بعد از ری‌استارت Redis) پیش از استفاده شناسایی می‌شود.
     # socket_timeout عمداً تنظیم نشده: Worker برای انتظار کار جدید از BLPOP چنددقیقه‌ای استفاده می‌کند.
     redis_connection = Redis.from_url(settings.REDIS_URL, socket_connect_timeout=5, health_check_interval=30)
-    worker = WindowsCompatibleWorker(queue_names, connection=redis_connection)
+    # لینوکس: پردازهٔ فرزند و مهلت Unix؛ ویندوز: سازگاری قبلی حفظ می‌شود.
+    worker_class = WindowsCompatibleWorker if sys.platform == "win32" else Worker
+    logging.getLogger("rq.worker").addFilter(ResumeLogFilter())
+    worker = worker_class(queue_names, connection=redis_connection, log_job_description=False)
     logging.getLogger("ats_smart.worker").info("Worker صف‌ها (به ترتیب اولویت): %s", ", ".join(queue_names))
     # with_scheduler: تلاش مجدد کارهای ناموفق با فاصله‌ی زمانی (Retry در app/core/queue.py) — زمان‌بند
     # داخلی RQ پردازه‌ی جدا می‌سازد که روی ویندوز (توسعه‌ی محلی بدون Docker) پشتیبانی نمی‌شود

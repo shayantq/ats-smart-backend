@@ -58,6 +58,7 @@ class CandidateProfileUpdateRequest(BaseModel):
 
 
 class ApplicationTrackerItem(BaseModel):
+    processing_state: dict | None = None
     """یک ردیف از سیستم رهگیر وضعیت — نشان می‌دهد رزومه‌ی کارجو برای کدام آگهی، در کدام مرحله است."""
 
     application_id: uuid.UUID

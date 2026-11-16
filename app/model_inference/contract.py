@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
 class Strict(BaseModel):
@@ -70,6 +70,12 @@ class AnalyzeResponse(Strict):
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
     model: str
+    # فراداده از header منتقل می‌شود؛ بدنه و schema قرارداد شبکه تغییر نمی‌کنند.
+    _timings_ms: dict[str, float] = PrivateAttr(default_factory=dict)
+
+    @property
+    def timings_ms(self) -> dict[str, float]:
+        return self._timings_ms
 
 
 INSTRUCTION = (

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import KanbanBoard from "../components/KanbanBoard";
+import DossierBatchWorkspace from '../components/DossierBatchWorkspace';
 import TodayInterviewsPanel from "../components/interview/TodayInterviewsPanel";
 const AnalyticsDashboard = lazy(() => import("../components/analytics/AnalyticsDashboard"));
 import NotificationsPanel from "../components/notifications/NotificationsPanel";
@@ -11,13 +12,14 @@ import { fetchActiveJobs } from "../services/jobsApi";
 import { useAppSelector } from "../store/hooks";
 import type { Job } from "../types/job";
 
-type HRTab = "kanban" | "new_job" | "interviews" | "analytics" | "notifications";
+type HRTab = "kanban" | "new_job" | "interviews" | "analytics" | "notifications" | "review";
 
 // ثبت آگهی فقط برای نقش‌های مدیریت آگهی (همان JOB_MANAGER_ROLES بک‌اند)؛ مصاحبه‌کننده این تب را نمی‌بیند
 const JOB_MANAGER_ROLES = ["Admin", "HR_Manager"];
 
 const TABS: { value: HRTab; label: string; managersOnly?: boolean }[] = [
   { value: "kanban", label: "بورد کانبان" },
+  { value: "review", label: "بررسی گروهی", managersOnly:true },
   { value: "new_job", label: "ثبت آگهی", managersOnly: true },
   { value: "interviews", label: "مصاحبه‌های امروز" },
   { value: "analytics", label: "داشبورد تحلیلی" },
@@ -139,6 +141,7 @@ export default function HRDashboard() {
 
         <section role="tabpanel" id={`hr-panel-${activeTab}`} aria-labelledby={`hr-tab-${activeTab}`} tabIndex={0}>
         {activeTab === "kanban" && <KanbanBoard key={activeJobId} jobId={activeJobId} />}
+        {activeTab === "review" && canManageJobs && <DossierBatchWorkspace key={activeJobId} jobId={activeJobId}/>}
         {activeTab === "new_job" && canManageJobs && <JobCreateForm onCreated={handleJobCreated} />}
         {activeTab === "interviews" && <TodayInterviewsPanel />}
         {activeTab === "analytics" && <Suspense fallback={<p role="status">در حال بارگذاری داشبورد…</p>}><AnalyticsDashboard jobId={activeJobId} /></Suspense>}

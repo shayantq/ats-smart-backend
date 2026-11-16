@@ -30,7 +30,7 @@ def test_extracts_work_experience_section():
     experience = parse_resume_text(SAMPLE_RESUME).work_experience
 
     assert len(experience) == 1
-    assert experience[0].company == "نوآوران"
+    assert experience[0].company == "شرکت نوآوران"
     assert experience[0].job_title == "توسعه‌دهنده بک‌اند"
     assert experience[0].duration == "1397 - 1401"
 

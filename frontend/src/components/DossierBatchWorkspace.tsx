@@ -1,0 +1,46 @@
+import {useEffect,useState} from 'react';
+import {useMutation,useQuery} from '@tanstack/react-query';
+import {fetchApplicationPage} from '../services/applicationsApi';
+import {compareDossiers,createReanalysisBatch,getBatch,recoverBatch} from '../services/dossierReviewApi';
+import {STATUS_COLUMNS,type ApplicationListItem,type ApplicationStatus} from '../types/application';
+import {object,text} from './dossierData';
+import CandidateDossier from './CandidateDossier';
+
+export default function DossierBatchWorkspace({jobId}:{jobId:string}) {
+  const [status,setStatus]=useState<ApplicationStatus>(STATUS_COLUMNS[0].value),[cursor,setCursor]=useState<string|null>(null),[previous,setPrevious]=useState<(string|null)[]>([]);
+  const [selected,setSelected]=useState<Map<string,ApplicationListItem>>(new Map()),[batch,setBatch]=useState(''),[shortOnly,setShortOnly]=useState(false),[opened,setOpened]=useState<ApplicationListItem|null>(null);
+  const [evidenceFilter,setEvidenceFilter]=useState('all');
+  const page=useQuery({queryKey:['review-page',jobId,status,cursor],queryFn:()=>fetchApplicationPage(jobId,status,cursor),enabled:!!jobId,retry:false});
+  const comparison=useMutation({mutationFn:()=>compareDossiers([...selected.keys()])});
+  const reanalysis=useMutation({mutationFn:()=>createReanalysisBatch([...selected.keys()]),onSuccess:r=>{setBatch(r.batch_id);comparison.reset();}});
+  const progress=useQuery({queryKey:['review-batch',batch],queryFn:()=>getBatch(batch),enabled:!!batch,retry:false,refetchInterval:q=>q.state.dataUpdateCount>=120?false:q.state.data?.items.every(i=>['succeeded','failed','unavailable'].includes(text(object(i.processing).status)))?false:5000,refetchIntervalInBackground:false});
+  const recovery=useMutation({mutationFn:()=>recoverBatch(batch),onSuccess:()=>{void progress.refetch();comparison.reset();}});
+  useEffect(()=>{setSelected(new Map());setCursor(null);setPrevious([]);setBatch('');setOpened(null);comparison.reset();reanalysis.reset();},[jobId]);
+  function choose(item:ApplicationListItem,checked:boolean){comparison.reset();setSelected(old=>{const next=new Map(old);if(checked&&next.size<20)next.set(item.application_id,item);else if(!checked)next.delete(item.application_id);return next;});}
+  if(!jobId)return <p className="text-body">ابتدا یک آگهی انتخاب کنید.</p>;
+  return <div className="min-w-0"><h2 className="text-heading">بررسی گروهی پرونده‌ها</h2><p className="my-3 text-caption text-muted">فقط درخواست‌های همین آگهی انتخاب می‌شوند؛ مقایسه تا ۱۰ و تحلیل مجدد تا ۲۰ پرونده. هیچ پیام خودکاری به کارجو ارسال نمی‌شود.</p>
+    <label className="text-caption">مرحلهٔ استخدام<select value={status} onChange={e=>{setStatus(e.target.value as ApplicationStatus);setCursor(null);setPrevious([]);}} className="ms-2 rounded border border-rule bg-paper p-2">{STATUS_COLUMNS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></label>
+    {page.isPending&&<p role="status">در حال دریافت فهرست…</p>}{page.isError&&<p role="alert">دریافت فهرست انجام نشد.</p>}
+    <ul className="my-4 divide-y divide-rule">{page.data?.items.map(item=><li key={item.application_id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-caption"><label className="flex min-w-0 items-center gap-2"><input type="checkbox" checked={selected.has(item.application_id)} disabled={!selected.has(item.application_id)&&selected.size>=20} onChange={e=>choose(item,e.target.checked)}/><bdi className="break-words">{item.candidate_name}</bdi></label><button onClick={()=>setOpened(item)} className="rounded border border-rule px-3 py-2">مشاهده پرونده</button></li>)}</ul>
+    {page.data&&!page.data.items.length&&<p className="my-3 text-caption text-muted">درخواستی در این مرحله وجود ندارد.</p>}
+    <div className="flex flex-wrap gap-3 text-caption"><button disabled={!previous.length} onClick={()=>{setCursor(previous[previous.length-1]);setPrevious(p=>p.slice(0,-1));}} className="rounded border border-rule px-3 py-2 disabled:opacity-40">صفحهٔ قبل فهرست</button><button disabled={!page.data?.has_next} onClick={()=>{setPrevious(p=>[...p,cursor]);setCursor(page.data?.next_cursor||null);}} className="rounded border border-rule px-3 py-2 disabled:opacity-40">صفحهٔ بعد فهرست</button></div>
+    <p role="status" className="my-4 text-caption">{selected.size.toLocaleString('fa-IR')} پرونده انتخاب شده است.</p>
+    <div className="flex flex-wrap gap-3 text-caption"><button disabled={!selected.size||selected.size>10||comparison.isPending} onClick={()=>comparison.mutate()} className="rounded border border-rule px-3 py-2 disabled:opacity-40">مقایسهٔ شواهد منتخب‌ها</button><button disabled={!selected.size||reanalysis.isPending} onClick={()=>reanalysis.mutate()} className="rounded border border-rule px-3 py-2 disabled:opacity-40">صف‌گیری تحلیل مجدد منتخب‌ها</button><button onClick={()=>{setSelected(new Map());comparison.reset();}} className="px-3 py-2 underline">پاک‌کردن انتخاب‌ها</button></div>
+    {(comparison.isError||reanalysis.isError)&&<p role="alert" className="my-3 text-caption">عملیات انجام نشد؛ دسترسی، یکسان‌بودن آگهی و اتصال صف را بررسی کنید.</p>}
+    {recovery.isError&&<p role="alert" className="my-3 text-caption">بازیابی ارسال انجام نشد؛ وضعیت قبلی محفوظ است. اتصال یا مجوز نویسندهٔ گروه را بررسی کنید.</p>}
+    {batch&&progress.data?.can_recover&&<div className="my-3 text-caption"><p>بعضی ارسال‌ها به صف کامل نشده‌اند. فقط همان ارسال‌های ناتمام، با شناسهٔ ثابت و حداکثر سه تلاش بازیابی می‌شوند.</p><button disabled={recovery.isPending} onClick={()=>recovery.mutate()} className="mt-2 rounded border border-rule px-3 py-2 disabled:opacity-40">بازیابی ارسال‌های ناتمام گروه</button></div>}
+    {comparison.data&&<section className="editorial-panel"><h3 className="text-heading">مقایسهٔ مستند</h3><p className="my-2 text-caption">{comparison.data.comparable?'روش و نسخهٔ آگهی همسان‌اند؛ شواهد را کنار هم بررسی کنید.':'بعضی تحلیل‌ها ناقص‌اند یا نسخه/روش یکسان نیست؛ رتبه‌بندی عددی معتبر نیست.'} ترتیب نمایش، رتبه‌بندی نیست.</p><label className="my-3 flex items-center gap-2 text-caption"><input type="checkbox" checked={shortOnly} onChange={e=>setShortOnly(e.target.checked)}/>فقط پرونده‌های منتخب تیم</label>
+      <label className="my-3 block text-caption">فیلتر شواهد<select value={evidenceFilter} onChange={e=>setEvidenceFilter(e.target.value)} className="ms-2 rounded border border-rule bg-paper p-2"><option value="all">همهٔ پرونده‌ها</option><option value="unknown">دارای شرط نامشخص</option><option value="evidenced">دارای شرط مستند</option></select></label>
+      <div className="grid min-w-0 gap-4 md:grid-cols-2">{comparison.data.items.filter(r=>!shortOnly||r.shortlisted).filter(r=>evidenceFilter==='all'||(Array.isArray(r.requirements)&&r.requirements.some(item=>object(item).status===(evidenceFilter==='unknown'?'unknown':'met')))).map(row=>{
+        const requirements=Array.isArray(row.requirements)?row.requirements.map(object):[];
+        return <article key={text(row.application_id)} className="min-w-0 border-s border-rule ps-3"><h4 className="font-medium"><bdi>{selected.get(text(row.application_id))?.candidate_name||'پروندهٔ انتخاب‌شده'}</bdi></h4><p className="text-caption">{row.shortlisted?'منتخب تیم':'هنوز در فهرست منتخب تیم نیست'} — {row.complete?'تحلیل ذخیره شده':'تحلیل نیازمند تکمیل یا بازبینی است'}</p>
+          <p className="my-2 text-caption">پوشش شروط: {requirements.filter(r=>r.status==='met').length.toLocaleString('fa-IR')} مستند، {requirements.filter(r=>r.status==='unknown').length.toLocaleString('fa-IR')} نامشخص، {requirements.filter(r=>r.status==='unmet').length.toLocaleString('fa-IR')} ناسازگاری اظهارشده؛ این شمارش، نمرهٔ استخدام نیست.</p>
+          <ul className="mt-2 space-y-2 text-caption">{requirements.map((requirement,i)=><li key={i} className="break-words"><bdi>{text(requirement.text)}</bdi>: {({met:'دارای شاهد',unmet:'ناسازگاری اظهارشده',unknown:'نامشخص'} as Record<string,string>)[text(requirement.status)]||'نامشخص'}
+            {Array.isArray(requirement.evidence)&&requirement.evidence.length>0&&<details><summary className="cursor-pointer">شواهد شرط</summary>{requirement.evidence.slice(0,5).map((e,j)=><blockquote key={j} className="my-2 whitespace-pre-wrap border-s border-rule ps-2"><bdi>{text(object(e).text)}</bdi></blockquote>)}</details>}
+          </li>)}</ul></article>;
+      })}</div>
+    </section>}
+    {batch&&<section className="editorial-panel"><h3 className="text-heading">پیشرفت تحلیل گروه</h3><button onClick={()=>void progress.refetch()} className="my-2 underline text-caption">تازه‌سازی پیشرفت</button>{progress.isError&&<p role="alert">دریافت پیشرفت ممکن نشد.</p>}<ul className="space-y-2 text-caption">{progress.data?.items.map(row=><li key={text(row.application_id)}><bdi>{selected.get(text(row.application_id))?.candidate_name||'پروندهٔ انتخاب‌شده'}</bdi> — {({queued:'در صف',processing:'در حال پردازش',retrying:'تلاش مجدد',succeeded:'تحلیل ذخیره شد',failed:'ناموفق',unavailable:'در دسترس نیست'} as Record<string,string>)[text(object(row.processing).status)]||'وضعیت نامشخص'}{object(row.queue).reason==='already_active'?'؛ کار فعال دوباره صف‌گیری نشد':''}</li>)}</ul></section>}
+    {opened&&<CandidateDossier application={opened} onClose={()=>{setOpened(null);comparison.reset();}}/>}
+  </div>;
+}

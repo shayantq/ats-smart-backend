@@ -1,0 +1,18 @@
+import type { ProcessingState } from "../types/processing";
+
+const labels = {
+  queued: "در صف تحلیل",
+  processing: "در حال پردازش رزومه",
+  retrying: "خطای موقت؛ در انتظار تلاش مجدد",
+  succeeded: "تحلیل ذخیره شد؛ نتایج همچنان نیازمند بررسی انسانی است",
+  failed: "تحلیل ناموفق بود؛ متن استخراج‌شده، در صورت وجود، حفظ شده است",
+};
+const stages: Record<string, string> = {loading:"خواندن فایل", extraction:"استخراج متن", parsing:"استخراج اطلاعات", inference:"تحلیل مدل", commit:"ذخیرهٔ نتیجه"};
+
+export default function ResumeProcessingStatus({state}: {state?: ProcessingState | null}) {
+  if (!state) return null;
+  return <p role={state.status === "failed" ? "alert" : "status"} aria-atomic="true" className="my-4 text-caption text-muted">
+    {labels[state.status]}{state.status === "processing" && stages[state.stage] && ` — ${stages[state.stage]}`}
+    {state.error_code && <> — کد پیگیری: <bdi>{state.error_code}</bdi></>}
+  </p>;
+}

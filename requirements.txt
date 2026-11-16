@@ -83,3 +83,5 @@ prometheus-client==0.21.0
 # ---- دیتاست آموزش تکمیلی (app/datasets/finetune) ----
 # شمارش توکن و آزمون رفت‌وبرگشت با tokenizer.json مدل پایه‌ی هدف (کتابخانه‌ی سبک، بدون torch)
 tokenizers==0.22.1
+jdatetime==5.2.0
+jalali-core==1.0.0

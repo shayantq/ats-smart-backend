@@ -102,6 +102,29 @@ async def test_direct_access_to_other_tenant_record_returns_404(client, db_sessi
     assert job_a.status == "Active" and application_a.current_status == "Applied"
 
 
+async def test_processing_status_is_owner_or_same_tenant_only(client, db_session, two_orgs):
+    resume = two_orgs["A"]["resume"]
+    resume.processing_state = {
+        "status": "retrying",
+        "stage": "inference",
+        "attempt": 1,
+        "error_code": "engine_unavailable",
+        "attempt_id": "private",
+        "metrics": {"secret": 1},
+    }
+    await db_session.commit()
+    url = f"/api/v1/resumes/{resume.id}/processing"
+    for user in (two_orgs["A"]["hr"], two_orgs["A"]["candidate_user"]):
+        response = await client.get(url, headers=auth_headers(user))
+        assert response.status_code == 200
+        state = response.json()["processing_state"]
+        assert state["status"] == "retrying"
+        assert "attempt_id" not in state and "metrics" not in state
+    for user in (two_orgs["B"]["hr"], two_orgs["B"]["candidate_user"]):
+        assert (await client.get(url, headers=auth_headers(user))).status_code == 404
+    assert (await client.get(url)).status_code == 401
+
+
 async def test_dossier_uses_exact_resume_and_keeps_tenant_boundary(client, db_session, two_orgs):
     a, b = two_orgs["A"], two_orgs["B"]
     a["application"].resume_id = a["resume"].id
@@ -114,6 +137,10 @@ async def test_dossier_uses_exact_resume_and_keeps_tenant_boundary(client, db_se
         )
     )
     a["resume"].parsed_data = {"work_experience": [{"company": "نمونه", "duration": "1400-1402"}]}
+    from app.core.structured_resume import build_structured
+
+    structured = build_structured("MIRA HART\nEXPERIENCE\nEngineer | Harbor Systems\n2020 - 2024")
+    a["resume"].parsed_data = dict(a["resume"].parsed_data, structured=structured)
     await db_session.commit()
     path = f"/api/v1/applications/{a['application'].id}/dossier"
     own = await client.get(path, headers=auth_headers(a["hr"]))
@@ -121,6 +148,7 @@ async def test_dossier_uses_exact_resume_and_keeps_tenant_boundary(client, db_se
     assert own.json()["resume_id"] == str(a["resume"].id)
     assert own.json()["raw_text"] == "Python developer"
     assert own.json()["parsed_data"]["work_experience"][0]["company"] == "نمونه"
+    assert own.json()["parsed_data"]["structured"] == structured
     foreign = await client.get(path, headers=auth_headers(b["hr"]))
     missing = await client.get(f"/api/v1/applications/{uuid.uuid4()}/dossier", headers=auth_headers(b["hr"]))
     assert foreign.status_code == missing.status_code == 404
@@ -139,6 +167,28 @@ async def test_dossier_does_not_guess_legacy_resume_or_accept_cross_org_link(cli
     a["application"].resume_id = b["resume"].id
     await db_session.commit()
     assert (await client.get(path, headers=auth_headers(a["hr"]))).status_code == 404
+
+
+async def test_document_preview_checks_exact_resume_tenant_and_role(client, db_session, two_orgs, monkeypatch):
+    a, b = two_orgs["A"], two_orgs["B"]
+    a["application"].resume_id = a["resume"].id
+    await db_session.commit()
+    calls = []
+
+    def render(url, page, digest):
+        calls.append((url, page, digest))
+        return {"page": page, "pages": 1, "image": "data:image/png;base64,AA=="}
+
+    monkeypatch.setattr("app.routers.applications.render_document_page", render)
+    path = f"/api/v1/applications/{a['application'].id}/document/1"
+    own = await client.get(path, headers=auth_headers(a["hr"]))
+    assert own.status_code == 200
+    assert own.headers["cache-control"] == "private, no-store"
+    assert calls == [(a["resume"].file_url, 1, None)]
+    assert (await client.get(path, headers=auth_headers(b["hr"]))).status_code == 404
+    assert (await client.get(path, headers=auth_headers(a["candidate_user"]))).status_code == 403
+    assert (await client.get(path)).status_code == 401
+    assert len(calls) == 1
 
 
 async def _raw_rows(db_session, context: TenantContext, sql: str, **params) -> list:

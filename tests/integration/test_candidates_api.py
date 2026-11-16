@@ -14,6 +14,28 @@ from tests.integration.conftest import auth_headers
 MINIMAL_PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
 
+async def test_queue_failure_is_observable_and_never_returns_false_acceptance(
+    client, db_session, make_application, monkeypatch
+):
+    from unittest.mock import AsyncMock
+    from app.routers import resumes
+
+    _, _, job = await make_application()
+    applicant = (await make_application(job=job))[1]
+    monkeypatch.setattr(resumes, "enqueue_task", AsyncMock(return_value=None))
+    response = await client.post(
+        "/api/v1/resumes/upload",
+        data={"job_id": str(job.id)},
+        files={"file": ("synthetic.pdf", MINIMAL_PDF, "application/pdf")},
+        headers=auth_headers(applicant),
+    )
+    assert response.status_code == 503
+    rows = (await db_session.execute(select(Resume))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].processing_state["status"] == "failed"
+    assert rows[0].processing_state["error_code"] == "queue_unavailable"
+
+
 async def test_profile_is_created_on_first_visit_and_updated(client, db_session, make_user):
     user = await make_user(role="Candidate", email="sara@example.com")
     headers = auth_headers(user)

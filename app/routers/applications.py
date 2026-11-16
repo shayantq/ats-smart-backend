@@ -19,7 +19,10 @@ from app.core.pagination import CursorParams, cursor_params, paginate_by_cursor
 from app.core.state_machine import ApplicationStatus, is_transition_allowed
 from app.core.status_notifier import trigger_status_change_email
 from app.db.session import get_db
+from app.tasks.resume_model import public_state
 from app.models import Application, Candidate, Resume, StatusHistory, User
+from app.core.document_preview import PreviewError, render_document_page
+from fastapi import Response
 from app.schemas.applications import (
     ApplicationDossierResponse,
     ApplicationListItem,
@@ -33,6 +36,7 @@ router = APIRouter()
 # طبق معیار پذیرش تسک، فقط مدیر سازمان (Admin) و کارشناس HR اجازه‌ی
 # جابه‌جایی وضعیت درخواست‌ها روی بورد کانبان را دارند.
 APPLICATION_MANAGER_ROLES = ("Admin", "HR_Manager")
+_preview_slots = asyncio.Semaphore(2)
 
 
 @router.get("/counts", dependencies=[Depends(require_roles(*APPLICATION_MANAGER_ROLES))])
@@ -79,7 +83,47 @@ async def get_application_dossier(application_id: uuid.UUID, db: AsyncSession = 
         parsed_data=resume.parsed_data,
         skill_analysis=resume.skill_analysis,
         agent_analysis=resume.agent_analysis,
+        processing_state=public_state(resume.processing_state),
     )
+
+
+@router.get(
+    "/{application_id}/document/{page_number}",
+    dependencies=[Depends(require_roles(*APPLICATION_MANAGER_ROLES))],
+    summary="پیش‌نمایش صفحهٔ PDF همان درخواست با کنترل نسخهٔ شاهد",
+)
+async def application_document_page(
+    application_id: uuid.UUID,
+    response: Response,
+    page_number: int,
+    expected_sha256: str | None = Query(None, pattern=r"^[a-f0-9]{64}$"),
+    db: AsyncSession = Depends(get_db),
+):
+    dossier = await get_application_dossier(application_id, db)
+    if dossier.resume_id is None:
+        raise HTTPException(status_code=404, detail="document_missing")
+    resume = (await db.execute(select(Resume).where(Resume.id == dossier.resume_id))).scalar_one_or_none()
+    if resume is None:
+        raise HTTPException(status_code=404, detail="document_missing")
+    file_url = resume.file_url
+    if _preview_slots.locked():
+        raise HTTPException(status_code=429, detail="document_preview_busy")
+    await _preview_slots.acquire()
+    task = asyncio.create_task(asyncio.to_thread(render_document_page, file_url, page_number, expected_sha256))
+
+    def finished(done):
+        _preview_slots.release()
+        if not done.cancelled():
+            done.exception()
+
+    task.add_done_callback(finished)
+    try:
+        result = await asyncio.shield(task)
+    except PreviewError as error:
+        raise HTTPException(status_code=error.status, detail=error.code) from None
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return result
 
 
 @router.get(

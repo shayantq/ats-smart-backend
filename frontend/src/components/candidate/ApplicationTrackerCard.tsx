@@ -1,5 +1,6 @@
 import { STATUS_COLUMNS } from "../../types/application";
 import type { ApplicationTrackerItem } from "../../types/candidate";
+import ResumeProcessingStatus from "../ResumeProcessingStatus";
 
 // مسیر اصلی خطی ماشین وضعیت، بدون Rejected — Rejected جدا و به‌صورت یک نشان قرمز نمایش داده می‌شود
 const MAIN_TRACK = STATUS_COLUMNS.filter((column) => column.value !== "Rejected");
@@ -14,6 +15,7 @@ export default function ApplicationTrackerCard({ application }: ApplicationTrack
 
   return (
     <div className="editorial-panel">
+      <ResumeProcessingStatus state={application.processing_state} />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-2">
         <h3 className="min-w-0 text-heading text-ink [overflow-wrap:anywhere]">{application.job_title}</h3>
         {isRejected && (

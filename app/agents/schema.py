@@ -53,6 +53,8 @@ class SkillAgentOutput(_Strict):
 # عامل ۲: اعتبارسنجی سوابق کاری
 # ---------------------------------------------------------------------------
 class ExperienceEntry(_Strict):
+    evidence: Optional[str] = None
+    source: Optional[str] = None
     index: int
     company: Optional[str] = None
     job_title: Optional[str] = None

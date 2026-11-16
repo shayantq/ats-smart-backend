@@ -28,7 +28,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Sequence
 
 from redis import Redis
+from redis.exceptions import WatchError
 from rq import Queue, Retry
+from rq.job import Job
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
@@ -123,6 +125,9 @@ def _enqueue_options(func: Callable, kwargs: dict[str, Any]) -> tuple[Queue, dic
     kwargs.setdefault("job_timeout", policy.job_timeout)
     kwargs.setdefault("result_ttl", RESULT_TTL_SECONDS)
     kwargs.setdefault("failure_ttl", FAILURE_TTL_SECONDS)
+    if policy is _RESUME_POLICY:
+        # شرح پیش‌فرض RQ آرگومان‌ها (از جمله نشانی فایل) را در لاگ نمایش می‌دهد.
+        kwargs.setdefault("description", "resume_analysis")
     return get_task_queue(queue_name), kwargs
 
 
@@ -143,7 +148,37 @@ async def enqueue_task(func: Callable, *args: Any, **kwargs: Any) -> str | None:
         logger.info("کار جدید به صف «%s» اضافه شد: job_id=%s", task_queue.name, job.id)
         return job.id
     except Exception as error:  # noqa: BLE001
-        logger.error("افزودن کار به صف Redis ناموفق بود: %s", error)
+        logger.error("افزودن کار به صف Redis ناموفق بود: %s", type(error).__name__)
+        return None
+
+
+def _enqueue_resume_once(func, args, job_id, description):
+    """ثبت job و شناسهٔ صف در یک تراکنش؛ شناسهٔ یکسان دوباره وارد صف نمی‌شود."""
+    if policy_for(func) is not _RESUME_POLICY:
+        raise ValueError("resume_policy_required")
+    task_queue, options = _enqueue_options(func, {"job_id": job_id, "description": description})
+    options["timeout"] = options.pop("job_timeout")
+    for _ in range(3):
+        try:
+            with task_queue.connection.pipeline() as pipe:
+                pipe.watch(Job.key_for(job_id))
+                if pipe.exists(Job.key_for(job_id)):
+                    return job_id
+                # RQ ۱٫۱۶ خودش pipeline را در enqueue_call وارد MULTI می‌کند.
+                task_queue.enqueue_call(func, args=args, pipeline=pipe, **options)
+                pipe.execute()
+                return job_id
+        except WatchError:
+            continue
+    return None
+
+
+async def enqueue_resume_once(func, *args, job_id, description="resume_reanalysis") -> str | None:
+    """سازگار با RQ ۱٫۱۶؛ خطای نامعلوم شبکه با همان claim قابل بازیابی است."""
+    try:
+        return await run_in_threadpool(_enqueue_resume_once, func, args, job_id, description)
+    except Exception as error:  # noqa: BLE001
+        logger.error("ثبت اتمیک کار رزومه ناموفق بود: %s", type(error).__name__)
         return None
 
 

@@ -57,6 +57,8 @@ async def test_heavy_resume_processing_has_its_own_queue_and_longer_timeout(fake
     assert kwargs["job_timeout"] == 300
     # Worker ازکارافتاده وسط OCR = کار «رهاشده»؛ با همین سیاست دوباره در صف قرار می‌گیرد، نه حذف
     assert kwargs["retry"].max == 2
+    assert kwargs["retry"].intervals == [60, 300]
+    assert kwargs["description"] == "resume_analysis"
     assert queue.QUEUE_NOTIFICATIONS not in fake_queues
 
 

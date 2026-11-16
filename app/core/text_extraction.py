@@ -13,24 +13,13 @@
 و همیشه لایه‌ی متنی دارد، پس نیازی به مسیر OCR ندارد.
 """
 
-import io
-import logging
-
-import fitz  # PyMuPDF
+import hashlib
 import pytesseract
 from docx import Document
-from PIL import Image
 
 from app.core.config import settings
 
-logger = logging.getLogger("ats_smart.text_extraction")
-
-# اگر متن استخراج‌شده‌ی مستقیم یک PDF کمتر از این تعداد کاراکتر باشد،
-# فرض می‌شود سند اسکن‌شده/تصویری است و باید به مسیر OCR هدایت شود.
-_MIN_TEXT_LAYER_CHARS = 40
-
-# کیفیت رندر صفحه به تصویر پیش از OCR (DPI بالاتر = دقت بهتر ولی کندتر)
-_OCR_RENDER_DPI = 300
+import io
 
 if settings.TESSERACT_CMD_PATH:
     pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD_PATH
@@ -44,7 +33,7 @@ class UnreadableResumeFileError(Exception):
     """
 
 
-def extract_raw_text(file_bytes: bytes, filename: str) -> str:
+def extract_raw_text(file_bytes: bytes, filename: str, *, with_layout: bool = False):
     """
     نقطه‌ی ورود اصلی ماژول: از روی پسوند فایل، مسیر پردازش مناسب (PDF یا DOCX)
     را انتخاب و متن خام یکپارچه‌ی آن را برمی‌گرداند.
@@ -56,47 +45,39 @@ def extract_raw_text(file_bytes: bytes, filename: str) -> str:
     lowered_filename = filename.lower()
 
     if lowered_filename.endswith(".pdf"):
-        return _extract_from_pdf(file_bytes)
+        result = _extract_from_pdf(file_bytes)
+        return result if with_layout else result["raw_text"]
 
     if lowered_filename.endswith(".docx"):
-        return _extract_from_docx(file_bytes)
+        text = _extract_from_docx(file_bytes)
+        return (
+            dict(
+                version=2,
+                file_sha256=hashlib.sha256(file_bytes).hexdigest(),
+                raw_text=text,
+                pages=[],
+                warnings=["docx_page_geometry_unavailable"],
+                status="completed",
+            )
+            if with_layout
+            else text
+        )
 
-    raise UnreadableResumeFileError(f"فرمت فایل پشتیبانی نمی‌شود: {filename}")
+    raise UnreadableResumeFileError("unsupported_format")
 
 
-def _extract_from_pdf(file_bytes: bytes) -> str:
+def _extract_from_pdf(file_bytes: bytes) -> dict:
+    from app.core.pdf_layout import extract_pdf
+
     try:
-        document = fitz.open(stream=file_bytes, filetype="pdf")
-    except Exception as error:
-        raise UnreadableResumeFileError(f"فایل PDF خراب یا ناخوانا است: {error}") from error
-
-    if document.needs_pass:
-        document.close()
-        raise UnreadableResumeFileError("فایل PDF با گذرواژه قفل شده و بدون رمز عبور قابل باز شدن نیست.")
-
-    try:
-        direct_text_pages = [page.get_text().strip() for page in document]
-        direct_text = "\n".join(page_text for page_text in direct_text_pages if page_text)
-
-        if len(direct_text) >= _MIN_TEXT_LAYER_CHARS:
-            return _normalize_text(direct_text)
-
-        # لایه‌ی متنی ناکافی بود -> احتمالاً رزومه‌ی اسکن‌شده/تصویری؛ مسیر OCR فعال می‌شود
-        logger.info("لایه‌ی متنی PDF ناکافی بود؛ مسیر OCR (Tesseract) فعال شد.")
-        ocr_text_pages: list[str] = []
-        for page in document:
-            pixmap = page.get_pixmap(dpi=_OCR_RENDER_DPI)
-            image = Image.open(io.BytesIO(pixmap.tobytes("png")))
-            page_ocr_text = pytesseract.image_to_string(image, lang=settings.OCR_LANGUAGES)
-            ocr_text_pages.append(page_ocr_text.strip())
-
-        ocr_text = "\n".join(text for text in ocr_text_pages if text)
-        if not ocr_text.strip():
-            raise UnreadableResumeFileError("نه لایه‌ی متنی و نه OCR توانستند متنی از فایل PDF استخراج کنند.")
-
-        return _normalize_text(ocr_text)
-    finally:
-        document.close()
+        return extract_pdf(file_bytes)
+    except (ValueError, RuntimeError) as error:
+        code = (
+            str(error)
+            if str(error) in {"encrypted_pdf", "invalid_pdf", "no_readable_text"}
+            else "pdf_extraction_failed"
+        )
+        raise UnreadableResumeFileError(code) from None
 
 
 def _extract_from_docx(file_bytes: bytes) -> str:

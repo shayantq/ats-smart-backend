@@ -1,0 +1,9 @@
+# بازاستفادهٔ محلی از تصویر موجود؛ هیچ دانلود یا تغییر حد منابع انجام نمی‌شود.
+services:
+  ats-inference:
+    environment:
+      INFERENCE_CPP_WARMUP: '0'
+      INFERENCE_TIMEOUT: '60'
+    volumes:
+      - ../app/model_inference:/srv/app/model_inference:ro
+      - ./service.py:/srv/inference/service.py:ro

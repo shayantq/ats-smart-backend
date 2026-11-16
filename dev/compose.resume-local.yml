@@ -1,0 +1,38 @@
+# فقط همراه Compose محیط توسعه؛ هیچ ورودی در مسیر استقرار پروداکشن ندارد.
+services:
+  api:
+    environment:
+      RESUME_PIPELINE: model
+      MODEL_INFERENCE_URL: http://host.docker.internal:8081
+  resume-worker:
+    image: ${ATS_LOCAL_API_IMAGE:-ats-editorial-api:employment}
+    profiles: [resume-worker]
+    command: [python, -m, app.worker, resumes]
+    env_file: ${ATS_LOCAL_ROOT:?}/secrets/editorial-docker.env
+    environment:
+      RESUME_PIPELINE: model
+      MODEL_INFERENCE_URL: http://host.docker.internal:8081
+      SERVICE_NAME: worker
+      SERVICE_AUTH_PRIVATE_KEY_FILE: /keys/worker.pem
+    volumes:
+      - ${ATS_LOCAL_ROOT:?}/app:/app/app:ro
+      - ${ATS_LOCAL_ROOT:?}/training/reports/editorial/local-media:/app/media
+      - ${ATS_LOCAL_ROOT:?}/secrets/inference/worker.pem:/keys/worker.pem:ro
+    mem_limit: 512m
+    cpus: 1
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; from redis import Redis; from rq import Worker; from app.core.config import settings; assert any(w.hostname == socket.gethostname() for w in Worker.all(connection=Redis.from_url(settings.REDIS_URL)))"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+    stop_grace_period: 310s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started

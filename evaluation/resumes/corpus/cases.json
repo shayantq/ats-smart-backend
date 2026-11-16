@@ -1,0 +1,1773 @@
+[
+  {
+    "version": "resume-eval-v1",
+    "id": "en-inline",
+    "lineage": "en-inline",
+    "language": "en",
+    "layout": "single",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 1",
+        "fixture1@example.invalid",
+        "EXPERIENCE",
+        "Junior Software Engineer 01/2024 - 12/2024",
+        "Synthetic Lab 1",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 1",
+          "job_title": "Junior Software Engineer",
+          "duration": "01/2024 - 12/2024"
+        },
+        "evidence": [
+          "Junior Software Engineer 01/2024 - 12/2024",
+          "Synthetic Lab 1"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 1",
+          "email": "fixture1@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 1",
+          "fixture1@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "EXPERIENCE",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "month"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "fa-month",
+    "lineage": "fa-month",
+    "language": "fa",
+    "layout": "single",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 2",
+        "fixture2@example.invalid",
+        "سوابق کاری",
+        "مهندس نرم افزار | Synthetic Lab 2",
+        "تیر ۱۴۰۳ تا آبان ۱۴۰۴",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 2",
+          "job_title": "مهندس نرم افزار",
+          "duration": "تیر ۱۴۰۳ تا آبان ۱۴۰۴"
+        },
+        "evidence": [
+          "مهندس نرم افزار | Synthetic Lab 2",
+          "تیر ۱۴۰۳ تا آبان ۱۴۰۴"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 2",
+          "email": "fixture2@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 2",
+          "fixture2@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "سوابق کاری",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "month"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "en-columns",
+    "lineage": "en-columns",
+    "language": "en",
+    "layout": "columns",
+    "input_type": "image",
+    "pages": [
+      [
+        "Synthetic Person 3",
+        "fixture3@example.invalid",
+        "EXPERIENCE",
+        "Software Engineering Intern | Synthetic Lab 3",
+        "06/2023 - 12/2023",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 3",
+          "job_title": "Software Engineering Intern",
+          "duration": "06/2023 - 12/2023"
+        },
+        "evidence": [
+          "Software Engineering Intern | Synthetic Lab 3",
+          "06/2023 - 12/2023"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 3",
+          "email": "fixture3@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 3",
+          "fixture3@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "EXPERIENCE",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "month"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "mixed-hybrid",
+    "lineage": "mixed-hybrid",
+    "language": "mixed",
+    "layout": "single",
+    "input_type": "hybrid",
+    "pages": [
+      [
+        "Synthetic Person 4",
+        "fixture4@example.invalid",
+        "سوابق کاری",
+        "توسعه دهنده Python | Synthetic Lab 4",
+        "1400/01 تا 1402/01"
+      ],
+      [
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 4",
+          "job_title": "توسعه دهنده Python",
+          "duration": "1400/01 تا 1402/01"
+        },
+        "evidence": [
+          "توسعه دهنده Python | Synthetic Lab 4",
+          "1400/01 تا 1402/01"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 4",
+          "email": "fixture4@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 4",
+          "fixture4@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 2,
+            "line": 5
+          },
+          {
+            "page": 2,
+            "line": 6
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 2,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 2,
+            "line": 3
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "سوابق کاری",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "month"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "fa-arabic",
+    "lineage": "fa-arabic",
+    "language": "fa",
+    "layout": "single",
+    "input_type": "image",
+    "pages": [
+      [
+        "Synthetic Person 5",
+        "fixture5@example.invalid",
+        "سوابق کاری",
+        "کارشناس نرم افزار | Synthetic Lab 5",
+        "١٤٠٠ - ١٤٠٢",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 5",
+          "job_title": "کارشناس نرم افزار",
+          "duration": "١٤٠٠ - ١٤٠٢"
+        },
+        "evidence": [
+          "کارشناس نرم افزار | Synthetic Lab 5",
+          "١٤٠٠ - ١٤٠٢"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 5",
+          "email": "fixture5@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 5",
+          "fixture5@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "سوابق کاری",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "year"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "en-table",
+    "lineage": "en-table",
+    "language": "en",
+    "layout": "table",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 6",
+        "fixture6@example.invalid",
+        "EXPERIENCE",
+        "Software Engineer | Synthetic Lab 6",
+        "2020 - 2022",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 6",
+          "job_title": "Software Engineer",
+          "duration": "2020 - 2022"
+        },
+        "evidence": [
+          "Software Engineer | Synthetic Lab 6",
+          "2020 - 2022"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 6",
+          "email": "fixture6@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 6",
+          "fixture6@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "EXPERIENCE",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "year"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "en-unknown",
+    "lineage": "en-unknown",
+    "language": "en",
+    "layout": "single",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 7",
+        "fixture7@example.invalid",
+        "EXPERIENCE",
+        "Developer | Synthetic Lab 7",
+        "Date not supplied",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 7",
+          "job_title": "Developer",
+          "duration": null
+        },
+        "evidence": [
+          "Developer | Synthetic Lab 7",
+          "Date not supplied"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 7",
+          "email": "fixture7@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 7",
+          "fixture7@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "EXPERIENCE",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "unknown"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "fa-duplicate",
+    "lineage": "fa-duplicate",
+    "language": "fa",
+    "layout": "single",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 8",
+        "fixture8@example.invalid",
+        "سوابق کاری",
+        "کارآموز توسعه | Synthetic Lab 8",
+        "1401 - 1403",
+        "کارآموز توسعه | Synthetic Lab 8",
+        "1401 - 1403",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 8",
+          "job_title": "کارآموز توسعه",
+          "duration": "1401 - 1403"
+        },
+        "evidence": [
+          "کارآموز توسعه | Synthetic Lab 8",
+          "1401 - 1403"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          },
+          {
+            "page": 1,
+            "line": 6
+          },
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 8",
+          "email": "fixture8@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 8",
+          "fixture8@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 12
+          },
+          {
+            "page": 1,
+            "line": 13
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 9
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "سوابق کاری",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "year"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "en-overlap",
+    "lineage": "en-overlap",
+    "language": "en",
+    "layout": "single",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 9",
+        "fixture9@example.invalid",
+        "EXPERIENCE",
+        "Engineer | Synthetic Lab 9",
+        "2020/01 - 2022/01",
+        "Senior Engineer | Synthetic Lab 9",
+        "2021/01 - 2023/01",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 9",
+          "job_title": "Engineer",
+          "duration": "2020/01 - 2022/01"
+        },
+        "evidence": [
+          "Engineer | Synthetic Lab 9",
+          "2020/01 - 2022/01"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 9",
+          "job_title": "Senior Engineer",
+          "duration": "2021/01 - 2023/01"
+        },
+        "evidence": [
+          "Senior Engineer | Synthetic Lab 9",
+          "2021/01 - 2023/01"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 6
+          },
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 9",
+          "email": "fixture9@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 9",
+          "fixture9@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 12
+          },
+          {
+            "page": 1,
+            "line": 13
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 9
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "EXPERIENCE",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "month"
+    },
+    "expected_error": null,
+    "duration_range_years": [
+      2.9,
+      3.1
+    ],
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "en-volunteer",
+    "lineage": "en-volunteer",
+    "language": "en",
+    "layout": "columns",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 10",
+        "fixture10@example.invalid",
+        "VOLUNTEERING",
+        "Volunteer Developer | Synthetic Lab 10",
+        "01/2022 - 04/2022",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "volunteering",
+        "fields": {
+          "company": "Synthetic Lab 10",
+          "job_title": "Volunteer Developer",
+          "duration": "01/2022 - 04/2022"
+        },
+        "evidence": [
+          "Volunteer Developer | Synthetic Lab 10",
+          "01/2022 - 04/2022"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 10",
+          "email": "fixture10@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 10",
+          "fixture10@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "VOLUNTEERING",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "month"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "fa-ongoing",
+    "lineage": "fa-ongoing",
+    "language": "fa",
+    "layout": "single",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 11",
+        "fixture11@example.invalid",
+        "سوابق کاری",
+        "مدیر فنی | Synthetic Lab 11",
+        "تیر ۱۴۰۵ تا اکنون",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 11",
+          "job_title": "مدیر فنی",
+          "duration": "تیر ۱۴۰۵ تا اکنون"
+        },
+        "evidence": [
+          "مدیر فنی | Synthetic Lab 11",
+          "تیر ۱۴۰۵ تا اکنون"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 11",
+          "email": "fixture11@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 11",
+          "fixture11@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "سوابق کاری",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "month"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "en-project",
+    "lineage": "en-project",
+    "language": "en",
+    "layout": "single",
+    "input_type": "text",
+    "pages": [
+      [
+        "Synthetic Person 12",
+        "fixture12@example.invalid",
+        "PROJECTS",
+        "Developer | Synthetic Lab 12",
+        "2021 - 2023",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "project",
+        "fields": {
+          "company": "Synthetic Lab 12",
+          "job_title": "Developer",
+          "duration": "2021 - 2023"
+        },
+        "evidence": [
+          "Developer | Synthetic Lab 12",
+          "2021 - 2023"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 12",
+          "email": "fixture12@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 12",
+          "fixture12@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "PROJECTS",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "year"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "en-inline-image",
+    "lineage": "en-inline",
+    "language": "en",
+    "layout": "single",
+    "input_type": "image",
+    "pages": [
+      [
+        "Synthetic Person 1",
+        "fixture1@example.invalid",
+        "EXPERIENCE",
+        "Junior Software Engineer 01/2024 - 12/2024",
+        "Synthetic Lab 1",
+        "SKILLS",
+        "Python",
+        "Git",
+        "EDUCATION",
+        "BSc Computer Science",
+        "Synthetic Academy"
+      ]
+    ],
+    "expected": [
+      {
+        "kind": "employment",
+        "fields": {
+          "company": "Synthetic Lab 1",
+          "job_title": "Junior Software Engineer",
+          "duration": "01/2024 - 12/2024"
+        },
+        "evidence": [
+          "Junior Software Engineer 01/2024 - 12/2024",
+          "Synthetic Lab 1"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 4
+          },
+          {
+            "page": 1,
+            "line": 5
+          }
+        ]
+      },
+      {
+        "kind": "identity",
+        "fields": {
+          "name": "Synthetic Person 1",
+          "email": "fixture1@example.invalid",
+          "phone": null
+        },
+        "evidence": [
+          "Synthetic Person 1",
+          "fixture1@example.invalid"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 1
+          },
+          {
+            "page": 1,
+            "line": 2
+          }
+        ]
+      },
+      {
+        "kind": "education",
+        "fields": {
+          "degree": "BSc Computer Science",
+          "university": "Synthetic Academy"
+        },
+        "evidence": [
+          "BSc Computer Science",
+          "Synthetic Academy"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 10
+          },
+          {
+            "page": 1,
+            "line": 11
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Python"
+        },
+        "evidence": [
+          "Python"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 7
+          }
+        ]
+      },
+      {
+        "kind": "skill",
+        "fields": {
+          "name": "Git"
+        },
+        "evidence": [
+          "Git"
+        ],
+        "evidence_refs": [
+          {
+            "page": 1,
+            "line": 8
+          }
+        ]
+      }
+    ],
+    "sections": [
+      "EXPERIENCE",
+      "SKILLS",
+      "EDUCATION"
+    ],
+    "precision": {
+      "duration": "month"
+    },
+    "expected_error": null,
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  },
+  {
+    "version": "resume-eval-v1",
+    "id": "corrupt",
+    "lineage": "corrupt",
+    "language": "en",
+    "layout": "single",
+    "input_type": "corrupt",
+    "pages": [],
+    "expected": [],
+    "sections": [],
+    "precision": {},
+    "expected_error": "unreadable_resume",
+    "duration_range_years": null,
+    "review": "author_draft",
+    "reviewer": null
+  }
+]
