@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["review_status", "records"],
+  "properties": {
+    "review_status": { "enum": ["human_reviewed", "draft_unreviewed"] },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "organization", "title", "start", "end", "page"],
+        "properties": {
+          "type": { "enum": ["job", "teaching", "project", "certificate", "education", "honor", "membership", "internship"] },
+          "organization": { "type": ["string", "null"] },
+          "title": { "type": "string" },
+          "start": { "type": ["string", "null"] },
+          "end": { "type": ["string", "null"] },
+          "page": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

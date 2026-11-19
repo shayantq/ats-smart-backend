@@ -48,6 +48,7 @@ async def run_model_job(application_id, file_url, session_factory, download):
     from app.core.analysis_evidence import VERSION as analysis_version, job_signature
     from app.agents.supervisor import to_skill_analysis
     from app.model_inference.pipeline import run_model_pipeline
+    from app.model_inference.resume_digest import cache_key
     from app.tasks.resume_processing import _load_job_context
 
     application_id = uuid.UUID(application_id)
@@ -124,11 +125,21 @@ async def run_model_job(application_id, file_url, session_factory, download):
         if next_stage == "inference":
             values["force_reparse"] = False
         values.update(analysis_version=analysis_version, job_sha256=context_signature)
+        if input_key != "raw" or "model_input_key" in previous:
+            values["model_input_key"] = input_key
         await write(**values)
 
     try:
         from app.core.config import settings
 
+        input_key = cache_key(
+            settings.RESUME_MODEL_INPUT,
+            cap=settings.RESUME_DIGEST_DESCRIPTION_CAP,
+            icon_fonts=settings.RESUME_DIGEST_ICON_FONTS,
+            context=settings.MODEL_INFERENCE_CONTEXT_LIMIT,
+            output=settings.MODEL_INFERENCE_OUTPUT_LIMIT,
+            tokenizer=settings.MODEL_INFERENCE_TOKENIZER_FILE,
+        )
         if not settings.MODEL_INFERENCE_URL:
             raise InferenceError("model_endpoint_missing", 500)
         started = time.perf_counter()
@@ -152,6 +163,7 @@ async def run_model_job(application_id, file_url, session_factory, download):
             and previous.get("status") == "succeeded"
             and previous.get("analysis_version") == analysis_version
             and previous.get("job_sha256") == context_signature
+            and previous.get("model_input_key", "raw") == input_key
         ):
             metrics.update(previous.get("metrics") or {})
             await write(status="succeeded", stage="complete")

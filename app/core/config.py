@@ -3,7 +3,12 @@
 مقادیر حساس از فایل .env خوانده می‌شوند و هرگز داخل کد نوشته نمی‌شوند.
 """
 
+from typing import Literal
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.model_inference.resume_normalization import ICON_FONTS
 
 
 class Settings(BaseSettings):
@@ -50,6 +55,12 @@ class Settings(BaseSettings):
     # فقط RESUME_PIPELINE=model سرویس مستقل مدل را فعال می‌کند؛ پیش‌فرض تولید تغییر نمی‌کند.
     MODEL_INFERENCE_URL: str = ""
     MODEL_INFERENCE_TIMEOUT_SECONDS: float = 60.0
+    MODEL_INFERENCE_CONTEXT_LIMIT: int = Field(default=2048, gt=0)
+    MODEL_INFERENCE_OUTPUT_LIMIT: int = Field(default=640, ge=0)
+    MODEL_INFERENCE_TOKENIZER_FILE: str = ""
+    RESUME_MODEL_INPUT: Literal["raw", "digest_l0", "digest_l1", "digest_l2"] = "raw"
+    RESUME_DIGEST_DESCRIPTION_CAP: int | None = Field(default=None, ge=0)
+    RESUME_DIGEST_ICON_FONTS: tuple[str, ...] = ICON_FONTS
     # سقف زمان هر عامل؛ عامل کندتر «failed» علامت می‌خورد و بقیه‌ی گراف ادامه می‌دهد
     AGENT_TIMEOUT_SECONDS: float = 20.0
 
