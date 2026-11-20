@@ -15,8 +15,10 @@ from app.model_inference.contract import (
     Analysis,
     AnalyzeRequest,
     AnalyzeResponse,
+    EvidenceCheck,
     GeneratedAnalysis,
     JobContext,
+    VerifyEvidenceRequest,
     chat_prompt,
 )
 from app.model_inference.pipeline import map_analysis
@@ -398,16 +400,56 @@ async def test_llama_cpp_rejects_unfinished_generation(monkeypatch, stop_type, a
         assert body["cache_prompt"] is False
         return httpx.Response(
             200,
-            json={"content": json.dumps(prediction()), "tokens_predicted": 200, "stop_type": stop_type},
+            json={
+                "content": json.dumps(prediction()),
+                "tokens_predicted": 200,
+                "stop_type": stop_type,
+                "timings": {"prompt_n": 111, "prompt_ms": 12, "predicted_ms": 32},
+            },
         )
 
     async with httpx.AsyncClient(base_url="http://engine", transport=httpx.MockTransport(handler)) as http:
         engine = Engine(http=http, tokenizer=FakeTokenizer())
         if accepted:
             assert (await engine.analyze(request())).analysis.score == 70
+            app = create_app(engine)
+            app.state.engine = engine
+            route = next(route for route in app.routes if route.path == "/v1/analyze")
+            app.dependency_overrides[route.dependant.dependencies[0].call] = lambda: object()
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as local:
+                result = await local.post("/v1/analyze", json=request().model_dump())
+            assert result.headers["X-ATS-Time-Engine-Prompt-Tokens"] == "111"
+            assert set(result.json()) == set(AnalyzeResponse.model_fields)
+            assert AnalyzeResponse.model_validate_json(result.content).output_tokens == 200
         else:
             with pytest.raises(InferenceError, match="incomplete_generation"):
                 await engine.analyze(request())
+
+
+@pytest.mark.parametrize("content,valid", [("[true,false]", True), ("[true]", False), ('[true,"false"]', False)])
+async def test_evidence_completion_validates_boolean_count(monkeypatch, content, valid):
+    monkeypatch.setenv("INFERENCE_ENGINE", "llama_cpp")
+    body = VerifyEvidenceRequest(
+        checks=[
+            EvidenceCheck(skill="Python", excerpt="Built Python tools"),
+            EvidenceCheck(skill="SQL", excerpt="Built Python tools"),
+        ]
+    )
+
+    def respond(req):
+        payload = json.loads(req.content)
+        assert req.url.path == "/completion"
+        assert payload["n_predict"] == 24 and payload["cache_prompt"] is False
+        assert payload["grammar"].splitlines()[0].count("verdict") == 2
+        return httpx.Response(200, json={"content": content, "tokens_predicted": 8, "stop_type": "eos"})
+
+    async with httpx.AsyncClient(base_url="http://engine", transport=httpx.MockTransport(respond)) as http:
+        engine = Engine(http=http, tokenizer=FakeTokenizer())
+        if valid:
+            assert (await engine.verify_evidence(body)).matches == [True, False]
+        else:
+            with pytest.raises(InferenceError, match="invalid_engine_response"):
+                await engine.verify_evidence(body)
 
 
 @pytest.mark.parametrize("reason,accepted", [("stop", True), ("length", False), (None, False)])

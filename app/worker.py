@@ -50,6 +50,9 @@ class WindowsCompatibleWorker(SimpleWorker):
 
 
 def main(queue_names: list[str] | None = None) -> None:
+    from app.model_inference.limits import check_worker_timeouts
+
+    check_worker_timeouts()
     # کارها داده‌ی شخصی رمزشده می‌خوانند/می‌نویسند (رزومه، نام کارجو در ایمیل)؛ بدون کلید بالا نمی‌آید
     validate_keys()
     queue_names = queue_names or list(ALL_QUEUES)

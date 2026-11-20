@@ -3,7 +3,7 @@
 from datetime import date
 import pytest
 
-from app.core.structured_resume import build_structured, legacy_work
+from app.core.structured_resume import build_structured, find_date, legacy_work
 from app.core.resume_dates import date_range, endpoint
 
 NOW = date(2026, 11, 16)
@@ -41,6 +41,21 @@ LANGUAGES
 English Native
 Spanish Advanced
 """
+
+
+def test_decorated_teaching_section_preserves_evidence_without_counting_employment():
+    from app.core.structured_resume import build_structured
+
+    parsed = build_structured(
+        "\uf0b7 سوابق تدریس\nمدرس دوره داده\nآموزشگاه آزمایشی\n۱۴۰۱ تا ۱۴۰۲\nمخاطبان: گروه آزمایشی\n"
+        "\uf0b7 تدریس دوره نرم افزار\nدانشگاه نمونه\nتحصیلات\n۱۴۰۳ تا ۱۴۰۴"
+    )
+    records = parsed["activities"]
+    assert [record["kind"] for record in records] == ["teaching", "teaching"]
+    assert records[0]["dates"]["status"] == "valid"
+    assert records[0]["fields"]["company"]["value"] == "آموزشگاه آزمایشی"
+    assert records[0]["fields"]["audience"]["value"] == "گروه آزمایشی"
+    assert records[1]["dates"]["status"] == "unknown"
 
 
 def test_english_records_inline_dates_and_activity_isolation():
@@ -246,3 +261,47 @@ def test_three_inline_languages_and_following_links_are_not_dropped_or_merged():
     assert len(s["languages"]) == 3
     assert [x["fields"]["language"]["value"] for x in s["languages"]] == ["Persian", "English", "German"]
     assert s["languages"][1]["fields"]["level"]["value"] == "Upper-intermediate"
+
+
+def test_decorated_headings_keep_courses_and_memberships_out_of_work_history():
+    doc = build_structured(
+        "\uf0b7 سوابق کاری\nمهندس نرم‌افزار\nشرکت آزمایشی\n۱۴۰۰ تا ۱۴۰۲\n"
+        "دوره‌ها و گواهینامه‌ها \uf0b7\nدوره طراحی نرم‌افزار\nآموزشگاه نمونه\n"
+        "| تحصیلات \u200f\nکارشناسی علوم رایانه\nدانشگاه نمونه\n"
+        "\uf0b7 زبان‌ها\nEnglish Advanced\n"
+        "\uf0b7 افتخارات\nجایزه آزمایشی\n\uf0b7 عضویت‌ها\nانجمن نمونه\n",
+        reference=NOW,
+    )
+    assert [record["kind"] for record in doc["activities"]] == ["employment"]
+    assert doc["activities"][0]["dates"]["status"] == "valid"
+    assert len(doc["certifications"]) == len(doc["education"]) == len(doc["languages"]) == len(doc["awards"]) == 1
+    assert doc["awards"][0]["fields"]["title"]["value"] == "جایزه آزمایشی"
+
+
+def test_teaching_event_date_is_kept_without_inventing_a_duration():
+    document = build_structured(
+        "سوابق تدریس\nمدرس دوره آزمایشی\nآموزشگاه نمونه\nاردیبهشت‌ماه ۱۴۰۳\n"
+        "تدریس درس نمونه\nتوضیح کلاس در سال ۱۴۰۰\n"
+        "مدرس برنامه آزمایشی\nتاریخ: ۱۴۹۰\n",
+        reference=NOW,
+    )
+    first, second, third = document["activities"]
+    evidence = first["fields"]["date"]
+    assert evidence["value"] == evidence["evidence"][0]["text"] == "اردیبهشت‌ماه ۱۴۰۳"
+    assert first["dates"]["status"] == "unknown"
+    assert "date" not in second["fields"] and "date" not in third["fields"]
+    assert document["totals"]["total_work"]["max_years"] == 0
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("شهریور ۱۴۰۴ اکنون \uf02e", "شهریور 1404 تا اکنون"),
+        ("اردیبهشت لغایت خرداد۱۴۰۱ ۱۴۰۲", "اردیبهشت 1401 تا خرداد 1402"),
+        ("مهر ماه تا آذر ۱۴۰۲", "مهر 1402 تا آذر 1402"),
+    ],
+)
+def test_rtl_calendar_layout_preserves_real_endpoints(line, expected):
+    interval = find_date(line)
+    assert interval and interval.group() == expected
+    assert date_range(interval.group(), NOW)["status"] == "valid"

@@ -2,7 +2,7 @@ import {object,text} from "./dossierData";
 import {useEvidence} from './EvidenceContext';
 
 const labels: Record<string,string>={extracted:"از متن رزومه",attributed:"ادعای رزومه",ambiguous:"نیازمند بررسی",missing:"نامشخص",invalid:"نامعتبر"};
-const fieldLabels: Record<string,string>={title:"عنوان",institution:"مؤسسه / صادرکننده",date:"تاریخ",language:"زبان",level:"سطح اعلام‌شده",credential_id:"شناسه",expiry:"تاریخ انقضای اعلام‌شده",project_name:"پروژه",job_title:"عنوان فعالیت",company:"سازمان",duration:"بازهٔ زمانی",location:"مکان",client:"مشتری",engagement_type:"نوع همکاری"};
+const fieldLabels: Record<string,string>={title:"عنوان",institution:"مؤسسه / صادرکننده",date:"تاریخ",language:"زبان",level:"سطح اعلام‌شده",credential_id:"شناسه",expiry:"تاریخ انقضای اعلام‌شده",project_name:"پروژه",job_title:"عنوان فعالیت",company:"سازمان",duration:"بازهٔ زمانی",location:"مکان",client:"مشتری",engagement_type:"نوع همکاری",audience:"مخاطبان"};
 const list=(v:unknown):Record<string,unknown>[]=>Array.isArray(v)?v.map(object):[];
 const translations:Record<string,string>={persian:"فارسی",farsi:"فارسی",english:"انگلیسی",german:"آلمانی",spanish:"اسپانیایی",french:"فرانسوی",native:"مادری",advanced:"پیشرفته",fluent:"روان",intermediate:"متوسط",'upper intermediate':"متوسط رو به بالا",basic:"پایه",beginner:"مبتدی"};
 
@@ -38,6 +38,7 @@ export default function StructuredResumePanel({value,accountName}:{value:unknown
   const identity=object(data.identity),name=object(identity.name);
   const different=!!text(name.value) && text(name.value).trim().toLocaleLowerCase()!==accountName.trim().toLocaleLowerCase();
   const groups:[string,Record<string,unknown>[]][]=[
+    ["سوابق تدریس",list(data.activities).filter(x=>x.kind==="teaching")],
     ["فعالیت داوطلبانه",list(data.activities).filter(x=>x.kind==="volunteering")],
     ["پروژه‌ها",list(data.activities).filter(x=>x.kind==="project")],
     ["تحصیلات",list(data.education)],["دوره‌ها و گواهی‌نامه‌ها",list(data.certifications)],

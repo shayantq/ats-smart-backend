@@ -67,7 +67,9 @@ _NOTIFICATION_POLICY = QueuePolicy(QUEUE_NOTIFICATIONS, job_timeout=120, retry=T
 _BULK_POLICY = QueuePolicy(QUEUE_BULK, job_timeout=120, retry=TRANSIENT_FAILURE_RETRY)
 # OCR یک رزومه‌ی اسکن‌شده‌ی چندصفحه‌ای چند ده ثانیه CPU می‌گیرد؛ پردازه‌ی دوباره‌ی رزومه بی‌خطر است
 # (نتیجه‌ی قبلی بازنویسی می‌شود)، پس Worker ازکارافتاده باعث گم شدن رزومه نمی‌شود
-_RESUME_POLICY = QueuePolicy(QUEUE_RESUMES, job_timeout=300, retry=Retry(max=2, interval=[60, 300]))
+_RESUME_POLICY = QueuePolicy(
+    QUEUE_RESUMES, job_timeout=settings.RESUME_JOB_TIMEOUT_SECONDS, retry=Retry(max=2, interval=[60, 300])
+)
 # مدل زبانی روی CPU (سرور داخل کلاستر) چند دقیقه طول می‌کشد؛ خطای شبکه/429/5xx با فاصله تکرار می‌شود
 # (تعداد تلاش‌ها با MAX_ATTEMPTS در app/genai/service.py هماهنگ است)
 _GENAI_POLICY = QueuePolicy(QUEUE_GENAI, job_timeout=600, retry=Retry(max=2, interval=[30, 120]))

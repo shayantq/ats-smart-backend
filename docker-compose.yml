@@ -165,6 +165,9 @@ services:
   worker:
     <<: *backend-common
     command: ["python", "-m", "app.worker"]
+    environment:
+      <<: *backend-environment
+      MODEL_EVIDENCE_CHECK_ENABLED: ${MODEL_EVIDENCE_CHECK_ENABLED:-true}
     # SIGTERM = Warm Shutdown در RQ: کار در حال اجرا (مثلاً OCR یک رزومه) تمام می‌شود
     stop_grace_period: 60s
     healthcheck:

@@ -3,7 +3,7 @@
 import fitz
 import pytest
 
-from app.core.pdf_layout import extract_pdf, word_text
+from app.core.pdf_layout import EXTRACTION_VERSION, extract_pdf, word_text
 from app.core.text_extraction import extract_raw_text, UnreadableResumeFileError
 from app.core.resume_sections import heading
 
@@ -176,4 +176,16 @@ async def test_layout_is_persisted_before_parser_or_model_failure(monkeypatch):
         await pipeline.run_model_pipeline(pdf([[(30, 60, "Synthetic healthy text")]]), "test.pdf", {}, persist=persist)
     assert stored[0][2] == "parsing"
     assert stored[0][1]["_extraction"]["pages"][0]["blocks"]
-    assert stored[0][1]["_extraction"]["version"] == 2
+    assert stored[0][1]["_extraction"]["version"] == EXTRACTION_VERSION
+
+
+def test_repeated_record_title_at_top_preserves_both_dated_records():
+    with fitz.open() as document:
+        for year in (2021, 2023):
+            page = document.new_page()
+            page.insert_text((50, 24), "Instructor", fontsize=13, fontname="hebo")
+            page.insert_text((50, 49), "Synthetic Academy", fontsize=10)
+            page.insert_text((50, 70), f"January {year}", fontsize=8)
+        result = extract_pdf(document.tobytes())
+    assert result["raw_text"].count("Instructor") == 2
+    assert all(page["blocks"][0]["native_style"]["bold"] for page in result["pages"])

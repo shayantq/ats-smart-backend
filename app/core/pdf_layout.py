@@ -13,9 +13,10 @@ import pytesseract
 from PIL import Image
 
 from app.core.config import settings
+from app.core.resume_dates import normalize as normalize_date
 from app.core.resume_sections import annotate, heading, normalize
 
-EXTRACTION_VERSION = 2
+EXTRACTION_VERSION = 3
 
 
 def rect(values):
@@ -62,6 +63,7 @@ def lines_from_words(groups, page_number, width):
             text = word_text(run)
             if text:
                 confidences = [w["confidence"] for w in run if w["confidence"] is not None]
+                style = run[0].get("native_style")
                 result.append(
                     dict(
                         id=f"p{page_number}-l{len(result)+1}",
@@ -72,6 +74,7 @@ def lines_from_words(groups, page_number, width):
                         words=run,
                         method=run[0]["method"],
                         ocr_confidence=mean(confidences) if confidences else None,
+                        **({"native_style": style} if style else {}),
                     )
                 )
     return result
@@ -79,9 +82,27 @@ def lines_from_words(groups, page_number, width):
 
 def native_words(page):
     groups = defaultdict(list)
-    for x0, y0, x1, y1, text, bno, lno, _ in page.get_text("words"):
+    textpage = page.get_textpage(flags=fitz.TEXTFLAGS_WORDS)
+    styles = {}
+    for block in page.get_text("dict", textpage=textpage)["blocks"]:
+        for i, line in enumerate(block.get("lines", [])):
+            spans = [span for span in line["spans"] if any(c.isalnum() for c in span["text"])]
+            if spans:
+                dominant = max(spans, key=lambda span: sum(c.isalnum() for c in span["text"]))
+                styles[(block["number"], i)] = dict(
+                    size=round(dominant["size"], 1), bold=bool(dominant["flags"] & fitz.TEXT_FONT_BOLD)
+                )
+    for x0, y0, x1, y1, text, bno, lno, _ in page.get_text("words", textpage=textpage):
         if text.strip():
-            groups[(bno, lno)].append(dict(text=text, bbox=rect((x0, y0, x1, y1)), method="native", confidence=None))
+            groups[(bno, lno)].append(
+                dict(
+                    text=text,
+                    bbox=rect((x0, y0, x1, y1)),
+                    method="native",
+                    confidence=None,
+                    native_style=styles.get((bno, lno)),
+                )
+            )
     return groups
 
 
@@ -232,6 +253,18 @@ def connect_lines(blocks):
     return result
 
 
+def record_in_margin(block, next_blocks):
+    if not (block.get("native_style") or {}).get("bold"):
+        return False
+    # عنوانِ تکراری که زیر آن تاریخ رکورد دیگری آمده جزو محتوای اصلی است.
+    return any(
+        other["column"] == block["column"]
+        and 0 <= other["bbox"][1] - block["bbox"][1] <= 84
+        and re.search(r"\b(?:13|14|19|20)\d{2}\b", normalize_date(other["text"]))
+        for other in next_blocks[:4]
+    )
+
+
 def extract_pdf(content):
     try:
         document = fitz.open(stream=content, filetype="pdf")
@@ -360,12 +393,17 @@ def extract_pdf(content):
             p["warnings"].append("duplicate_page")
         else:
             seen_pages[fingerprint] = p["number"]
-        for b in p["blocks"]:
+        for i, b in enumerate(p["blocks"]):
             key = normalize(b["text"])
             margin = b["bbox"][1] < p["height"] * 0.06 or b["bbox"][3] > p["height"] * 0.94
             if p.get("duplicate_of"):
                 b["excluded_reason"] = "duplicate_page"
-            elif margin and not heading(b["text"]) and margins[key] > 1:
+            elif (
+                margin
+                and not heading(b["text"])
+                and margins[key] > 1
+                and not record_in_margin(b, p["blocks"][i + 1 : i + 5])
+            ):
                 if key in seen_margins:
                     b["excluded_reason"] = "repeated_margin"
                 seen_margins.add(key)

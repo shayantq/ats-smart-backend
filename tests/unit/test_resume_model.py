@@ -1,8 +1,10 @@
 """رگرسیون ذخیرهٔ مرحله‌ای، تلاش مجدد و جلوگیری از نوشتن تلاش قدیمی."""
 
+import asyncio
 import copy
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -13,6 +15,8 @@ from app.core.config import settings
 from app.models import Application
 from app.model_inference.client import InferenceError
 from app.model_inference import pipeline
+from app.model_inference.contract import VerifyEvidenceResponse
+from app.model_inference.limits import GatewayLimits
 from app.core.text_extraction import UnreadableResumeFileError
 from app.tasks import resume_model as worker
 from tests.unit.test_model_inference import map_analysis, response
@@ -65,7 +69,7 @@ async def test_worker_preflight(context, monkeypatch, caplog, case):
     job_title = "عنوان آزمایشی ساختگی"
     job_context = {"title": job_title, "description": "شرح ساختگی آزمایشی"}
     file_bytes = b"synthetic file"
-    layout = {"version": 2, "file_sha256": hashlib.sha256(file_bytes).hexdigest()}
+    layout = {"version": worker.EXTRACTION_VERSION, "file_sha256": hashlib.sha256(file_bytes).hexdigest()}
     structured = {"activities": []}
     evidence = {"requirements": []}
     calls = []
@@ -156,6 +160,90 @@ async def test_worker_preflight(context, monkeypatch, caplog, case):
         assert calls == [request.model_dump()]
 
 
+@pytest.mark.parametrize("mode", ["matching", "smaller_budget", "different_hash", "pending", "old_gateway"])
+async def test_worker_applies_ready_limits_and_persists_numeric_timings(context, monkeypatch, mode):
+    known = "a" * 64
+    context.job.enqueued_at = datetime.now(timezone.utc)
+    context.job.started_at = context.job.enqueued_at + timedelta(milliseconds=125)
+    started = asyncio.Event()
+
+    async def fetch():
+        started.set()
+        if mode == "pending":
+            await asyncio.Event().wait()
+        if mode == "old_gateway":
+            return None
+        return GatewayLimits(
+            context_limit=641 if mode == "smaller_budget" else 2048,
+            output_limit=640,
+            tokenizer_sha256=("b" * 64 if mode == "different_hash" else known),
+            parallel=1,
+        )
+
+    original_measure = pipeline.check_prompt_budget
+    paths = []
+
+    def measure(prompt, context_limit, output_limit, path):
+        paths.append(path)
+        return original_measure(prompt, context_limit, output_limit)
+
+    class Client:
+        def __init__(self, *unused, **kwargs):
+            self.client = pipeline_client(*unused, **kwargs, transport=httpx.MockTransport(handle))
+
+        async def __aenter__(self):
+            return await self.client.__aenter__()
+
+        async def __aexit__(self, *args):
+            return await self.client.__aexit__(*args)
+
+    def handle(request):
+        assert request.url.path == "/v1/analyze"
+        headers = (
+            {}
+            if mode == "old_gateway"
+            else {
+                "X-ATS-Time-Engine-Prompt-Tokens": "101",
+                "X-ATS-Time-Engine-Prompt-Ms": "12.5",
+                "X-ATS-Time-Engine-Predicted-Ms": "23.5",
+            }
+        )
+        return httpx.Response(200, json=response().model_dump(), headers=headers)
+
+    pipeline_client = pipeline.InferenceClient
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_LIMITS_SYNC", True)
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_TOKENIZER_FILE", "configured")
+    monkeypatch.setattr(pipeline, "configured_tokenizer_sha256", lambda _: known)
+    monkeypatch.setattr(pipeline, "check_prompt_budget", measure)
+    monkeypatch.setattr(pipeline, "InferenceClient", Client)
+    monkeypatch.setattr(pipeline, "issue_service_token", lambda **_: "test-token")
+    monkeypatch.setattr("app.model_inference.limits.fetch_limits", fetch)
+    monkeypatch.setattr(pipeline, "extract_raw_text", lambda *_, **__: "synthetic resume")
+    monkeypatch.setattr(pipeline, "parse_resume_text", lambda *_, **__: SimpleNamespace(model_dump=dict))
+
+    async def run():
+        await worker.run_model_job(APP_ID, "synthetic.pdf", context.session, lambda _: b"synthetic")
+
+    if mode == "smaller_budget":
+        with pytest.raises(worker.ResumeProcessingError, match="input_exceeds_model_budget"):
+            await run()
+    else:
+        await asyncio.wait_for(run(), timeout=1)
+    assert started.is_set()
+    metrics = context.resume.processing_state["metrics"]
+    assert metrics["queue_wait_ms"] == 125
+    assert metrics.get("limits_synced", 0) == int(mode not in {"pending", "old_gateway"})
+    assert metrics.get("limits_mismatch", 0) == int(mode == "smaller_budget")
+    assert metrics.get("tokenizer_hash_mismatch", 0) == int(mode == "different_hash")
+    assert paths == ([""] if mode == "different_hash" else ["configured"])
+    expected = (None, None, None, None) if mode in {"old_gateway", "smaller_budget"} else (101, 12.5, 23.5, 36)
+    assert (
+        tuple(metrics[key] for key in ("engine_prompt_tokens", "prefill_ms", "generation_ms", "engine_total_ms"))
+        == expected
+    )
+    assert metrics["engine_output_tokens"] == (None if mode == "smaller_budget" else 200)
+
+
 async def test_worker_digest_is_opt_in_and_cache_distinguishes_modes_and_versions(context, monkeypatch):
     from app.core.config import Settings
     from app.model_inference import resume_digest
@@ -180,7 +268,9 @@ async def test_worker_digest_is_opt_in_and_cache_distinguishes_modes_and_version
     monkeypatch.setattr(
         pipeline,
         "extract_raw_text",
-        lambda *_args, **_kwargs: dict(raw_text=source, version=2, file_sha256=hashlib.sha256(file_bytes).hexdigest()),
+        lambda *_args, **_kwargs: dict(
+            raw_text=source, version=worker.EXTRACTION_VERSION, file_sha256=hashlib.sha256(file_bytes).hexdigest()
+        ),
     )
     monkeypatch.setattr(pipeline, "parse_resume_text", lambda *_args, **_kwargs: SimpleNamespace(model_dump=dict))
 
@@ -286,8 +376,125 @@ async def test_shared_cap_rejects_when_essential_content_alone_exceeds_prompt_bu
         await worker.run_model_job(APP_ID, "synthetic.pdf", context.session, lambda _: b"synthetic")
     model.assert_not_called()
     metrics = context.resume.processing_state["metrics"]
-    assert metrics["cap_used"] == 0 and metrics["tokens_used"] > metrics["budget"]
-    assert metrics["budget"] < 1408 and context.resume.raw_text == text
+    assert metrics["digest_level"] == 0 and metrics["digest_compaction_skipped_no_evidence"] == 1
+    assert metrics["omitted_chars"] == 0 and metrics["over_by"] > 0 and context.resume.raw_text == text
+
+
+@pytest.mark.parametrize("is_assigned", [False, True], ids=["unassigned-span", "record-description"])
+async def test_l2_omission_hides_unsupported_model_results(context, monkeypatch, is_assigned):
+    source = "synthetic resume"
+    context.application.score_ai = 60
+    context.resume.processing_state = {"file_sha256": hashlib.sha256(b"synthetic").hexdigest()}
+    client = AsyncMock()
+    client.__aenter__.return_value.analyze = AsyncMock(return_value=response())
+
+    class Builder:
+        coverage = {"assigned": 5, "unassigned": 11, "coverage_pct": 31.25, "ambiguous_attribution": 0}
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def build(self, level, measure, *, cap):
+            return SimpleNamespace(
+                level=level,
+                text="synthetic",
+                budget=measure("synthetic"),
+                coverage=self.coverage,
+                cap_used=5,
+                omitted_by_record={"activity-1": 7} if is_assigned else {},
+                unassigned_omitted=0 if is_assigned else 7,
+            )
+
+    monkeypatch.setattr(settings, "RESUME_MODEL_INPUT", "digest_l2")
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_TOKENIZER_FILE", "")
+    monkeypatch.setattr(pipeline, "ResumeDigestBuilder", Builder)
+    monkeypatch.setattr(pipeline, "InferenceClient", lambda *_args, **_kwargs: client)
+    monkeypatch.setattr(pipeline, "extract_raw_text", lambda *_args, **_kwargs: source)
+    monkeypatch.setattr(pipeline, "parse_resume_text", lambda *_args, **_kwargs: SimpleNamespace(model_dump=dict))
+    await worker.run_model_job(APP_ID, "synthetic.pdf", context.session, lambda _: b"synthetic")
+    assert context.resume.processing_state["metrics"]["model_score_suppressed"] == 1
+    assert context.resume.agent_analysis["matching"]["score"] is None
+    assert context.resume.agent_analysis["matching"]["matched_required_skills"] == []
+    assert context.application.score_ai is None
+    assert all(flag["source"] != "model_prediction" for flag in context.resume.agent_analysis["flags"])
+    assert any(flag["code"] == "MODEL_SCORE_EVIDENCE_INCOMPLETE" for flag in context.resume.agent_analysis["flags"])
+
+
+@pytest.mark.parametrize(
+    "model_answer",
+    [[True, True], [True, False]],
+    ids=["agrees", "rejects-one-source"],
+)
+async def test_fast_evidence_path_keeps_complete_profile(context, monkeypatch, model_answer):
+    source = "EXPERIENCE\nBackend Developer\nSynthetic Systems\n2021 to 2023\nSKILLS\nPython\nDocker"
+    client = AsyncMock()
+    connection = client.__aenter__.return_value
+    connection.verify_evidence = AsyncMock(
+        return_value=VerifyEvidenceResponse(
+            matches=model_answer,
+            input_tokens=100,
+            output_tokens=8,
+        )
+    )
+    monkeypatch.setattr(settings, "MODEL_EVIDENCE_CHECK_ENABLED", True)
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_TOKENIZER_FILE", "")
+    monkeypatch.setattr(pipeline, "InferenceClient", lambda *_args, **_kwargs: client)
+    monkeypatch.setattr(pipeline, "extract_raw_text", lambda *_args, **_kwargs: source)
+    monkeypatch.setattr(
+        "app.tasks.resume_processing._load_job_context",
+        AsyncMock(return_value={"title": "Test", "skills_required": ["Python", "Docker"]}),
+    )
+    await worker.run_model_job(APP_ID, "synthetic.pdf", context.session, lambda _: b"synthetic")
+    connection.analyze.assert_not_awaited()
+    connection.verify_evidence.assert_awaited_once()
+    assert context.resume.raw_text == source
+    assert len(context.resume.parsed_data["structured"]["activities"]) == 1
+    assert context.resume.processing_state["metrics"]["evidence_checked"] == 2
+    assert context.application.score_ai is None
+    expected = "MODEL_EVIDENCE_VERIFIED" if all(model_answer) else "MODEL_MATCHING_EVIDENCE_CONFLICT"
+    assert expected in {flag["code"] for flag in context.resume.agent_analysis["flags"]}
+
+
+@pytest.mark.parametrize(
+    ("declared", "predicted", "conflict"),
+    [
+        (["Python", "Docker"], ["Python"], True),
+        (["Python", "Docker"], ["پایتون", "Docker"], False),
+        (["Python or Docker"], ["Python"], False),
+    ],
+    ids=["missing-source-match", "recognized-alias", "alternative-requirement"],
+)
+async def test_complete_input_model_matching_is_checked_against_source(
+    context, monkeypatch, declared, predicted, conflict
+):
+    reply = response()
+    reply.analysis.matched_skills = predicted
+    client = AsyncMock()
+    client.__aenter__.return_value.analyze = AsyncMock(return_value=reply)
+    monkeypatch.setattr(settings, "RESUME_MODEL_INPUT", "digest_l0")
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_TOKENIZER_FILE", "")
+    monkeypatch.setattr(pipeline, "InferenceClient", lambda *_args, **_kwargs: client)
+    monkeypatch.setattr(pipeline, "extract_raw_text", lambda *_args, **_kwargs: "مهارت‌ها\nPython\nDocker")
+    monkeypatch.setattr(
+        "app.tasks.resume_processing._load_job_context",
+        AsyncMock(return_value={"title": "Test", "skills_required": declared}),
+    )
+
+    await worker.run_model_job(APP_ID, "synthetic.pdf", context.session, lambda _: b"synthetic")
+
+    metrics = context.resume.processing_state["metrics"]
+    assert metrics["omitted_chars"] == 0
+    assert context.resume.parsed_data["_evidence_analysis"]["coverage"]["met"] == len(declared)
+    flags = {flag["code"] for flag in context.resume.agent_analysis["flags"]}
+    if conflict:
+        assert "MODEL_MATCHING_EVIDENCE_CONFLICT" in flags
+        assert "MODEL_SCORE_EVIDENCE_INCOMPLETE" not in flags
+        assert metrics["model_matching_conflict"] == metrics["model_score_suppressed"] == 1
+        assert context.application.score_ai is None
+        assert context.resume.agent_analysis["matching"]["matched_required_skills"] == []
+    else:
+        assert "MODEL_MATCHING_EVIDENCE_CONFLICT" not in flags
+        assert context.application.score_ai == 70
 
 
 @pytest.mark.parametrize(
@@ -324,7 +531,7 @@ async def test_success_is_idempotent_for_same_file(context, monkeypatch):
 
         await persist(
             "synthetic",
-            {"_extraction": {"version": 2, "file_sha256": hashlib.sha256(b"test").hexdigest()}},
+            {"_extraction": {"version": worker.EXTRACTION_VERSION, "file_sha256": hashlib.sha256(b"test").hexdigest()}},
             "inference",
             {},
         )
@@ -377,13 +584,13 @@ async def test_phase3_reparses_old_success_without_repeating_extraction(context,
     import hashlib
 
     digest = hashlib.sha256(b"test").hexdigest()
-    layout = {"version": 2, "file_sha256": digest}
+    layout = {"version": worker.EXTRACTION_VERSION, "file_sha256": digest}
     context.resume.raw_text = "synthetic"
     context.resume.parsed_data = {"_extraction": layout, "old": True}
     context.resume.processing_state = {
         "status": "succeeded",
         "file_sha256": digest,
-        "extraction_version": 2,
+        "extraction_version": worker.EXTRACTION_VERSION,
         "parser_version": 3,
     }
     calls = []
@@ -399,7 +606,7 @@ async def test_phase3_reparses_old_success_without_repeating_extraction(context,
     assert calls[0]["saved_text"] == "synthetic"
     assert calls[0]["saved_parsed"] is None
     assert calls[0]["saved_layout"] == layout
-    assert context.resume.processing_state["parser_version"] == 6
+    assert context.resume.processing_state["parser_version"] == worker.PARSER_VERSION
 
 
 async def test_changed_job_does_not_reuse_completed_analysis(context, monkeypatch):
@@ -420,7 +627,7 @@ async def test_changed_job_does_not_reuse_completed_analysis(context, monkeypatc
         calls.append(kwargs)
         await persist(
             "synthetic",
-            {"_extraction": {"version": 2, "file_sha256": hashlib.sha256(b"test").hexdigest()}},
+            {"_extraction": {"version": worker.EXTRACTION_VERSION, "file_sha256": hashlib.sha256(b"test").hexdigest()}},
             "inference",
             {},
         )

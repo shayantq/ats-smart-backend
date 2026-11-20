@@ -15,6 +15,14 @@ def normalize(text):
 
 
 ALIASES = {
+    "teaching": (
+        "teaching experience",
+        "teaching history",
+        "سوابق تدریس",
+        "سابقه تدریس",
+        "سوابق آموزشی و تدریس",
+        "فعالیت های تدریس",
+    ),
     "experience": (
         "experience",
         "work experience",
@@ -55,12 +63,16 @@ ALIASES = {
         "courses",
         "گواهی نامه ها",
         "دوره ها",
+        "دوره ها و گواهینامه ها",
+        "دوره ها و گواهی نامه ها",
     ),
     "summary": ("summary", "profile", "about me", "professional summary", "درباره من", "خلاصه", "معرفی"),
-    "interests": ("interests", "hobbies", "علاقه مندی ها"),
+    "interests": ("interests", "hobbies", "علاقه مندی ها", "علاقمندیها", "علاقهمندیها"),
     "strengths": ("strengths", "نقاط قوت"),
     "awards": ("awards", "honors", "جوایز", "افتخارات"),
     "publications": ("publications", "انتشارات", "مقالات"),
+    "memberships": ("memberships", "عضویت ها"),
+    "presentations": ("presentations", "talks", "ارائه ها و سخنرانی ها"),
     "contact": (
         "contact",
         "contact information",
@@ -76,7 +88,11 @@ LOOKUP = {normalize(alias): kind for kind, aliases in ALIASES.items() for alias 
 
 def heading(text):
     value = normalize(text)
-    return LOOKUP.get(value) if len(value) <= 60 else None
+    if value in LOOKUP:
+        return LOOKUP[value]
+    # نویسه‌های فونت و جهت متن فقط برای تطبیق عنوان کنار گذاشته می‌شوند.
+    decorated = " ".join("".join(" " if unicodedata.category(c) in {"Co", "Cf"} else c for c in value).split())
+    return LOOKUP.get(decorated.strip("•●▪◆◇·*-–—|:： "))
 
 
 def annotate(blocks):

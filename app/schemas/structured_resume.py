@@ -29,7 +29,7 @@ class Fact(BaseModel):
 class Activity(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    kind: Literal["employment", "internship", "freelance", "volunteering", "project"]
+    kind: Literal["employment", "internship", "freelance", "volunteering", "project", "teaching"]
     fields: dict[str, Fact]
     dates: dict
     claims: list[Fact] = Field(default_factory=list)

@@ -40,6 +40,11 @@ export default function CandidateDossier({ application, onClose }: CandidateDoss
   const detail = dossierData(query.data?{...query.data,parsed_data:parsed||null}:undefined);
   const matchingScore = object(query.data?.agent_analysis?.matching).score;
   const score = typeof matchingScore === "number" && Number.isFinite(matchingScore) ? matchingScore : application.score_ai;
+  const flags = query.data?.agent_analysis?.flags;
+  const flagCodes = Array.isArray(flags) ? flags.map(flag => object(flag).code) : [];
+  const evidenceVerified = flagCodes.includes("MODEL_EVIDENCE_VERIFIED");
+  const reviewReason = flagCodes.includes("MODEL_SCORE_EVIDENCE_INCOMPLETE") ? "incomplete_input"
+    : flagCodes.includes("MODEL_MATCHING_EVIDENCE_CONFLICT") ? "matching_conflict" : undefined;
   const scoreBlocked = (!!processing?.status && processing.status !== 'succeeded') || object(parsed?._extraction).status === 'partial'||!!parsed?._review_warning;
   const personal = object(query.data?.parsed_data?.personal_info);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -85,7 +90,7 @@ export default function CandidateDossier({ application, onClose }: CandidateDoss
         <button aria-pressed={identityHidden} onClick={()=>setIdentityHidden(v=>!v)} className="mb-4 rounded border border-rule px-3 py-2 text-caption">{identityHidden?'بازگرداندن نمای کامل پرونده':'پنهان‌کردن اطلاعات هویتی'}</button>
         {identityHidden&&<section className="editorial-panel" aria-label="خلاصه بدون هویت"><h3 className="text-heading">مرور محدود بدون اطلاعات هویتی</h3><p className="my-3 text-caption">نام، تماس، متن، سند، شواهد آزاد و یادداشت‌ها در این نما نشان داده نمی‌شوند. این گزینه فقط نمایش همین پرونده را محدود می‌کند؛ ناشناس‌سازی داده، خروجی قابل اشتراک یا تضمین حذف سوگیری نیست.</p><p className="text-body">تعداد فعالیت‌های ثبت‌شده: {Array.isArray(object(parsed?.structured).activities)?(object(parsed?.structured).activities as unknown[]).length.toLocaleString('fa-IR'):'نامشخص'}</p></section>}
         {query.isPending && <p role="status">در حال دریافت پرونده…</p>}
-        <ResumeProcessingStatus state={processing} />
+        <ResumeProcessingStatus state={processing} reviewReason={reviewReason} />
         <ExtractionNotice value={query.data?.parsed_data?._extraction} />
         {query.isError && <div role="alert" className="my-4 border-s-2 border-red-300 dark:border-red-400 ps-4 text-red-800 dark:text-red-300">دریافت جزئیات پرونده ممکن نشد؛ دسترسی و اتصال را بررسی کنید. <button onClick={()=>void query.refetch()} className="underline">تلاش مجدد</button></div>}
         {query.data && !query.data.resume_id && <p role="status" className="my-4 text-caption text-muted">این درخواست قدیمی هنوز به نسخهٔ مشخصی از رزومه متصل نشده است.</p>}
@@ -103,7 +108,8 @@ export default function CandidateDossier({ application, onClose }: CandidateDoss
             </section>
             <section className="editorial-panel" aria-labelledby={`${title}-analysis`}>
               <h3 id={`${title}-analysis`} className="text-heading">تحلیل هوش مصنوعی</h3>
-              <p className="mt-3 text-body">امتیاز ثبت‌شده: <strong className="tabular-nums">{scoreBlocked ? "تا تکمیل تحلیل قابل اتکا نیست" : score === null ? "هنوز محاسبه نشده" : `${score} از ۱۰۰`}</strong></p>
+              {evidenceVerified && !scoreBlocked ? <p className="mt-3 text-body">مدل حضور مهارت‌های مستند را بررسی کرد. جزئیات را در پوشش شروط آگهی ببینید.</p>
+                : <p className="mt-3 text-body">امتیاز ثبت‌شده: <strong className="tabular-nums">{reviewReason ? "نیازمند بازبینی شواهد" : scoreBlocked ? "تا تکمیل تحلیل قابل اتکا نیست" : score === null ? "هنوز محاسبه نشده" : `${score} از ۱۰۰`}</strong></p>}
               <p className="mt-2 text-caption text-muted">امتیاز تطابق، تصمیم نهایی استخدام نیست.</p>
               {!!query.data?.parsed_data?._evidence_analysis&&<p className="mt-2 text-caption text-muted">امتیاز مدل کالیبره نشده است؛ پوشش مستند شروط آگهی جداگانه در پایین پرونده نمایش داده می‌شود.</p>}
               {detail.radar.length ? <Suspense fallback={<p role="status">در حال آماده‌سازی نمودار…</p>}><CandidateRadar metrics={detail.radar} /></Suspense> : <div className="mt-5 border-s-2 border-rule ps-4">

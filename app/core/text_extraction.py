@@ -18,6 +18,7 @@ import pytesseract
 from docx import Document
 
 from app.core.config import settings
+from app.core.pdf_layout import EXTRACTION_VERSION
 
 import io
 
@@ -52,7 +53,7 @@ def extract_raw_text(file_bytes: bytes, filename: str, *, with_layout: bool = Fa
         text = _extract_from_docx(file_bytes)
         return (
             dict(
-                version=2,
+                version=EXTRACTION_VERSION,
                 file_sha256=hashlib.sha256(file_bytes).hexdigest(),
                 raw_text=text,
                 pages=[],

@@ -55,10 +55,16 @@ class Settings(BaseSettings):
     # فقط RESUME_PIPELINE=model سرویس مستقل مدل را فعال می‌کند؛ پیش‌فرض تولید تغییر نمی‌کند.
     MODEL_INFERENCE_URL: str = ""
     MODEL_INFERENCE_TIMEOUT_SECONDS: float = 60.0
+    MODEL_INFERENCE_GATEWAY_DEADLINE_SECONDS: float = Field(default=60.0, gt=0)
+    MODEL_INFERENCE_LIMITS_SYNC: bool = False
+    MODEL_INFERENCE_LIMITS_TTL_SECONDS: float = Field(default=300.0, ge=0)
+    RESUME_JOB_TIMEOUT_SECONDS: int = Field(default=300, gt=0)
+    RESUME_EXTRACTION_PARSE_ALLOWANCE_SECONDS: int = Field(default=60, ge=0)
     MODEL_INFERENCE_CONTEXT_LIMIT: int = Field(default=2048, gt=0)
     MODEL_INFERENCE_OUTPUT_LIMIT: int = Field(default=640, ge=0)
     MODEL_INFERENCE_TOKENIZER_FILE: str = ""
     RESUME_MODEL_INPUT: Literal["raw", "digest_l0", "digest_l1", "digest_l2"] = "raw"
+    MODEL_EVIDENCE_CHECK_ENABLED: bool = False
     RESUME_DIGEST_DESCRIPTION_CAP: int | None = Field(default=None, ge=0)
     RESUME_DIGEST_ICON_FONTS: tuple[str, ...] = ICON_FONTS
     # سقف زمان هر عامل؛ عامل کندتر «failed» علامت می‌خورد و بقیه‌ی گراف ادامه می‌دهد

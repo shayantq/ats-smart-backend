@@ -24,7 +24,12 @@ from app.model_inference.contract import (
     AnalyzeResponse,
     GeneratedAnalysis,
     JobContext,
+    EVIDENCE_INPUT_TOKENS,
+    EVIDENCE_OUTPUT_TOKENS,
+    VerifyEvidenceRequest,
+    VerifyEvidenceResponse,
     chat_prompt,
+    evidence_prompt,
 )
 
 
@@ -89,7 +94,12 @@ class Engine:
         self.startup_timeout = float(os.getenv("INFERENCE_STARTUP_TIMEOUT", "180"))
         self.parallel = int(os.getenv("INFERENCE_PARALLEL", "1"))
         self.capacity = Capacity(self.parallel, int(os.getenv("INFERENCE_WAITING", "4")))
-        self.tokenizer = tokenizer or Tokenizer.from_file(os.environ["INFERENCE_TOKENIZER"])
+        self.tokenizer_sha256 = None
+        if tokenizer is None:
+            data = Path(os.environ["INFERENCE_TOKENIZER"]).read_bytes()
+            self.tokenizer_sha256 = hashlib.sha256(data).hexdigest()
+            tokenizer = Tokenizer.from_buffer(data)
+        self.tokenizer = tokenizer
         self.http = http or httpx.AsyncClient(
             base_url=os.getenv("OLLAMA_URL", "http://ats-engine:11434"),
             timeout=httpx.Timeout(self.deadline, connect=3),
@@ -201,6 +211,57 @@ class Engine:
         response.raise_for_status()
         self.ready = True
 
+    async def engine_json(self, endpoint, payload):
+        async with self.http.stream("POST", endpoint, json=payload) as response:
+            response.raise_for_status()
+            body = bytearray()
+            async with aclosing(response.aiter_bytes()) as stream:
+                async for chunk in stream:
+                    body.extend(chunk)
+                    if len(body) > 131072:
+                        raise InferenceError("engine_response_too_large", 502)
+        return json.loads(body)
+
+    async def verify_evidence(self, body: VerifyEvidenceRequest):
+        if self.kind != "llama_cpp":
+            raise InferenceError("evidence_verification_unavailable", 503)
+        prompt = evidence_prompt(body)
+        tokens = len(self.tokenizer.encode(prompt, add_special_tokens=False).ids)
+        if tokens > EVIDENCE_INPUT_TOKENS or tokens + EVIDENCE_OUTPUT_TOKENS > self.context:
+            raise InferenceError("context_limit_exceeded", 422)
+        values = ' ws "," ws '.join(["verdict"] * len(body.checks))
+        grammar = f'root ::= "[" ws {values} ws "]"\nverdict ::= "true" | "false"\nws ::= [ \\t]?'
+        try:
+            async with asyncio.timeout(min(self.deadline, 35)), self.capacity.slot():
+                started = time.perf_counter()
+                data = await self.engine_json(
+                    "/completion",
+                    dict(
+                        prompt=prompt,
+                        grammar=grammar,
+                        n_predict=EVIDENCE_OUTPUT_TOKENS,
+                        temperature=0,
+                        seed=2026,
+                        cache_prompt=False,
+                        stream=False,
+                    ),
+                )
+                if data.get("stop_type") not in {"eos", "word"} or data.get("truncated"):
+                    raise InferenceError("incomplete_generation", 502)
+                result = VerifyEvidenceResponse(
+                    input_tokens=tokens, output_tokens=data["tokens_predicted"], matches=json.loads(data["content"])
+                )
+                if len(result.matches) != len(body.checks):
+                    raise InferenceError("invalid_engine_response", 502)
+                result._timings_ms["engine_request_ms"] = (time.perf_counter() - started) * 1000
+                return result
+        except (TimeoutError, httpx.TimeoutException):
+            raise InferenceError("engine_deadline_exceeded", 504) from None
+        except httpx.HTTPError:
+            raise InferenceError("engine_unavailable", 503) from None
+        except (ValueError, KeyError, TypeError, ValidationError):
+            raise InferenceError("invalid_engine_response", 502) from None
+
     async def analyze(self, request: AnalyzeRequest):
         started = time.perf_counter()
         prompt = chat_prompt(request)
@@ -263,22 +324,13 @@ class Engine:
                     }
                 endpoint = {"ollama": "/api/generate", "llama_cpp": "/completion", "vllm": "/v1/completions"}[self.kind]
                 started = time.perf_counter()
-                async with self.http.stream(
-                    "POST",
-                    endpoint,
-                    json=payload,
-                ) as response:
-                    response.raise_for_status()
-                    body = bytearray()
-                    async with aclosing(response.aiter_bytes()) as stream:
-                        async for chunk in stream:
-                            body.extend(chunk)
-                            if len(body) > 131072:
-                                raise InferenceError("engine_response_too_large", 502)
-                data = json.loads(body)
+                data = await self.engine_json(endpoint, payload)
                 timings["engine_request_ms"] = (time.perf_counter() - started) * 1000
                 started = time.perf_counter()
                 if self.kind == "llama_cpp":
+                    count = data.get("timings", {}).get("prompt_n")
+                    if type(count) is int and 0 <= count < 1e9:
+                        timings["engine_prompt_tokens"] = count
                     for key in ("prompt_ms", "predicted_ms"):
                         value = data.get("timings", {}).get(key)
                         if isinstance(value, (int, float)) and 0 <= value < 1e9:
@@ -360,18 +412,29 @@ def create_app(engine=None):
             raise HTTPException(503, "model_not_ready")
         return {"status": "ready", "model": current.model, "inflight": current.capacity.pending}
 
-    @app.post("/v1/analyze", response_model=AnalyzeResponse)
-    async def analyze(
-        body: AnalyzeRequest,
-        request: Request,
-        response: Response,
-        claims=Depends(require_service_token("backend-api", "worker", audience="ats-inference")),
+    @app.get("/v1/limits", response_model=None)
+    async def limits(
+        request: Request, claims=Depends(require_service_token("backend-api", "worker", audience="ats-inference"))
     ):
+        current = request.app.state.engine
+        result = dict(
+            context_limit=current.context,
+            output_limit=current.output,
+            tokenizer_sha256=current.tokenizer_sha256,
+            parallel=current.parallel,
+            deadline_seconds=current.deadline,
+        )
+        build = os.getenv("APP_VERSION", "")
+        if build and len(build) <= 64 and build.isascii() and all(c.isalnum() or c in "_-" for c in build):
+            result["build"] = build
+        return result
+
+    async def run_request(call, request, response):
         async def disconnected():
             while (await request.receive())["type"] != "http.disconnect":
                 pass
 
-        task = asyncio.create_task(request.app.state.engine.analyze(body))
+        task = asyncio.create_task(call)
         monitor = asyncio.create_task(disconnected())
         try:
             done, _ = await asyncio.wait((task, monitor), return_when=asyncio.FIRST_COMPLETED)
@@ -380,6 +443,8 @@ def create_app(engine=None):
                 for key in SAFE_TIMINGS:
                     if key in result.timings_ms:
                         response.headers["X-ATS-Time-" + key.replace("_", "-")] = str(result.timings_ms[key])
+                if "engine_prompt_tokens" in result.timings_ms:
+                    response.headers["X-ATS-Time-Engine-Prompt-Tokens"] = str(result.timings_ms["engine_prompt_tokens"])
                 return result
             raise HTTPException(499, "client_disconnected")
         except InferenceError as error:
@@ -393,6 +458,24 @@ def create_app(engine=None):
             task.cancel()
             monitor.cancel()
             await asyncio.gather(task, monitor, return_exceptions=True)
+
+    @app.post("/v1/analyze", response_model=AnalyzeResponse)
+    async def analyze(
+        body: AnalyzeRequest,
+        request: Request,
+        response: Response,
+        claims=Depends(require_service_token("backend-api", "worker", audience="ats-inference")),
+    ):
+        return await run_request(request.app.state.engine.analyze(body), request, response)
+
+    @app.post("/v1/verify-evidence", response_model=VerifyEvidenceResponse)
+    async def verify_evidence(
+        body: VerifyEvidenceRequest,
+        request: Request,
+        response: Response,
+        claims=Depends(require_service_token("backend-api", "worker", audience="ats-inference")),
+    ):
+        return await run_request(request.app.state.engine.verify_evidence(body), request, response)
 
     return app
 

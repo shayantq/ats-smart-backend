@@ -8,7 +8,7 @@ from contextlib import aclosing, asynccontextmanager
 import httpx
 from pydantic import ValidationError
 
-from app.model_inference.contract import AnalyzeRequest, AnalyzeResponse
+from app.model_inference.contract import AnalyzeRequest, AnalyzeResponse, VerifyEvidenceRequest, VerifyEvidenceResponse
 
 
 class InferenceError(Exception):
@@ -39,6 +39,7 @@ SAFE_GATEWAY_ERRORS = frozenset(
 )
 
 SAFE_TIMINGS = (
+    "engine_prompt_tokens",
     "prompt_tokenization_ms",
     "engine_request_ms",
     "engine_prompt_ms",
@@ -111,12 +112,24 @@ class InferenceClient:
         await self.http.aclose()
 
     async def analyze(self, request: AnalyzeRequest) -> AnalyzeResponse:
+        return await self._post("/v1/analyze", request, AnalyzeResponse)
+
+    async def verify_evidence(self, request: VerifyEvidenceRequest) -> VerifyEvidenceResponse | None:
+        try:
+            return await self._post("/v1/verify-evidence", request, VerifyEvidenceResponse)
+        except InferenceError as error:
+            if error.status_code == 404:
+                # نسخهٔ قبلی درگاه در فاصلهٔ انتشار Worker و درگاه قابل استفاده می‌ماند.
+                return None
+            raise
+
+    async def _post(self, endpoint, request, response_model):
         try:
             # زمان صف، امضا، ارسال و اعتبارسنجی همگی داخل مهلت قرار دارند.
             async with asyncio.timeout(self.timeout), self.capacity.slot():
                 token = self.token_factory()
                 async with self.http.stream(
-                    "POST", "/v1/analyze", json=request.model_dump(), headers={"X-Internal-Auth": token}
+                    "POST", endpoint, json=request.model_dump(), headers={"X-Internal-Auth": token}
                 ) as response:
                     if response.status_code != 200:
                         raise await _gateway_error(response)
@@ -126,13 +139,17 @@ class InferenceClient:
                             body.extend(chunk)
                             if len(body) > 65536:
                                 raise InferenceError("response_too_large", 502)
-                result = AnalyzeResponse.model_validate_json(bytes(body))
+                result = response_model.model_validate_json(bytes(body))
                 for key in SAFE_TIMINGS:
                     try:
                         value = float(response.headers.get("X-ATS-Time-" + key.replace("_", "-"), ""))
                     except ValueError:
                         continue
-                    if math.isfinite(value) and 0 <= value < 1e9:
+                    if (
+                        math.isfinite(value)
+                        and 0 <= value < 1e9
+                        and (key != "engine_prompt_tokens" or value.is_integer())
+                    ):
                         result._timings_ms[key] = value
                 return result
         except (TimeoutError, httpx.TimeoutException):

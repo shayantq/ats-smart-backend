@@ -15,6 +15,7 @@ from app.core.text_extraction import UnreadableResumeFileError
 from app.model_inference.client import InferenceError
 from app.models import Application, Resume
 from app.core.dossier_repository import record_analysis_version
+from app.core.pdf_layout import EXTRACTION_VERSION
 from app.core.structured_resume import PARSER_VERSION
 
 
@@ -45,16 +46,39 @@ def public_state(state: dict | None) -> dict | None:
 
 
 async def run_model_job(application_id, file_url, session_factory, download):
+    from app.core.config import settings
+    from app.model_inference.limits import fetch_limits
     from app.core.analysis_evidence import VERSION as analysis_version, job_signature
     from app.agents.supervisor import to_skill_analysis
-    from app.model_inference.pipeline import run_model_pipeline
+    from app.model_inference.pipeline import MODEL_EVIDENCE_POLICY_VERSION, run_model_pipeline
     from app.model_inference.resume_digest import cache_key
     from app.tasks.resume_processing import _load_job_context
 
+    raw_input = settings.RESUME_MODEL_INPUT == "raw"
+    if not raw_input:
+        analysis_version = f"{analysis_version}/{MODEL_EVIDENCE_POLICY_VERSION}"
+    if settings.MODEL_EVIDENCE_CHECK_ENABLED:
+        analysis_version = f"{analysis_version}/evidence-check-v1"
     application_id = uuid.UUID(application_id)
     attempt_id = str(uuid.uuid4())
     job = get_current_job()
-    metrics = {}
+    queued, started_at = getattr(job, "enqueued_at", None), getattr(job, "started_at", None)
+    queue_wait = None
+    if isinstance(queued, datetime) and isinstance(started_at, datetime):
+
+        def utc(value):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+        queue_wait = max(0, (utc(started_at) - utc(queued)).total_seconds() * 1000)
+    metrics = dict(
+        queue_wait_ms=queue_wait,
+        engine_prompt_tokens=None,
+        engine_output_tokens=None,
+        prefill_ms=None,
+        generation_ms=None,
+        engine_total_ms=None,
+    )
+    limits_task = None
     stage = "loading"
     async with session_factory() as db:
         application = await db.get(Application, application_id)
@@ -89,7 +113,7 @@ async def run_model_job(application_id, file_url, session_factory, download):
             attempt_id=attempt_id,
             attempt=previous.get("attempt", 0) + 1,
             updated_at=now(),
-            expires_at=now() + 360,
+            expires_at=now() + settings.RESUME_JOB_TIMEOUT_SECONDS + settings.RESUME_EXTRACTION_PARSE_ALLOWANCE_SECONDS,
             error_code=None,
         )
         resume.processing_state = state
@@ -118,7 +142,13 @@ async def run_model_job(application_id, file_url, session_factory, download):
         nonlocal stage
         metrics.update(timings)
         stage = next_stage
-        values = {"raw_text": text, "stage": stage, "file_sha256": digest, "cache_version": 1, "extraction_version": 2}
+        values = {
+            "raw_text": text,
+            "stage": stage,
+            "file_sha256": digest,
+            "cache_version": 1,
+            "extraction_version": EXTRACTION_VERSION,
+        }
         if parsed is not None:
             values["parsed_data"] = parsed
         values["parser_version"] = PARSER_VERSION if next_stage == "inference" else None
@@ -129,19 +159,27 @@ async def run_model_job(application_id, file_url, session_factory, download):
             values["model_input_key"] = input_key
         await write(**values)
 
-    try:
-        from app.core.config import settings
-
+    def resolve_limits():
+        nonlocal input_key
+        limits = limits_task.result() if limits_task and limits_task.done() and not limits_task.cancelled() else None
         input_key = cache_key(
             settings.RESUME_MODEL_INPUT,
             cap=settings.RESUME_DIGEST_DESCRIPTION_CAP,
             icon_fonts=settings.RESUME_DIGEST_ICON_FONTS,
-            context=settings.MODEL_INFERENCE_CONTEXT_LIMIT,
-            output=settings.MODEL_INFERENCE_OUTPUT_LIMIT,
+            context=limits.context_limit if limits else settings.MODEL_INFERENCE_CONTEXT_LIMIT,
+            output=limits.output_limit if limits else settings.MODEL_INFERENCE_OUTPUT_LIMIT,
             tokenizer=settings.MODEL_INFERENCE_TOKENIZER_FILE,
         )
+        if limits and settings.RESUME_MODEL_INPUT == "digest_l2":
+            input_key += ":" + limits.tokenizer_sha256
+        return limits
+
+    input_key = "raw"
+    try:
         if not settings.MODEL_INFERENCE_URL:
             raise InferenceError("model_endpoint_missing", 500)
+        if settings.MODEL_INFERENCE_LIMITS_SYNC:
+            limits_task = asyncio.create_task(fetch_limits())
         started = time.perf_counter()
         content = await asyncio.to_thread(download, file_url)
         metrics["file_loading_ms"] = (time.perf_counter() - started) * 1000
@@ -151,13 +189,14 @@ async def run_model_job(application_id, file_url, session_factory, download):
         reusable = (
             same_file
             and cached_text is not None
-            and previous.get("extraction_version") == 2
-            and cached_layout.get("version") == 2
+            and previous.get("extraction_version") == EXTRACTION_VERSION
+            and cached_layout.get("version") == EXTRACTION_VERSION
             and cached_layout.get("file_sha256") == digest
         )
         parsed_reusable = (
             reusable and previous.get("parser_version") == PARSER_VERSION and not previous.get("force_reparse")
         )
+        resolve_limits()
         if (
             parsed_reusable
             and previous.get("status") == "succeeded"
@@ -166,11 +205,14 @@ async def run_model_job(application_id, file_url, session_factory, download):
             and previous.get("model_input_key", "raw") == input_key
         ):
             metrics.update(previous.get("metrics") or {})
+            metrics["queue_wait_ms"] = queue_wait
             await write(status="succeeded", stage="complete")
             return
         if not same_file:
             await write(raw_text=None, parsed_data=None, file_sha256=digest, clear_analysis=True)
-        elif previous.get("job_sha256") and previous["job_sha256"] != context_signature:
+        elif (previous.get("job_sha256") and previous["job_sha256"] != context_signature) or (
+            not raw_input and previous.get("analysis_version") != analysis_version
+        ):
             await write(clear_analysis=True)
         stage = "extraction"
         await write(stage=stage)
@@ -182,6 +224,7 @@ async def run_model_job(application_id, file_url, session_factory, download):
             saved_parsed=cached_parsed if parsed_reusable else None,
             saved_layout=(cached_parsed or {}).get("_extraction") if reusable else None,
             persist=persist,
+            **({"resolve_limits": resolve_limits} if limits_task else {}),
         )
         metrics.update(result.metrics or {})
         stage = "commit"
@@ -197,6 +240,8 @@ async def run_model_job(application_id, file_url, session_factory, download):
                 raise StaleAttempt()
             if result.analysis.matching.score is not None:
                 application.score_ai = round(result.analysis.matching.score)
+            elif metrics.get("model_score_suppressed"):
+                application.score_ai = None
             await record_analysis_version(db, application, resume, context, resume.agent_analysis, dict(metrics))
             resume.processing_state = dict(
                 resume.processing_state,
@@ -240,3 +285,7 @@ async def run_model_job(application_id, file_url, session_factory, download):
             # در قطع دیتابیس، انقضای lease مانع نمایش دائمی «در حال پردازش» می‌شود.
             pass
         raise ResumeProcessingError(code, retryable) from None
+    finally:
+        if limits_task:
+            limits_task.cancel()
+            await asyncio.gather(limits_task, return_exceptions=True)

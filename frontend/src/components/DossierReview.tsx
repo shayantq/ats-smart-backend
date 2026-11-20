@@ -20,7 +20,7 @@ export function DossierTimeline({structured}:{structured:unknown}) {
     {!rows.length&&<p className="mt-3 text-caption text-muted">فعالیت مستندی برای نمایش موجود نیست.</p>}
     <ol className="mt-4 space-y-4">{rows.map((r,i)=>{const fields=object(r.fields),dates=object(r.dates);return <li key={text(r.id)||i} className="border-s border-rule ps-4">
       <h4 className="font-medium" dir="auto">{text(object(fields.job_title||fields.project_name).value)||'عنوان نامشخص'}</h4>
-      <p className="text-caption text-muted">{({employment:'استخدام',internship:'کارآموزی',freelance:'فریلنس',volunteering:'داوطلبی',project:'پروژه'} as Record<string,string>)[text(r.kind)]||'نوع نامشخص'}</p>
+      <p className="text-caption text-muted">{({employment:'استخدام',internship:'کارآموزی',freelance:'فریلنس',volunteering:'داوطلبی',project:'پروژه',teaching:'تدریس'} as Record<string,string>)[text(r.kind)]||'نوع نامشخص'}</p>
       <SourceFact label="بازهٔ منبع" value={fields.duration}/>
       {r.dated?<details className="text-caption text-muted"><summary className="cursor-pointer">کران بیرونی بازه در تقویم میلادی؛ روز دقیق ادعا نمی‌شود</summary><p dir="ltr">{r.start} — {dates.ongoing?'اکنون':r.end}</p></details>:<p className="text-caption text-muted">تاریخ نامشخص یا نامعتبر؛ مدت به جمع سابقه افزوده نشده است.</p>}
     </li>})}</ol>
