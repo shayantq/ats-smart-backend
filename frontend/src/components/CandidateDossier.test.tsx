@@ -74,6 +74,19 @@ test("شکست مدل، متن استخراج‌شده را در پرونده م
   expect(screen.getByText('تا تکمیل تحلیل قابل اتکا نیست')).toBeInTheDocument();
 });
 
+test("بررسی محدود مدل در پرونده با امتیاز اشتباه گرفته نمی‌شود", async () => {
+  jest.mocked(fetchApplicationDossier).mockResolvedValue({
+    application_id: "a1", resume_id: "r1", raw_text: "متن ساختگی رزومه", parsed_data: null, skill_analysis: null,
+    agent_analysis: { flags: [{ code: "MODEL_EVIDENCE_BUDGET_LIMITED" }], matching: { score: null } },
+    processing_state: { status: "succeeded", stage: "complete", attempt: 1 },
+  });
+  render(<ApplicationCard application={application} isDragging={false} onDragStart={jest.fn()} onDragEnd={jest.fn()} />);
+  await userEvent.click(screen.getByRole("button", { name: /مشاهده پرونده/ }));
+  expect(await screen.findByText(/مدل یک شاهد مهارتی را بررسی کرد/)).toBeInTheDocument();
+  expect(screen.queryByText(/امتیاز ثبت‌شده/)).not.toBeInTheDocument();
+  expect(screen.getByText("متن ساختگی رزومه")).toBeInTheDocument();
+});
+
 test('نمای بدون هویت نام و تماس و متن آزاد را از محتوای پنجره حذف می‌کند',async()=>{
   jest.mocked(fetchApplicationDossier).mockResolvedValue({application_id:'a1',resume_id:null,raw_text:'Sensitive synthetic text',parsed_data:{personal_info:{email:'person@example.invalid',phone:'123456789'},structured:{activities:[]}},agent_analysis:null,skill_analysis:null});
   render(<ApplicationCard application={application} isDragging={false} onDragStart={jest.fn()} onDragEnd={jest.fn()}/>);

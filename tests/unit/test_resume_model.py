@@ -455,6 +455,55 @@ async def test_fast_evidence_path_keeps_complete_profile(context, monkeypatch, m
     assert expected in {flag["code"] for flag in context.resume.agent_analysis["flags"]}
 
 
+@pytest.mark.parametrize("long_input", [True, False], ids=["over-budget", "within-budget"])
+async def test_mixed_requirements_keep_all_source_evidence(context, monkeypatch, long_input):
+    structured_text = "EXPERIENCE\nBackend Developer\nSynthetic Systems\n2021 to 2023\nSKILLS\nPython"
+    source = f"{LONG_SYNTHETIC}\n{structured_text}" if long_input else structured_text
+    client = AsyncMock()
+    connection = client.__aenter__.return_value
+    connection.verify_evidence.return_value = VerifyEvidenceResponse(matches=[True], input_tokens=60, output_tokens=4)
+    connection.analyze.return_value = response()
+    monkeypatch.setattr(settings, "MODEL_EVIDENCE_CHECK_ENABLED", True)
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_TOKENIZER_FILE", "")
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_CONTEXT_LIMIT", 2048)
+    monkeypatch.setattr(settings, "MODEL_INFERENCE_OUTPUT_LIMIT", 640)
+    monkeypatch.setattr(settings, "RESUME_MODEL_INPUT", "raw")
+    monkeypatch.setattr(pipeline, "InferenceClient", lambda *_args, **_kwargs: client)
+    monkeypatch.setattr(pipeline, "extract_raw_text", lambda *_args, **_kwargs: source)
+    monkeypatch.setattr(
+        "app.tasks.resume_processing._load_job_context",
+        AsyncMock(
+            return_value={
+                "title": "آگهی آزمایشی",
+                "skills_required": ["Python", "Docker"],
+                "required_seniority": "Senior",
+                "location": "Oslo",
+            }
+        ),
+    )
+
+    await worker.run_model_job(APP_ID, "synthetic.pdf", context.session, lambda _: b"synthetic")
+
+    assert context.resume.raw_text == source
+    assert len(context.resume.parsed_data["structured"]["activities"]) == 1
+    rows = context.resume.parsed_data["_evidence_analysis"]["requirements"]
+    assert [row["status"] for row in rows] == ["met", "unknown", "unknown", "unknown"]
+    assert context.resume.processing_state["status"] == "succeeded"
+    if long_input:
+        connection.analyze.assert_not_awaited()
+        connection.verify_evidence.assert_awaited_once()
+        assert [check.skill for check in connection.verify_evidence.call_args.args[0].checks] == ["Python"]
+        metrics = context.resume.processing_state["metrics"]
+        assert metrics["over_by"] > 0 and metrics["evidence_budget_limited"] == 1
+        assert metrics["evidence_checked"] == metrics["evidence_agreements"] == 1
+        assert context.application.score_ai is None
+        assert "MODEL_EVIDENCE_BUDGET_LIMITED" in {flag["code"] for flag in context.resume.agent_analysis["flags"]}
+    else:
+        connection.verify_evidence.assert_not_awaited()
+        connection.analyze.assert_awaited_once()
+        assert connection.analyze.call_args.args[0].resume_text == source
+
+
 @pytest.mark.parametrize(
     ("declared", "predicted", "conflict"),
     [

@@ -58,7 +58,7 @@ async def run_model_job(application_id, file_url, session_factory, download):
     if not raw_input:
         analysis_version = f"{analysis_version}/{MODEL_EVIDENCE_POLICY_VERSION}"
     if settings.MODEL_EVIDENCE_CHECK_ENABLED:
-        analysis_version = f"{analysis_version}/evidence-check-v1"
+        analysis_version = f"{analysis_version}/evidence-check-v2"
     application_id = uuid.UUID(application_id)
     attempt_id = str(uuid.uuid4())
     job = get_current_job()

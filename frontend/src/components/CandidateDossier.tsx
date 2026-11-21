@@ -43,6 +43,7 @@ export default function CandidateDossier({ application, onClose }: CandidateDoss
   const flags = query.data?.agent_analysis?.flags;
   const flagCodes = Array.isArray(flags) ? flags.map(flag => object(flag).code) : [];
   const evidenceVerified = flagCodes.includes("MODEL_EVIDENCE_VERIFIED");
+  const evidenceLimited = flagCodes.includes("MODEL_EVIDENCE_BUDGET_LIMITED");
   const reviewReason = flagCodes.includes("MODEL_SCORE_EVIDENCE_INCOMPLETE") ? "incomplete_input"
     : flagCodes.includes("MODEL_MATCHING_EVIDENCE_CONFLICT") ? "matching_conflict" : undefined;
   const scoreBlocked = (!!processing?.status && processing.status !== 'succeeded') || object(parsed?._extraction).status === 'partial'||!!parsed?._review_warning;
@@ -108,7 +109,8 @@ export default function CandidateDossier({ application, onClose }: CandidateDoss
             </section>
             <section className="editorial-panel" aria-labelledby={`${title}-analysis`}>
               <h3 id={`${title}-analysis`} className="text-heading">تحلیل هوش مصنوعی</h3>
-              {evidenceVerified && !scoreBlocked ? <p className="mt-3 text-body">مدل حضور مهارت‌های مستند را بررسی کرد. جزئیات را در پوشش شروط آگهی ببینید.</p>
+              {evidenceLimited && !scoreBlocked ? <p className="mt-3 text-body">به‌دلیل طول رزومه، مدل یک شاهد مهارتی را بررسی کرد. وضعیت همهٔ شرط‌ها در بخش پوشش شروط آگهی آمده است.</p>
+                : evidenceVerified && !scoreBlocked ? <p className="mt-3 text-body">مدل حضور مهارت‌های مستند را بررسی کرد. جزئیات را در پوشش شروط آگهی ببینید.</p>
                 : <p className="mt-3 text-body">امتیاز ثبت‌شده: <strong className="tabular-nums">{reviewReason ? "نیازمند بازبینی شواهد" : scoreBlocked ? "تا تکمیل تحلیل قابل اتکا نیست" : score === null ? "هنوز محاسبه نشده" : `${score} از ۱۰۰`}</strong></p>}
               <p className="mt-2 text-caption text-muted">امتیاز تطابق، تصمیم نهایی استخدام نیست.</p>
               {!!query.data?.parsed_data?._evidence_analysis&&<p className="mt-2 text-caption text-muted">امتیاز مدل کالیبره نشده است؛ پوشش مستند شروط آگهی جداگانه در پایین پرونده نمایش داده می‌شود.</p>}

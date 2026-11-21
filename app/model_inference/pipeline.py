@@ -38,26 +38,34 @@ from app.model_inference.contract import (
 from app.model_inference.resume_digest import ResumeDigestBuilder, digest_level
 
 MODEL_EVIDENCE_POLICY_VERSION = "matching-evidence-v1"
+LIMITED_EVIDENCE_INPUT_TOKENS = 160
 
 
 def validate_model_evidence(
-    analysis: UnifiedAnalysis, evidence: dict, *, incomplete_input: bool = False
+    analysis: UnifiedAnalysis,
+    evidence: dict,
+    *,
+    incomplete_input: bool = False,
+    checked_skills: list[str] | None = None,
 ) -> dict[str, int]:
     if incomplete_input:
         code = "MODEL_SCORE_EVIDENCE_INCOMPLETE"
         message = "شواهد رزومه برای نمایش امتیاز مدل کافی نیست. پرونده نیازمند بازبینی است."
     else:
-        expected = {}
-        for row in evidence.get("requirements") or []:
-            expression = row.get("expression") or {}
-            skill = expression.get("skill")
-            # خروجی مدل نام مهارت است و قیود نسخه، مدت یا شرط ترکیبی را بیان نمی‌کند.
-            if (
-                row.get("source") == "skills_required"
-                and skill
-                and not (expression.get("version") or expression.get("minimum_years") is not None)
-            ):
-                expected[skill] = row.get("status") == "met"
+        if checked_skills is not None:
+            expected = dict.fromkeys(checked_skills, True)
+        else:
+            expected = {}
+            for row in evidence.get("requirements") or []:
+                expression = row.get("expression") or {}
+                skill = expression.get("skill")
+                # خروجی مدل نام مهارت است و قیود نسخه، مدت یا شرط ترکیبی را بیان نمی‌کند.
+                if (
+                    row.get("source") == "skills_required"
+                    and skill
+                    and not (expression.get("version") or expression.get("minimum_years") is not None)
+                ):
+                    expected[skill] = row.get("status") == "met"
         predicted = {CANONICAL.get(normalize(skill)) for skill in analysis.matching.matched_required_skills}
         if all((skill in predicted) == supported for skill, supported in expected.items()):
             return {}
@@ -120,7 +128,7 @@ def source_analysis(raw_text: str, parsed: dict, elapsed_ms: float) -> UnifiedAn
     )
 
 
-def evidence_checks(parsed: dict, layout: dict | None) -> VerifyEvidenceRequest | None:
+def evidence_checks(parsed: dict, layout: dict | None, *, allow_subset: bool = False) -> VerifyEvidenceRequest | None:
     if (layout or {}).get("status") == "partial":
         return None
     requirements = [
@@ -128,7 +136,7 @@ def evidence_checks(parsed: dict, layout: dict | None) -> VerifyEvidenceRequest 
         for row in (parsed.get("_evidence_analysis") or {}).get("requirements", [])
         if row.get("priority") == "required"
     ]
-    if not 1 <= len(requirements) <= 4:
+    if not allow_subset and not 1 <= len(requirements) <= 4:
         return None
     checks = []
     for row in requirements:
@@ -141,6 +149,8 @@ def evidence_checks(parsed: dict, layout: dict | None) -> VerifyEvidenceRequest 
             or expression.get("version")
             or expression.get("minimum_years") is not None
         ):
+            if allow_subset:
+                continue
             return None
         excerpts = [ref.get("text", "").strip() for ref in expression.get("evidence", [])]
         matches = [
@@ -149,9 +159,14 @@ def evidence_checks(parsed: dict, layout: dict | None) -> VerifyEvidenceRequest 
             if 1 <= len(excerpt) <= 160 and any(name == skill for name, *_ in mentions(excerpt))
         ]
         if not matches:
+            if allow_subset:
+                continue
             return None
         checks.append(EvidenceCheck(skill=skill, excerpt=min(matches, key=len)))
-    return VerifyEvidenceRequest(checks=checks)
+    if allow_subset and checks:
+        # یک شاهد کوتاه برای زمان پاسخ روی CPU کافی است؛ ماتریس شروط کامل باقی می‌ماند.
+        checks = [min(checks, key=lambda check: len(check.skill) + len(check.excerpt))]
+    return VerifyEvidenceRequest(checks=checks) if checks else None
 
 
 @dataclass
@@ -231,17 +246,36 @@ async def run_model_pipeline(
             tokenizer_path = ""
             metrics["tokenizer_hash_mismatch"] = 1
 
+    def measure(text: str):
+        prompt = chat_prompt(AnalyzeRequest.model_construct(resume_text=text, job=job))
+        return check_prompt_budget(prompt, context_limit, output_limit, tokenizer_path)
+
+    mode = settings.RESUME_MODEL_INPUT
+    raw_budget = None
+    evidence_limited = False
     checks = evidence_checks(parsed, layout) if settings.MODEL_EVIDENCE_CHECK_ENABLED else None
+    if settings.MODEL_EVIDENCE_CHECK_ENABLED and mode == "raw" and checks is None:
+        selected = evidence_checks(parsed, layout, allow_subset=True)
+        if selected:
+            raw_budget = await asyncio.to_thread(measure, raw_text)
+            if raw_budget.over_by:
+                checks = selected
+                evidence_limited = True
+                metrics.update(raw_budget.metrics())
     if checks:
+        prompt_limit = LIMITED_EVIDENCE_INPUT_TOKENS if evidence_limited else EVIDENCE_INPUT_TOKENS
         evidence_budget = await asyncio.to_thread(
             check_prompt_budget,
             evidence_prompt(checks),
-            min(context_limit, EVIDENCE_INPUT_TOKENS + EVIDENCE_OUTPUT_TOKENS),
+            min(context_limit, prompt_limit + EVIDENCE_OUTPUT_TOKENS),
             EVIDENCE_OUTPUT_TOKENS,
             tokenizer_path,
         )
         if not evidence_budget.over_by:
-            metrics.update(evidence_budget.metrics())
+            if evidence_limited:
+                metrics["evidence_prompt_tokens"] = evidence_budget.prompt_tokens
+            else:
+                metrics.update(evidence_budget.metrics())
             stage = time.perf_counter()
             async with InferenceClient(
                 settings.MODEL_INFERENCE_URL,
@@ -260,7 +294,11 @@ async def run_model_pipeline(
                 source_analysis, raw_text, parsed, (time.perf_counter() - started) * 1000
             )
             analysis.matching.matched_required_skills = matches
-            conflict = validate_model_evidence(analysis, parsed.get("_evidence_analysis") or {})
+            conflict = validate_model_evidence(
+                analysis,
+                parsed.get("_evidence_analysis") or {},
+                checked_skills=[check.skill for check in checks.checks] if evidence_limited else None,
+            )
             if not conflict:
                 analysis.flags.append(
                     Flag(
@@ -272,6 +310,19 @@ async def run_model_pipeline(
                 )
             metrics.update(verdict.timings_ms)
             metrics.update(conflict)
+            if evidence_limited:
+                analysis.flags.append(
+                    Flag(
+                        code="MODEL_EVIDENCE_BUDGET_LIMITED",
+                        severity="low",
+                        source="source_validation",
+                        message=(
+                            "به‌دلیل طول رزومه، بررسی مدل به یک شاهد مهارتی محدود شد. "
+                            "پوشش همهٔ شروط در پرونده موجود است."
+                        ),
+                    )
+                )
+                metrics["evidence_budget_limited"] = 1
             metrics.update(
                 input_tokens=verdict.input_tokens,
                 output_tokens=verdict.output_tokens,
@@ -282,16 +333,6 @@ async def run_model_pipeline(
             )
             return ModelResult(raw_text, parsed, analysis, metrics)
 
-    def measure(text: str):
-        prompt = chat_prompt(AnalyzeRequest.model_construct(resume_text=text, job=job))
-        return check_prompt_budget(
-            prompt,
-            context_limit,
-            output_limit,
-            tokenizer_path,
-        )
-
-    mode = settings.RESUME_MODEL_INPUT
     model_text = raw_text
     incomplete_model_input = mode != "raw" and (layout or {}).get("status") == "partial"
     if mode != "raw":
@@ -335,7 +376,7 @@ async def run_model_pipeline(
                 )
     else:
         request = AnalyzeRequest(resume_text=raw_text, job=job)
-        budget = await asyncio.to_thread(measure, request.resume_text)
+        budget = raw_budget or await asyncio.to_thread(measure, request.resume_text)
     metrics.update(budget.metrics())
     if budget.over_by:
         if persist:
